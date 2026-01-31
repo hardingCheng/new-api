@@ -159,31 +159,67 @@ const Home = () => {
         <div className='w-full overflow-x-hidden'>
           {/* Banner 部分 */}
           <div className='w-full border-b border-semi-color-border min-h-[500px] md:min-h-[600px] lg:min-h-[700px] relative overflow-x-hidden'>
-            {/* 背景模糊晕染球 */}
-            <div className='blur-ball blur-ball-indigo' />
-            <div className='blur-ball blur-ball-teal' />
-            <div className='flex items-center justify-center h-full px-4 py-20 md:py-24 lg:py-32 mt-10'>
+            {/* AI 背景动效层 */}
+            <div className='absolute inset-0 overflow-hidden pointer-events-none'>
+              {/* 动态渐变背景 */}
+              <div className='ai-gradient-bg' />
+              
+              {/* 模糊晕染球 - 增强版 */}
+              <div className='blur-ball blur-ball-indigo animate-float' />
+              <div className='blur-ball blur-ball-teal animate-float-delayed' />
+              <div className='blur-ball blur-ball-purple' style={{ top: '60%', left: '80%' }} />
+              
+              {/* AI 网格背景 */}
+              <div className='ai-grid-pattern' />
+              
+              {/* 浮动粒子效果 */}
+              <div className='ai-particles'>
+                {[...Array(20)].map((_, i) => (
+                  <div
+                    key={i}
+                    className='ai-particle'
+                    style={{
+                      left: `${Math.random() * 100}%`,
+                      top: `${Math.random() * 100}%`,
+                      animationDelay: `${Math.random() * 5}s`,
+                      animationDuration: `${5 + Math.random() * 10}s`,
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className='flex items-center justify-center h-full px-4 py-20 md:py-24 lg:py-32 mt-10 relative z-10'>
               {/* 居中内容区 */}
               <div className='flex flex-col items-center justify-center text-center max-w-4xl mx-auto'>
                 <div className='flex flex-col items-center justify-center mb-6 md:mb-8'>
+                  {/* AI 徽章 */}
+                  <div className='ai-badge mb-6 animate-pulse-slow'>
+                    <span className='ai-badge-dot' />
+                    <span className='text-xs md:text-sm font-medium'>
+                      {t('AI 驱动的智能网关')}
+                    </span>
+                  </div>
+
                   <h1
-                    className={`text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-semi-color-text-0 leading-tight ${isChinese ? 'tracking-wide md:tracking-wider' : ''}`}
+                    className={`text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-semi-color-text-0 leading-tight ${isChinese ? 'tracking-wide md:tracking-wider' : ''} animate-fade-in-up`}
                   >
                     <>
                       {t('统一的')}
                       <br />
-                      <span className='shine-text'>{t('大模型接口网关')}</span>
+                      <span className='shine-text gradient-text'>{t('大模型接口网关')}</span>
                     </>
                   </h1>
-                  <p className='text-base md:text-lg lg:text-xl text-semi-color-text-1 mt-4 md:mt-6 max-w-xl'>
+                  <p className='text-base md:text-lg lg:text-xl text-semi-color-text-1 mt-4 md:mt-6 max-w-xl animate-fade-in-up animation-delay-200'>
                     {t('更好的价格，更好的稳定性，只需要将模型基址替换为：')}
                   </p>
+                  
                   {/* BASE URL 与端点选择 */}
-                  <div className='flex flex-col md:flex-row items-center justify-center gap-4 w-full mt-4 md:mt-6 max-w-md'>
+                  <div className='flex flex-col md:flex-row items-center justify-center gap-4 w-full mt-4 md:mt-6 max-w-md animate-fade-in-up animation-delay-400'>
                     <Input
                       readonly
                       value={serverAddress}
-                      className='flex-1 !rounded-full'
+                      className='flex-1 !rounded-full glass-effect'
                       size={isMobile ? 'default' : 'large'}
                       suffix={
                         <div className='flex items-center gap-2'>
@@ -203,7 +239,7 @@ const Home = () => {
                             type='primary'
                             onClick={handleCopyBaseURL}
                             icon={<IconCopy />}
-                            className='!rounded-full'
+                            className='!rounded-full hover-lift'
                           />
                         </div>
                       }
@@ -212,13 +248,13 @@ const Home = () => {
                 </div>
 
                 {/* 操作按钮 */}
-                <div className='flex flex-row gap-4 justify-center items-center'>
+                <div className='flex flex-row gap-4 justify-center items-center animate-fade-in-up animation-delay-600'>
                   <Link to='/console'>
                     <Button
                       theme='solid'
                       type='primary'
                       size={isMobile ? 'default' : 'large'}
-                      className='!rounded-3xl px-8 py-2'
+                      className='!rounded-3xl px-8 py-2 hover-lift glow-on-hover'
                       icon={<IconPlay />}
                     >
                       {t('获取密钥')}
@@ -227,7 +263,7 @@ const Home = () => {
                   {isDemoSiteMode && statusState?.status?.version ? (
                     <Button
                       size={isMobile ? 'default' : 'large'}
-                      className='flex items-center !rounded-3xl px-6 py-2'
+                      className='flex items-center !rounded-3xl px-6 py-2 hover-lift'
                       icon={<IconGithubLogo />}
                       onClick={() =>
                         window.open(
@@ -242,7 +278,7 @@ const Home = () => {
                     docsLink && (
                       <Button
                         size={isMobile ? 'default' : 'large'}
-                        className='flex items-center !rounded-3xl px-6 py-2'
+                        className='flex items-center !rounded-3xl px-6 py-2 hover-lift'
                         icon={<IconFile />}
                         onClick={() => window.open(docsLink, '_blank')}
                       >
@@ -263,68 +299,38 @@ const Home = () => {
                     </Text>
                   </div>
                   <div className='flex flex-wrap items-center justify-center gap-3 sm:gap-4 md:gap-6 lg:gap-8 max-w-5xl mx-auto px-4'>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Moonshot size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <OpenAI size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <XAI size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Zhipu.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Volcengine.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Cohere.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Claude.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Gemini.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Suno size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Minimax.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Wenxin.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Spark.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Qingyan.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <DeepSeek.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Qwen.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Midjourney size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Grok size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <AzureAI.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Hunyuan.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Xinference.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Typography.Text className='!text-lg sm:!text-xl md:!text-2xl lg:!text-3xl font-bold'>
+                    {[
+                      { Icon: Moonshot, size: 40 },
+                      { Icon: OpenAI, size: 40 },
+                      { Icon: XAI, size: 40 },
+                      { Icon: Zhipu.Color, size: 40 },
+                      { Icon: Volcengine.Color, size: 40 },
+                      { Icon: Cohere.Color, size: 40 },
+                      { Icon: Claude.Color, size: 40 },
+                      { Icon: Gemini.Color, size: 40 },
+                      { Icon: Suno, size: 40 },
+                      { Icon: Minimax.Color, size: 40 },
+                      { Icon: Wenxin.Color, size: 40 },
+                      { Icon: Spark.Color, size: 40 },
+                      { Icon: Qingyan.Color, size: 40 },
+                      { Icon: DeepSeek.Color, size: 40 },
+                      { Icon: Qwen.Color, size: 40 },
+                      { Icon: Midjourney, size: 40 },
+                      { Icon: Grok, size: 40 },
+                      { Icon: AzureAI.Color, size: 40 },
+                      { Icon: Hunyuan.Color, size: 40 },
+                      { Icon: Xinference.Color, size: 40 },
+                    ].map((item, index) => (
+                      <div
+                        key={index}
+                        className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center icon-float hover-scale'
+                        style={{ animationDelay: `${index * 0.1}s` }}
+                      >
+                        <item.Icon size={item.size} />
+                      </div>
+                    ))}
+                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center icon-float hover-scale'>
+                      <Typography.Text className='!text-lg sm:!text-xl md:!text-2xl lg:!text-3xl font-bold gradient-text'>
                         30+
                       </Typography.Text>
                     </div>
