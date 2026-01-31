@@ -197,7 +197,7 @@ const FooterBar = () => {
 
           <div className='text-sm'>
             <span className='!text-semi-color-text-1'>
-              {t('设计与开发由')}{' '}
+              {t('技术支持')}{' '}
             </span>
             <a
               href='https://github.com/QuantumNous/new-api'
@@ -205,7 +205,7 @@ const FooterBar = () => {
               rel='noopener noreferrer'
               className='!text-semi-color-primary font-medium'
             >
-              New API
+              智链 AI
             </a>
           </div>
         </div>
@@ -227,14 +227,14 @@ const FooterBar = () => {
             dangerouslySetInnerHTML={{ __html: footer }}
           ></div>
           <div className='absolute bottom-2 right-4 text-xs !text-semi-color-text-2 opacity-70'>
-            <span>{t('设计与开发由')} </span>
+            <span>{t('设计支持')} </span>
             <a
-              href='https://github.com/QuantumNous/new-api'
+              href='https://cx.flyinto.cn'
               target='_blank'
               rel='noopener noreferrer'
               className='!text-semi-color-primary font-medium'
             >
-              New API
+              智链 AI
             </a>
           </div>
         </div>
