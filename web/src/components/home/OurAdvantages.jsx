@@ -16,7 +16,7 @@ const OurAdvantages = () => {
 
   const advantages = [
     {
-      icon: <IconBolt />,
+      icon: <IconBolt size="extra-large" />,
       title: t('稳定快速'),
       description: t(
         '基于高质量的设计，确保API能够高质量运营，全球多机房部署，为您提供极致的响应速度',
@@ -24,7 +24,7 @@ const OurAdvantages = () => {
       color: 'purple',
     },
     {
-      icon: <IconTick />,
+      icon: <IconTick size="extra-large" />,
       title: t('低价费率'),
       description: t(
         '相对于市面的费率，我们的价格至少优惠30%及以上，帮助您节省成本',
@@ -32,19 +32,19 @@ const OurAdvantages = () => {
       color: 'blue',
     },
     {
-      icon: <IconCheckCircleStroked />,
+      icon: <IconCheckCircleStroked size="extra-large" />,
       title: t('高效集成'),
       description: t('提供完整的文档和SDK，支持快速和便捷地进行对接开发'),
       color: 'green',
     },
     {
-      icon: <IconExpand />,
+      icon: <IconExpand size="extra-large" />,
       title: t('灵活扩展'),
       description: t('API设计支持扩展模式，满足从初创到企业级的需求'),
       color: 'cyan',
     },
     {
-      icon: <IconClock />,
+      icon: <IconClock size="extra-large" />,
       title: t('实时监控'),
       description: t('提供完善的API使用监控和报表，确保服务质量'),
       color: 'amber',
