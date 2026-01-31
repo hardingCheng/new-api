@@ -63,6 +63,8 @@ import {
   Xinference,
 } from '@lobehub/icons';
 import OurAdvantages from '../../components/home/OurAdvantages';
+import PricingComparison from '../../components/home/PricingComparison';
+import ContactUs from '../../components/home/ContactUs';
 
 const { Text } = Typography;
 
@@ -164,15 +166,15 @@ const Home = () => {
             <div className='absolute inset-0 overflow-hidden pointer-events-none'>
               {/* 动态渐变背景 */}
               <div className='ai-gradient-bg' />
-              
+
               {/* 模糊晕染球 - 增强版 */}
               <div className='blur-ball blur-ball-indigo animate-float' />
               <div className='blur-ball blur-ball-teal animate-float-delayed' />
               <div className='blur-ball blur-ball-purple' style={{ top: '60%', left: '80%' }} />
-              
+
               {/* AI 网格背景 */}
               <div className='ai-grid-pattern' />
-              
+
               {/* 浮动粒子效果 */}
               <div className='ai-particles'>
                 {[...Array(20)].map((_, i) => (
@@ -214,7 +216,7 @@ const Home = () => {
                   <p className='text-base md:text-lg lg:text-xl text-semi-color-text-1 mt-4 md:mt-6 max-w-xl animate-fade-in-up animation-delay-200'>
                     {t('更好的价格，更好的稳定性，只需要将模型基址替换为：')}
                   </p>
-                  
+
                   {/* BASE URL 与端点选择 */}
                   <div className='flex flex-col md:flex-row items-center justify-center gap-4 w-full mt-4 md:mt-6 max-w-md animate-fade-in-up animation-delay-400'>
                     <Input
@@ -337,13 +339,18 @@ const Home = () => {
                     </div>
                   </div>
                 </div>
-
-
-                {/* 我们的优势 */}
-                <OurAdvantages />
               </div>
             </div>
           </div>
+
+          {/* 价格对比 */}
+          <PricingComparison />
+
+          {/* 我们的优势 */}
+          <OurAdvantages />
+
+          {/* 联系我们 */}
+          <ContactUs />
         </div>
       ) : (
         <div className='overflow-x-hidden w-full'>
