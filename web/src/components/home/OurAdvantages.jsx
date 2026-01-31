@@ -52,36 +52,8 @@ const OurAdvantages = () => {
   ];
 
   return (
-    <section className='w-full py-12 md:py-16 lg:py-20 px-4 md:px-6 relative overflow-hidden'>
-      {/* 背景装饰 */}
-      <div className='absolute inset-0 overflow-hidden pointer-events-none'>
-        <div 
-          className='absolute rounded-full'
-          style={{
-            width: '400px',
-            height: '400px',
-            background: 'radial-gradient(circle, rgba(168, 85, 247, 0.2) 0%, transparent 70%)',
-            top: '10%',
-            right: '-100px',
-            filter: 'blur(80px)',
-            opacity: 0.5,
-          }}
-        />
-        <div 
-          className='absolute rounded-full'
-          style={{
-            width: '350px',
-            height: '350px',
-            background: 'radial-gradient(circle, rgba(59, 130, 246, 0.2) 0%, transparent 70%)',
-            bottom: '10%',
-            left: '-80px',
-            filter: 'blur(80px)',
-            opacity: 0.5,
-          }}
-        />
-      </div>
-
-      <div className='max-w-7xl mx-auto relative z-10'>
+    <section className='w-full py-12 md:py-16 lg:py-20 px-4 md:px-6'>
+      <div className='max-w-7xl mx-auto'>
         {/* 标题部分 */}
         <div className='text-center mb-12 md:mb-16 lg:mb-20'>
           <Title

@@ -18,13 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useContext, useEffect, useState } from 'react';
-import {
-  Button,
-  Typography,
-  Input,
-  ScrollList,
-  ScrollItem,
-} from '@douyinfe/semi-ui';
 import { API, showError, copy, showSuccess } from '../../helpers';
 import { useIsMobile } from '../../hooks/common/useIsMobile';
 import { API_ENDPOINTS } from '../../constants/common.constant';
@@ -32,20 +25,13 @@ import { StatusContext } from '../../context/Status';
 import { useActualTheme } from '../../context/Theme';
 import { marked } from 'marked';
 import { useTranslation } from 'react-i18next';
-import {
-  IconGithubLogo,
-  IconPlay,
-  IconFile,
-  IconCopy,
-} from '@douyinfe/semi-icons';
-import { Link } from 'react-router-dom';
 import NoticeModal from '../../components/layout/NoticeModal';
 import OurAdvantages from '../../components/home/OurAdvantages';
 import PricingComparison from '../../components/home/PricingComparison';
 import ContactUs from '../../components/home/ContactUs';
-import ProviderIcons from '../../components/home/ProviderIcons';
-
-const { Text } = Typography;
+import AvailableModels from '../../components/home/AvailableModels';
+import HeroBanner from '../../components/home/HeroBanner';
+import TechBackground from '../../components/home/TechBackground';
 
 const Home = () => {
   const { t, i18n } = useTranslation();
@@ -131,175 +117,59 @@ const Home = () => {
   }, [endpointItems.length]);
 
   return (
-    <div className='w-full overflow-x-hidden'>
-      <NoticeModal
-        visible={noticeVisible}
-        onClose={() => setNoticeVisible(false)}
-        isMobile={isMobile}
-      />
-      {homePageContentLoaded && homePageContent === '' ? (
-        <div className='w-full overflow-x-hidden'>
-          {/* Banner 部分 */}
-          <div className='w-full border-b border-semi-color-border min-h-[500px] md:min-h-[600px] lg:min-h-[700px] relative overflow-x-hidden'>
-            {/* AI 背景动效层 */}
-            <div className='absolute inset-0 overflow-hidden pointer-events-none'>
-              {/* 动态渐变背景 */}
-              <div className='ai-gradient-bg' />
+    <div className='w-full overflow-x-hidden relative'>
+      
+      {/* 内容层 */}
+      <div className='relative z-10'>
+        <NoticeModal
+          visible={noticeVisible}
+          onClose={() => setNoticeVisible(false)}
+          isMobile={isMobile}
+        />
+        {homePageContentLoaded && homePageContent === '' ? (
+          <div className='w-full overflow-x-hidden'>
+            {/* Banner 部分 */}
+            <HeroBanner
+              serverAddress={serverAddress}
+              endpointItems={endpointItems}
+              endpointIndex={endpointIndex}
+              setEndpointIndex={setEndpointIndex}
+              handleCopyBaseURL={handleCopyBaseURL}
+              isDemoSiteMode={isDemoSiteMode}
+              statusState={statusState}
+              docsLink={docsLink}
+              isMobile={isMobile}
+              isChinese={isChinese}
+            />
 
-              {/* 模糊晕染球 - 增强版 */}
-              <div className='blur-ball blur-ball-indigo animate-float' />
-              <div className='blur-ball blur-ball-teal animate-float-delayed' />
-              <div className='blur-ball blur-ball-purple' style={{ top: '60%', left: '80%' }} />
+            {/* 价格对比 */}
+            <PricingComparison />
 
-              {/* AI 网格背景 */}
-              <div className='ai-grid-pattern' />
+            {/* 可用模型 */}
+            <AvailableModels />
 
-              {/* 浮动粒子效果 */}
-              <div className='ai-particles'>
-                {[...Array(20)].map((_, i) => (
-                  <div
-                    key={i}
-                    className='ai-particle'
-                    style={{
-                      left: `${Math.random() * 100}%`,
-                      top: `${Math.random() * 100}%`,
-                      animationDelay: `${Math.random() * 5}s`,
-                      animationDuration: `${5 + Math.random() * 10}s`,
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
+            {/* 我们的优势 */}
+            <OurAdvantages />
 
-            <div className='flex items-center justify-center h-full px-4 py-20 md:py-24 lg:py-32 mt-10 relative z-10'>
-              {/* 居中内容区 */}
-              <div className='flex flex-col items-center justify-center text-center max-w-4xl mx-auto'>
-                <div className='flex flex-col items-center justify-center mb-6 md:mb-8'>
-                  {/* AI 徽章 */}
-                  <div className='ai-badge mb-6 animate-pulse-slow'>
-                    <span className='ai-badge-dot' />
-                    <span className='text-xs md:text-sm font-medium'>
-                      {t('AI 驱动的智能网关')}
-                    </span>
-                  </div>
-
-                  <h1
-                    className={`text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-semi-color-text-0 leading-tight ${isChinese ? 'tracking-wide md:tracking-wider' : ''} animate-fade-in-up`}
-                  >
-                    <>
-                      {t('统一的')}
-                      <br />
-                      <span className='shine-text gradient-text'>{t('大模型接口网关')}</span>
-                    </>
-                  </h1>
-                  <p className='text-base md:text-lg lg:text-xl text-semi-color-text-1 mt-4 md:mt-6 max-w-xl animate-fade-in-up animation-delay-200'>
-                    {t('更好的价格，更好的稳定性，只需要将模型基址替换为：')}
-                  </p>
-
-                  {/* BASE URL 与端点选择 */}
-                  <div className='flex flex-col md:flex-row items-center justify-center gap-4 w-full mt-4 md:mt-6 max-w-md animate-fade-in-up animation-delay-400'>
-                    <Input
-                      readonly
-                      value={serverAddress}
-                      className='flex-1 !rounded-full glass-effect'
-                      size={isMobile ? 'default' : 'large'}
-                      suffix={
-                        <div className='flex items-center gap-2'>
-                          <ScrollList
-                            bodyHeight={32}
-                            style={{ border: 'unset', boxShadow: 'unset' }}
-                          >
-                            <ScrollItem
-                              mode='wheel'
-                              cycled={true}
-                              list={endpointItems}
-                              selectedIndex={endpointIndex}
-                              onSelect={({ index }) => setEndpointIndex(index)}
-                            />
-                          </ScrollList>
-                          <Button
-                            type='primary'
-                            onClick={handleCopyBaseURL}
-                            icon={<IconCopy />}
-                            className='!rounded-full hover-lift'
-                          />
-                        </div>
-                      }
-                    />
-                  </div>
-                </div>
-
-                {/* 操作按钮 */}
-                <div className='flex flex-row gap-4 justify-center items-center animate-fade-in-up animation-delay-600'>
-                  <Link to='/console'>
-                    <Button
-                      theme='solid'
-                      type='primary'
-                      size={isMobile ? 'default' : 'large'}
-                      className='!rounded-3xl px-8 py-2 hover-lift glow-on-hover'
-                      icon={<IconPlay />}
-                    >
-                      {t('获取密钥')}
-                    </Button>
-                  </Link>
-                  {isDemoSiteMode && statusState?.status?.version ? (
-                    <Button
-                      size={isMobile ? 'default' : 'large'}
-                      className='flex items-center !rounded-3xl px-6 py-2 hover-lift'
-                      icon={<IconGithubLogo />}
-                      onClick={() =>
-                        window.open(
-                          'https://github.com/QuantumNous/new-api',
-                          '_blank',
-                        )
-                      }
-                    >
-                      {statusState.status.version}
-                    </Button>
-                  ) : (
-                    docsLink && (
-                      <Button
-                        size={isMobile ? 'default' : 'large'}
-                        className='flex items-center !rounded-3xl px-6 py-2 hover-lift'
-                        icon={<IconFile />}
-                        onClick={() => window.open(docsLink, '_blank')}
-                      >
-                        {t('文档')}
-                      </Button>
-                    )
-                  )}
-                </div>
-
-                {/* 框架兼容性图标 */}
-                {/* <ProviderIcons /> */}
-              </div>
-            </div>
+            {/* 联系我们 */}
+            <ContactUs />
           </div>
-
-          {/* 价格对比 */}
-          <PricingComparison />
-
-          {/* 我们的优势 */}
-          <OurAdvantages />
-
-          {/* 联系我们 */}
-          <ContactUs />
-        </div>
-      ) : (
-        <div className='overflow-x-hidden w-full'>
-          {homePageContent.startsWith('https://') ? (
-            <iframe
-              src={homePageContent}
-              className='w-full h-screen border-none'
-            />
-          ) : (
-            <div
-              className='mt-[60px]'
-              dangerouslySetInnerHTML={{ __html: homePageContent }}
-            />
-          )}
-        </div>
-      )}
+        ) : (
+          <div className='overflow-x-hidden w-full'>
+            {homePageContent.startsWith('https://') ? (
+              <iframe
+                src={homePageContent}
+                className='w-full h-screen border-none'
+              />
+            ) : (
+              <div
+                className='mt-[60px]'
+                dangerouslySetInnerHTML={{ __html: homePageContent }}
+              />
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

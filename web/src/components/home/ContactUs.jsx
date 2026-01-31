@@ -35,43 +35,8 @@ const ContactUs = () => {
   ];
 
   return (
-    <section 
-      className='py-16 relative overflow-hidden'
-      style={{
-        background: 'var(--semi-color-bg-0)',
-      }}
-    >
-      {/* 装饰性背景 */}
-      <div className='absolute inset-0 overflow-hidden pointer-events-none'>
-        <div 
-          className='absolute rounded-full'
-          style={{
-            width: '300px',
-            height: '300px',
-            background: 'radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%)',
-            top: '50%',
-            left: '-100px',
-            transform: 'translateY(-50%)',
-            filter: 'blur(60px)',
-            opacity: 0.5,
-          }}
-        />
-        <div 
-          className='absolute rounded-full'
-          style={{
-            width: '300px',
-            height: '300px',
-            background: 'radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, transparent 70%)',
-            top: '50%',
-            right: '-100px',
-            transform: 'translateY(-50%)',
-            filter: 'blur(60px)',
-            opacity: 0.5,
-          }}
-        />
-      </div>
-
-      <div className='max-w-5xl mx-auto px-6 relative z-10'>
+    <section className='py-16'>
+      <div className='max-w-5xl mx-auto px-6'>
         {/* 标题部分 */}
         <div className='text-center mb-12'>
           <div className='inline-block mb-4'>

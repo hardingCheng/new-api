@@ -11,41 +11,8 @@ const PricingComparison = () => {
   const isMobile = useIsMobile();
 
   return (
-    <section 
-      className='py-12 md:py-16 lg:py-20 px-4 md:px-6 relative overflow-hidden with-pastel-balls' 
-      style={{ 
-        background: 'var(--semi-color-bg-0)',
-      }}
-    >
-      {/* 装饰性背景元素 */}
-      <div className='absolute inset-0 overflow-hidden pointer-events-none'>
-        <div 
-          className='absolute rounded-full'
-          style={{
-            width: '350px',
-            height: '350px',
-            background: 'radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%)',
-            top: '-80px',
-            right: '-80px',
-            filter: 'blur(60px)',
-            opacity: 0.5,
-          }}
-        />
-        <div 
-          className='absolute rounded-full'
-          style={{
-            width: '280px',
-            height: '280px',
-            background: 'radial-gradient(circle, rgba(168, 85, 247, 0.1) 0%, transparent 70%)',
-            bottom: '-40px',
-            left: '-40px',
-            filter: 'blur(60px)',
-            opacity: 0.5,
-          }}
-        />
-      </div>
-
-      <div className='max-w-6xl mx-auto relative z-10'>
+    <section className='py-12 md:py-16 lg:py-20 px-4 md:px-6'>
+      <div className='max-w-6xl mx-auto'>
         {/* 顶部标签和标题 */}
         <div className='text-center mb-10 md:mb-12 lg:mb-14'>
           <div className='inline-block mb-4 md:mb-5 animate-bounce-slow'>

@@ -1,0 +1,308 @@
+import React, { useState } from 'react';
+import { Typography, Card, Tag, Tabs, TabPane } from '@douyinfe/semi-ui';
+import { useTranslation } from 'react-i18next';
+
+const { Title, Text } = Typography;
+
+const AvailableModels = () => {
+  const { t } = useTranslation();
+  const [activeTab, setActiveTab] = useState('openai');
+
+  const modelProviders = [
+        {
+      key: 'claude',
+      name: 'Claude',
+      icon: '🔶',
+      color: 'orange',
+      models: [
+        {
+          name: 'claude-opus-4-5-20251101',
+          description: '最强推理',
+          type: '旗舰',
+          typeColor: 'orange',
+        },
+        {
+          name: 'claude-opus-4-5-20251101-thinking',
+          description: '深度思考',
+          type: '推理',
+          typeColor: 'purple',
+        },
+        {
+          name: 'claude-sonnet-4-5-20250929',
+          description: '性价比之选',
+          type: '推荐',
+          typeColor: 'green',
+        },
+        {
+          name: 'claude-sonnet-4-5-20250929-thinking',
+          description: '思考版',
+          type: '推理',
+          typeColor: 'purple',
+        },
+        {
+          name: 'claude-haiku-4-5-20251001',
+          description: '快速响应',
+          type: '快速',
+          typeColor: 'blue',
+        },
+        {
+          name: 'claude-3-7-sonnet-20250219',
+          description: '稳定版本',
+          type: '稳定',
+          typeColor: 'cyan',
+        },
+      ],
+    },
+    {
+      key: 'openai',
+      name: 'OpenAI',
+      icon: '⚡',
+      color: 'green',
+      models: [
+        {
+          name: 'gpt-4o',
+          description: '最强推理',
+          type: '旗舰',
+          typeColor: 'orange',
+        },
+        {
+          name: 'gpt-4o-mini',
+          description: '快速响应',
+          type: '快速',
+          typeColor: 'blue',
+        },
+        {
+          name: 'o1',
+          description: '深度思考',
+          type: '推理',
+          typeColor: 'purple',
+        },
+        {
+          name: 'o1-mini',
+          description: '轻量推理',
+          type: '推理',
+          typeColor: 'purple',
+        },
+        {
+          name: 'gpt-4-turbo',
+          description: '高性能版',
+          type: '旗舰',
+          typeColor: 'orange',
+        },
+        {
+          name: 'gpt-3.5-turbo',
+          description: '稳定版本',
+          type: '稳定',
+          typeColor: 'cyan',
+        },
+      ],
+    },
+    {
+      key: 'gemini',
+      name: 'Gemini',
+      icon: '⭐',
+      color: 'blue',
+      models: [
+        {
+          name: 'gemini-2.5-pro',
+          description: '高性能版',
+          type: '旗舰',
+          typeColor: 'orange',
+        },
+        {
+          name: 'gemini-2.5-flash',
+          description: '快速版',
+          type: '快速',
+          typeColor: 'blue',
+        },
+        {
+          name: 'gemini-3-pro-image-preview',
+          description: '图像生成',
+          type: '图像',
+          typeColor: 'pink',
+        },
+        {
+          name: 'gemini-3-pro-preview-thinking',
+          description: '思考版',
+          type: '推理',
+          typeColor: 'purple',
+        },
+      ],
+    },
+  ];
+
+  return (
+    <section className='w-full py-12 md:py-16 lg:py-20 px-4 md:px-6'>
+      <div className='max-w-6xl mx-auto'>
+        {/* 标题部分 */}
+        <div className='text-center mb-12 md:mb-16'>
+          <Title
+            heading={2}
+            className='!text-3xl md:!text-4xl lg:!text-5xl font-bold mb-4 animate-fade-in-up'
+          >
+            {t('可用模型')}
+          </Title>
+          <Text 
+            type='secondary' 
+            className='text-base md:text-lg animate-fade-in-up animation-delay-200'
+          >
+            {t('Claude 全系列 + Gemini，持续更新中')}
+          </Text>
+        </div>
+
+        {/* Tabs 切换 */}
+        <Tabs
+          type='button'
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          className='mb-8'
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+          }}
+          tabBarStyle={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '12px',
+            borderBottom: 'none',
+          }}
+        >
+          {modelProviders.map((provider) => (
+            <TabPane
+              key={provider.key}
+              tab={
+                <div className='flex items-center gap-2 px-4 py-2'>
+                  <span style={{ fontSize: '20px' }}>{provider.icon}</span>
+                  <span className='font-semibold'>{provider.name}</span>
+                </div>
+              }
+              itemKey={provider.key}
+            />
+          ))}
+        </Tabs>
+
+        {/* 模型列表 */}
+        <div className='animate-fade-in-up'>
+          {modelProviders.map((provider) => (
+            activeTab === provider.key && (
+              <div key={provider.key}>
+                {/* 表头 */}
+                <div className='grid grid-cols-3 gap-4 px-6 py-4 mb-2 rounded-xl bg-semi-color-fill-0'>
+                  <Text strong className='text-sm md:text-base'>
+                    {t('模型')}
+                  </Text>
+                  <Text strong className='text-sm md:text-base text-center'>
+                    {t('说明')}
+                  </Text>
+                  <Text strong className='text-sm md:text-base text-right'>
+                    {t('类型')}
+                  </Text>
+                </div>
+
+                {/* 模型行 */}
+                <div className='space-y-2'>
+                  {provider.models.map((model, index) => (
+                    <Card
+                      key={index}
+                      bordered
+                      className='hover-lift'
+                      style={{
+                        borderRadius: '12px',
+                        transition: 'all 0.3s ease',
+                        cursor: 'pointer',
+                        border: '1px solid var(--semi-color-border)',
+                      }}
+                      bodyStyle={{ padding: '20px 24px' }}
+                    >
+                      <div className='grid grid-cols-3 gap-4 items-center'>
+                        {/* 模型名称 */}
+                        <div className='flex items-center gap-3'>
+                          <div
+                            className='flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg'
+                            style={{
+                              background: `linear-gradient(135deg, var(--semi-color-${provider.color}-0) 0%, var(--semi-color-${provider.color}-1) 100%)`,
+                              fontSize: '16px',
+                            }}
+                          >
+                            {provider.icon}
+                          </div>
+                          <Text
+                            strong
+                            className='text-sm md:text-base font-mono'
+                            style={{ wordBreak: 'break-all' }}
+                          >
+                            {model.name}
+                          </Text>
+                        </div>
+
+                        {/* 说明 */}
+                        <div className='text-center'>
+                          <Text
+                            type='secondary'
+                            className='text-sm md:text-base'
+                          >
+                            {t(model.description)}
+                          </Text>
+                        </div>
+
+                        {/* 类型标签 */}
+                        <div className='flex justify-end'>
+                          <Tag
+                            color={model.typeColor}
+                            size='large'
+                            style={{
+                              borderRadius: '8px',
+                              padding: '4px 12px',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {t(model.type)}
+                          </Tag>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )
+          ))}
+        </div>
+
+        {/* 底部提示 */}
+        <div className='text-center mt-10'>
+          <div 
+            style={{
+              display: 'inline-block',
+              padding: '12px 24px',
+              borderRadius: '12px',
+              background: 'var(--semi-color-bg-1)',
+              backdropFilter: 'blur(10px)',
+              boxShadow: '0 4px 16px var(--semi-color-shadow)',
+              border: '1px solid var(--semi-color-border)',
+            }}
+          >
+            <Text style={{ fontSize: '14px', color: 'var(--semi-color-text-1)', fontWeight: 500 }}>
+              💡 {t('更多模型持续接入中，敬请期待')}
+            </Text>
+          </div>
+        </div>
+      </div>
+
+      <style jsx>{`
+        .hover-lift:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 24px var(--semi-color-shadow);
+          border-color: var(--semi-color-primary) !important;
+        }
+
+        @media (max-width: 768px) {
+          .hover-lift:hover {
+            transform: translateY(-1px);
+          }
+        }
+      `}</style>
+    </section>
+  );
+};
+
+export default AvailableModels;
