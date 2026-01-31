@@ -62,6 +62,7 @@ import {
   Hunyuan,
   Xinference,
 } from '@lobehub/icons';
+import OurAdvantages from '../../components/home/OurAdvantages';
 
 const { Text } = Typography;
 
@@ -336,6 +337,10 @@ const Home = () => {
                     </div>
                   </div>
                 </div>
+
+
+                {/* 我们的优势 */}
+                <OurAdvantages />
               </div>
             </div>
           </div>
