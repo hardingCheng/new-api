@@ -49,7 +49,7 @@ const OurAdvantages = () => {
 
   return (
     <div className='w-full py-8 md:py-10 lg:py-12 px-4'>
-      <div className='max-w-7xl mx-auto'>
+      <div className='max-w-[1600px] mx-auto'>
         {/* 标题 */}
         <div className='text-center mb-12 md:mb-16'>
           <Title
@@ -63,7 +63,7 @@ const OurAdvantages = () => {
         {/* 内容区域 */}
         <div className='flex flex-col lg:flex-row items-center gap-8 lg:gap-12'>
           {/* 左侧图片 */}
-          <div className='w-full lg:w-1/2 flex justify-center lg:justify-end'>
+          <div className='w-full lg:w-2/5 flex justify-center lg:justify-end'>
             <div className='relative w-full max-w-md lg:max-w-lg'>
               <img
                 src='/home_me_like.png'
@@ -74,7 +74,7 @@ const OurAdvantages = () => {
           </div>
 
           {/* 右侧优势列表 */}
-          <div className='w-full lg:w-1/2'>
+          <div className='w-full lg:w-3/5'>
             {advantages.map((advantage, index) => (
               <div
                 key={index}
