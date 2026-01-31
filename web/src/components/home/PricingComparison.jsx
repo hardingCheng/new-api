@@ -12,33 +12,35 @@ const PricingComparison = () => {
 
   return (
     <section 
-      className='py-12 md:py-16 lg:py-20 px-4 md:px-6 relative overflow-hidden' 
+      className='py-12 md:py-16 lg:py-20 px-4 md:px-6 relative overflow-hidden with-pastel-balls' 
       style={{ 
-        background: 'linear-gradient(135deg, rgba(240, 242, 255, 0.6) 0%, rgba(250, 240, 255, 0.5) 50%, rgba(255, 245, 240, 0.6) 100%)',
+        background: 'var(--semi-color-bg-0)',
       }}
     >
       {/* 装饰性背景元素 */}
       <div className='absolute inset-0 overflow-hidden pointer-events-none'>
         <div 
-          className='absolute rounded-full opacity-20'
+          className='absolute rounded-full'
           style={{
             width: '350px',
             height: '350px',
-            background: 'radial-gradient(circle, rgba(99, 102, 241, 0.2) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%)',
             top: '-80px',
             right: '-80px',
             filter: 'blur(60px)',
+            opacity: 0.5,
           }}
         />
         <div 
-          className='absolute rounded-full opacity-20'
+          className='absolute rounded-full'
           style={{
             width: '280px',
             height: '280px',
-            background: 'radial-gradient(circle, rgba(168, 85, 247, 0.15) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(168, 85, 247, 0.1) 0%, transparent 70%)',
             bottom: '-40px',
             left: '-40px',
             filter: 'blur(60px)',
+            opacity: 0.5,
           }}
         />
       </div>
@@ -107,7 +109,8 @@ const PricingComparison = () => {
               overflow: 'hidden',
               transition: 'all 0.3s ease',
               cursor: 'pointer',
-              border: '1px solid rgba(0, 0, 0, 0.06)',
+              border: '1px solid var(--semi-color-border)',
+              background: 'var(--semi-color-bg-1)',
             }}
             bodyStyle={{ padding: 0 }}
           >
@@ -203,7 +206,7 @@ const PricingComparison = () => {
               boxShadow: '0 8px 32px rgba(250, 173, 20, 0.25)',
               transform: isMobile ? 'scale(1)' : 'scale(1.05)',
               position: 'relative',
-              background: 'linear-gradient(135deg, #ffffff 0%, #fffef9 100%)',
+              background: 'var(--semi-color-bg-1)',
             }}
             bodyStyle={{ padding: 0 }}
           >
@@ -328,7 +331,8 @@ const PricingComparison = () => {
               overflow: 'hidden',
               transition: 'all 0.3s ease',
               cursor: 'pointer',
-              border: '1px solid rgba(0, 0, 0, 0.06)',
+              border: '1px solid var(--semi-color-border)',
+              background: 'var(--semi-color-bg-1)',
             }}
             bodyStyle={{ padding: 0 }}
           >
@@ -408,10 +412,10 @@ const PricingComparison = () => {
               display: 'inline-block',
               padding: isMobile ? '12px 20px' : '14px 28px',
               borderRadius: '14px',
-              background: 'rgba(255, 255, 255, 0.9)',
+              background: 'var(--semi-color-bg-1)',
               backdropFilter: 'blur(10px)',
-              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
-              border: '1px solid rgba(0, 0, 0, 0.06)',
+              boxShadow: '0 4px 20px var(--semi-color-shadow)',
+              border: '1px solid var(--semi-color-border)',
             }}
           >
             <Text 
@@ -445,7 +449,7 @@ const PricingComparison = () => {
       <style jsx>{`
         .pricing-card:hover {
           transform: translateY(-8px);
-          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+          box-shadow: 0 12px 32px var(--semi-color-shadow);
         }
 
         .pricing-card-featured:hover {

@@ -56,25 +56,27 @@ const OurAdvantages = () => {
       {/* 背景装饰 */}
       <div className='absolute inset-0 overflow-hidden pointer-events-none'>
         <div 
-          className='absolute rounded-full opacity-10'
+          className='absolute rounded-full'
           style={{
             width: '400px',
             height: '400px',
-            background: 'radial-gradient(circle, rgba(168, 85, 247, 0.4) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(168, 85, 247, 0.2) 0%, transparent 70%)',
             top: '10%',
             right: '-100px',
             filter: 'blur(80px)',
+            opacity: 0.5,
           }}
         />
         <div 
-          className='absolute rounded-full opacity-10'
+          className='absolute rounded-full'
           style={{
             width: '350px',
             height: '350px',
-            background: 'radial-gradient(circle, rgba(59, 130, 246, 0.4) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(59, 130, 246, 0.2) 0%, transparent 70%)',
             bottom: '10%',
             left: '-80px',
             filter: 'blur(80px)',
+            opacity: 0.5,
           }}
         />
       </div>

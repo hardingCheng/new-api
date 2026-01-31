@@ -38,33 +38,35 @@ const ContactUs = () => {
     <section 
       className='py-16 relative overflow-hidden'
       style={{
-        background: 'linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, rgba(240, 242, 255, 0.3) 100%)',
+        background: 'var(--semi-color-bg-0)',
       }}
     >
       {/* 装饰性背景 */}
       <div className='absolute inset-0 overflow-hidden pointer-events-none'>
         <div 
-          className='absolute rounded-full opacity-10'
+          className='absolute rounded-full'
           style={{
             width: '300px',
             height: '300px',
-            background: 'radial-gradient(circle, rgba(99, 102, 241, 0.3) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%)',
             top: '50%',
             left: '-100px',
             transform: 'translateY(-50%)',
             filter: 'blur(60px)',
+            opacity: 0.5,
           }}
         />
         <div 
-          className='absolute rounded-full opacity-10'
+          className='absolute rounded-full'
           style={{
             width: '300px',
             height: '300px',
-            background: 'radial-gradient(circle, rgba(16, 185, 129, 0.3) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, transparent 70%)',
             top: '50%',
             right: '-100px',
             transform: 'translateY(-50%)',
             filter: 'blur(60px)',
+            opacity: 0.5,
           }}
         />
       </div>
@@ -123,8 +125,8 @@ const ContactUs = () => {
                 overflow: 'hidden',
                 transition: 'all 0.3s ease',
                 cursor: 'pointer',
-                border: '1px solid rgba(0, 0, 0, 0.06)',
-                background: 'rgba(255, 255, 255, 0.9)',
+                border: '1px solid var(--semi-color-border)',
+                background: 'var(--semi-color-bg-1)',
                 backdropFilter: 'blur(10px)',
               }}
               bodyStyle={{ padding: '28px 24px' }}
@@ -179,7 +181,7 @@ const ContactUs = () => {
                   paddingTop: '100%',
                   borderRadius: '16px',
                   overflow: 'hidden',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.1)',
+                  boxShadow: '0 8px 24px var(--semi-color-shadow)',
                   background: 'var(--semi-color-fill-0)',
                 }}
               >
@@ -225,10 +227,10 @@ const ContactUs = () => {
               display: 'inline-block',
               padding: '12px 24px',
               borderRadius: '12px',
-              background: 'rgba(255, 255, 255, 0.8)',
+              background: 'var(--semi-color-bg-1)',
               backdropFilter: 'blur(10px)',
-              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.06)',
-              border: '1px solid rgba(0, 0, 0, 0.05)',
+              boxShadow: '0 4px 16px var(--semi-color-shadow)',
+              border: '1px solid var(--semi-color-border)',
             }}
           >
             <Text style={{ fontSize: '14px', color: 'var(--semi-color-text-1)', fontWeight: 500 }}>
@@ -241,8 +243,8 @@ const ContactUs = () => {
       <style jsx>{`
         .contact-card:hover {
           transform: translateY(-8px);
-          box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
-          border-color: rgba(99, 102, 241, 0.2);
+          box-shadow: 0 16px 40px var(--semi-color-shadow);
+          border-color: var(--semi-color-primary);
         }
 
         @media (max-width: 768px) {

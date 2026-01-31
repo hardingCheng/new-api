@@ -40,31 +40,10 @@ import {
 } from '@douyinfe/semi-icons';
 import { Link } from 'react-router-dom';
 import NoticeModal from '../../components/layout/NoticeModal';
-import {
-  Moonshot,
-  OpenAI,
-  XAI,
-  Zhipu,
-  Volcengine,
-  Cohere,
-  Claude,
-  Gemini,
-  Suno,
-  Minimax,
-  Wenxin,
-  Spark,
-  Qingyan,
-  DeepSeek,
-  Qwen,
-  Midjourney,
-  Grok,
-  AzureAI,
-  Hunyuan,
-  Xinference,
-} from '@lobehub/icons';
 import OurAdvantages from '../../components/home/OurAdvantages';
 import PricingComparison from '../../components/home/PricingComparison';
 import ContactUs from '../../components/home/ContactUs';
+import ProviderIcons from '../../components/home/ProviderIcons';
 
 const { Text } = Typography;
 
@@ -292,53 +271,7 @@ const Home = () => {
                 </div>
 
                 {/* 框架兼容性图标 */}
-                <div className='mt-12 md:mt-16 lg:mt-20 w-full'>
-                  <div className='flex items-center mb-6 md:mb-8 justify-center'>
-                    <Text
-                      type='tertiary'
-                      className='text-lg md:text-xl lg:text-2xl font-light'
-                    >
-                      {t('支持众多的大模型供应商')}
-                    </Text>
-                  </div>
-                  <div className='flex flex-wrap items-center justify-center gap-3 sm:gap-4 md:gap-6 lg:gap-8 max-w-5xl mx-auto px-4'>
-                    {[
-                      { Icon: Moonshot, size: 40 },
-                      { Icon: OpenAI, size: 40 },
-                      { Icon: XAI, size: 40 },
-                      { Icon: Zhipu.Color, size: 40 },
-                      { Icon: Volcengine.Color, size: 40 },
-                      { Icon: Cohere.Color, size: 40 },
-                      { Icon: Claude.Color, size: 40 },
-                      { Icon: Gemini.Color, size: 40 },
-                      { Icon: Suno, size: 40 },
-                      { Icon: Minimax.Color, size: 40 },
-                      { Icon: Wenxin.Color, size: 40 },
-                      { Icon: Spark.Color, size: 40 },
-                      { Icon: Qingyan.Color, size: 40 },
-                      { Icon: DeepSeek.Color, size: 40 },
-                      { Icon: Qwen.Color, size: 40 },
-                      { Icon: Midjourney, size: 40 },
-                      { Icon: Grok, size: 40 },
-                      { Icon: AzureAI.Color, size: 40 },
-                      { Icon: Hunyuan.Color, size: 40 },
-                      { Icon: Xinference.Color, size: 40 },
-                    ].map((item, index) => (
-                      <div
-                        key={index}
-                        className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center icon-float hover-scale'
-                        style={{ animationDelay: `${index * 0.1}s` }}
-                      >
-                        <item.Icon size={item.size} />
-                      </div>
-                    ))}
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center icon-float hover-scale'>
-                      <Typography.Text className='!text-lg sm:!text-xl md:!text-2xl lg:!text-3xl font-bold gradient-text'>
-                        30+
-                      </Typography.Text>
-                    </div>
-                  </div>
-                </div>
+                {/* <ProviderIcons /> */}
               </div>
             </div>
           </div>
