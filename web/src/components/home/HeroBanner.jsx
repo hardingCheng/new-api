@@ -33,7 +33,7 @@ const HeroBanner = ({
             <div className='ai-badge mb-6 animate-pulse-slow'>
               <span className='ai-badge-dot' />
               <span className='text-xs md:text-sm font-medium'>
-                {t('AI 驱动的智能网关')}
+                {t('智能连接 · 无限可能')}
               </span>
             </div>
 
@@ -41,9 +41,9 @@ const HeroBanner = ({
               className={`text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-semi-color-text-0 leading-tight ${isChinese ? 'tracking-wide md:tracking-wider' : ''} animate-fade-in-up`}
             >
               <>
-                {t('统一的')}
+                {t('企业级')}
                 <br />
-                <span className='shine-text gradient-text'>{t('大模型接口网关')}</span>
+                <span className='shine-text gradient-text'>{t('AI 模型统一接入平台')}</span>
               </>
             </h1>
             <p className='text-base md:text-lg lg:text-xl text-semi-color-text-1 mt-4 md:mt-6 max-w-xl animate-fade-in-up animation-delay-200'>

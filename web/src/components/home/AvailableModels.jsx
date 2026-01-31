@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Typography, Card, Tag, Tabs, TabPane } from '@douyinfe/semi-ui';
+import { Typography, Card, Tag, Tabs, TabPane, Toast } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
+import { Claude, OpenAI, Gemini } from '@lobehub/icons';
+import { IconCopy } from '@douyinfe/semi-icons';
 
 const { Title, Text } = Typography;
 
@@ -8,11 +10,19 @@ const AvailableModels = () => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('openai');
 
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      Toast.success(t('已复制到剪贴板'));
+    }).catch(() => {
+      Toast.error(t('复制失败'));
+    });
+  };
+
   const modelProviders = [
-        {
+    {
       key: 'claude',
       name: 'Claude',
-      icon: '🔶',
+      icon: <Claude.Color size={20} />,
       color: 'orange',
       models: [
         {
@@ -56,51 +66,27 @@ const AvailableModels = () => {
     {
       key: 'openai',
       name: 'OpenAI',
-      icon: '⚡',
+      icon: <OpenAI size={20} type='color' />,
       color: 'green',
       models: [
         {
-          name: 'gpt-4o',
-          description: '最强推理',
+          name: 'gpt-5',
+          description: '最新旗舰',
           type: '旗舰',
           typeColor: 'orange',
         },
         {
-          name: 'gpt-4o-mini',
-          description: '快速响应',
-          type: '快速',
-          typeColor: 'blue',
-        },
-        {
-          name: 'o1',
-          description: '深度思考',
-          type: '推理',
-          typeColor: 'purple',
-        },
-        {
-          name: 'o1-mini',
-          description: '轻量推理',
-          type: '推理',
-          typeColor: 'purple',
-        },
-        {
-          name: 'gpt-4-turbo',
-          description: '高性能版',
+          name: 'gpt-5.2',
+          description: '企业级推理',
           type: '旗舰',
           typeColor: 'orange',
-        },
-        {
-          name: 'gpt-3.5-turbo',
-          description: '稳定版本',
-          type: '稳定',
-          typeColor: 'cyan',
         },
       ],
     },
     {
       key: 'gemini',
       name: 'Gemini',
-      icon: '⭐',
+      icon: <Gemini.Color size={20} type='color' />,
       color: 'blue',
       models: [
         {
@@ -172,7 +158,7 @@ const AvailableModels = () => {
               key={provider.key}
               tab={
                 <div className='flex items-center gap-2 px-4 py-2'>
-                  <span style={{ fontSize: '20px' }}>{provider.icon}</span>
+                  {provider.icon}
                   <span className='font-semibold'>{provider.name}</span>
                 </div>
               }
@@ -217,15 +203,6 @@ const AvailableModels = () => {
                       <div className='grid grid-cols-3 gap-4 items-center'>
                         {/* 模型名称 */}
                         <div className='flex items-center gap-3'>
-                          <div
-                            className='flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg'
-                            style={{
-                              background: `linear-gradient(135deg, var(--semi-color-${provider.color}-0) 0%, var(--semi-color-${provider.color}-1) 100%)`,
-                              fontSize: '16px',
-                            }}
-                          >
-                            {provider.icon}
-                          </div>
                           <Text
                             strong
                             className='text-sm md:text-base font-mono'
@@ -233,6 +210,25 @@ const AvailableModels = () => {
                           >
                             {model.name}
                           </Text>
+                          <IconCopy
+                            size='default'
+                            style={{ 
+                              cursor: 'pointer',
+                              color: 'var(--semi-color-text-2)',
+                              flexShrink: 0,
+                              fontSize: '18px'
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copyToClipboard(model.name);
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.color = 'var(--semi-color-primary)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.color = 'var(--semi-color-text-2)';
+                            }}
+                          />
                         </div>
 
                         {/* 说明 */}
