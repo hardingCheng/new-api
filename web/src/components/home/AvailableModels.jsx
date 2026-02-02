@@ -8,7 +8,7 @@ const { Title, Text } = Typography;
 
 const AvailableModels = () => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState('openai');
+  const [activeTab, setActiveTab] = useState('claude');
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -38,6 +38,30 @@ const AvailableModels = () => {
           typeColor: 'purple',
         },
         {
+          name: 'claude-opus-4-20250514',
+          description: '旗舰版本',
+          type: '旗舰',
+          typeColor: 'orange',
+        },
+        {
+          name: 'claude-opus-4-20250514-thinking',
+          description: '旗舰思考版',
+          type: '推理',
+          typeColor: 'purple',
+        },
+        {
+          name: 'claude-opus-4-1-20250805',
+          description: '优化版本',
+          type: '旗舰',
+          typeColor: 'orange',
+        },
+        {
+          name: 'claude-opus-4-1-20250805-thinking',
+          description: '优化思考版',
+          type: '推理',
+          typeColor: 'purple',
+        },
+        {
           name: 'claude-sonnet-4-5-20250929',
           description: '性价比之选',
           type: '推荐',
@@ -50,16 +74,22 @@ const AvailableModels = () => {
           typeColor: 'purple',
         },
         {
+          name: 'claude-sonnet-4-20250514',
+          description: '均衡版本',
+          type: '推荐',
+          typeColor: 'green',
+        },
+        {
           name: 'claude-haiku-4-5-20251001',
           description: '快速响应',
           type: '快速',
           typeColor: 'blue',
         },
         {
-          name: 'claude-3-7-sonnet-20250219',
-          description: '稳定版本',
-          type: '稳定',
-          typeColor: 'cyan',
+          name: 'claude-haiku-4-5-20251001-thinking',
+          description: '快速思考版',
+          type: '推理',
+          typeColor: 'purple',
         },
       ],
     },
@@ -74,6 +104,24 @@ const AvailableModels = () => {
           description: '最新旗舰',
           type: '旗舰',
           typeColor: 'orange',
+        },
+        {
+          name: 'gpt-5-codex',
+          description: '代码专用',
+          type: '代码',
+          typeColor: 'purple',
+        },
+        {
+          name: 'gpt-5.1',
+          description: '增强版本',
+          type: '旗舰',
+          typeColor: 'orange',
+        },
+        {
+          name: 'gpt-5.1-codex',
+          description: '代码增强版',
+          type: '代码',
+          typeColor: 'purple',
         },
         {
           name: 'gpt-5.2',
@@ -96,20 +144,26 @@ const AvailableModels = () => {
           typeColor: 'orange',
         },
         {
-          name: 'gemini-2.5-flash',
-          description: '快速版',
+          name: 'gemini-3-flash-preview',
+          description: '快速预览版',
           type: '快速',
           typeColor: 'blue',
         },
         {
-          name: 'gemini-3-pro-image-preview',
-          description: '图像生成',
-          type: '图像',
-          typeColor: 'pink',
+          name: 'gemini-3-flash-preview-thinking',
+          description: '快速思考版',
+          type: '推理',
+          typeColor: 'purple',
+        },
+        {
+          name: 'gemini-3-pro-preview',
+          description: '专业预览版',
+          type: '旗舰',
+          typeColor: 'orange',
         },
         {
           name: 'gemini-3-pro-preview-thinking',
-          description: '思考版',
+          description: '专业思考版',
           type: '推理',
           typeColor: 'purple',
         },
