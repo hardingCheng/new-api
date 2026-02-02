@@ -1,0 +1,23 @@
+# 开发模式快速构建脚本
+
+.PHONY: build-go build-web build-all restart
+
+# 只构建前端（最常用）
+build-web:
+	@echo "构建前端..."
+	cd web && bun install && bun run build
+	@echo "前端构建完成！容器会自动使用新的静态文件"
+
+# 只构建后端
+build-go:
+	@echo "构建 Go 后端..."
+	go build -ldflags "-s -w -X 'github.com/QuantumNous/new-api/common.Version=$(cat VERSION)'" -o new-api
+	@echo "后端构建完成！需要重启容器: docker-compose -f docker-compose.dev.yml restart"
+
+# 构建全部
+build-all: build-web build-go
+	@echo "全部构建完成！"
+
+# 重启容器（前端更新后无需重启，后端更新后需要）
+restart:
+	docker-compose -f docker-compose.dev.yml restart
