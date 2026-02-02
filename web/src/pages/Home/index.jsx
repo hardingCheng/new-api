@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState, useRef } from 'react';
 import { API, showError, copy, showSuccess } from '../../helpers';
 import { useIsMobile } from '../../hooks/common/useIsMobile';
 import { API_ENDPOINTS } from '../../constants/common.constant';
@@ -31,7 +31,6 @@ import PricingComparison from '../../components/home/PricingComparison';
 import ContactUs from '../../components/home/ContactUs';
 import AvailableModels from '../../components/home/AvailableModels';
 import HeroBanner from '../../components/home/HeroBanner';
-import TechBackground from '../../components/home/TechBackground';
 
 const Home = () => {
   const { t, i18n } = useTranslation();
@@ -48,6 +47,7 @@ const Home = () => {
   const endpointItems = API_ENDPOINTS.map((e) => ({ value: e }));
   const [endpointIndex, setEndpointIndex] = useState(0);
   const isChinese = i18n.language.startsWith('zh');
+  const contactUsRef = useRef(null);
 
   const displayHomePageContent = async () => {
     setHomePageContent(localStorage.getItem('home_page_content') || '');
@@ -83,6 +83,13 @@ const Home = () => {
     if (ok) {
       showSuccess(t('已复制到剪切板'));
     }
+  };
+
+  const scrollToContactUs = () => {
+    contactUsRef.current?.scrollIntoView({ 
+      behavior: 'smooth',
+      block: 'start'
+    });
   };
 
   useEffect(() => {
@@ -140,6 +147,7 @@ const Home = () => {
               docsLink={docsLink}
               isMobile={isMobile}
               isChinese={isChinese}
+              onScrollToContact={scrollToContactUs}
             />
 
             {/* 价格对比 */}
@@ -152,7 +160,9 @@ const Home = () => {
             <OurAdvantages />
 
             {/* 联系我们 */}
-            <ContactUs />
+            <div ref={contactUsRef}>
+              <ContactUs />
+            </div>
           </div>
         ) : (
           <div className='overflow-x-hidden w-full'>

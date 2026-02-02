@@ -6,6 +6,7 @@ import {
   IconPlay,
   IconGithubLogo,
   IconFile,
+  IconChevronDown,
 } from '@douyinfe/semi-icons';
 import { useTranslation } from 'react-i18next';
 
@@ -20,6 +21,7 @@ const HeroBanner = ({
   docsLink,
   isMobile,
   isChinese,
+  onScrollToContact,
 }) => {
   const { t } = useTranslation();
 
@@ -41,9 +43,8 @@ const HeroBanner = ({
               className={`text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-semi-color-text-0 leading-tight ${isChinese ? 'tracking-wide md:tracking-wider' : ''} animate-fade-in-up`}
             >
               <>
-                {t('智链 AI')}
-                <br />
-                <span className='shine-text gradient-text'>{t('AI 模型统一接入平台')}</span>
+              <div className='mb-3'> {t('智链 AI')}</div>
+              <div className='shine-text gradient-text mt-3 whitespace-nowrap'>{t('让每个开发者用上最好的 AI')}</div>
               </>
             </h1>
             <p className='text-base md:text-lg lg:text-xl text-semi-color-text-1 mt-4 md:mt-6 max-w-xl animate-fade-in-up animation-delay-200'>
@@ -126,6 +127,23 @@ const HeroBanner = ({
 
           {/* 框架兼容性图标 */}
           {/* <ProviderIcons /> */}
+
+          {/* 滚动到联系我们按钮 */}
+          {onScrollToContact && (
+            <div className='mt-8 md:mt-12 animate-fade-in-up animation-delay-800'>
+              <Button
+                type='primary'
+                size={isMobile ? 'default' : 'large'}
+                className='!rounded-full animate-bounce-slow group transition-all duration-300 hover:scale-110 contact-button-glow'
+                icon={
+                  <IconChevronDown className='group-hover:animate-bounce transition-transform' />
+                }
+                onClick={onScrollToContact}
+              >
+                {t('联系我们')}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </div>
