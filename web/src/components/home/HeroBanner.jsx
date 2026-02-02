@@ -41,7 +41,7 @@ const HeroBanner = ({
               className={`text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-semi-color-text-0 leading-tight ${isChinese ? 'tracking-wide md:tracking-wider' : ''} animate-fade-in-up`}
             >
               <>
-                {t('企业级')}
+                {t('智链 AI')}
                 <br />
                 <span className='shine-text gradient-text'>{t('AI 模型统一接入平台')}</span>
               </>
