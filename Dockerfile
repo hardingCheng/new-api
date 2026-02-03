@@ -1,11 +1,15 @@
 FROM oven/bun:latest AS builder
 
+# 设置 Node.js 内存限制（根据服务器配置调整，这里设置为 2GB）
+ENV NODE_OPTIONS="--max-old-space-size=2048"
+
 WORKDIR /build
 COPY web/package.json .
 COPY web/bun.lock .
 RUN bun install
 COPY ./web .
 COPY ./VERSION .
+# 使用更少的内存进行构建
 RUN DISABLE_ESLINT_PLUGIN='true' VITE_REACT_APP_VERSION=$(cat VERSION) bun run build
 
 FROM golang:alpine AS builder2
