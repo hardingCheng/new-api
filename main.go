@@ -133,6 +133,18 @@ func main() {
 		common.SysError(fmt.Sprintf("start pyroscope error : %v", err))
 	}
 
+	// 检查是否设置了外部前端路径
+	externalFrontendPath := os.Getenv("FRONTEND_PATH")
+	if externalFrontendPath != "" {
+		// 检查路径是否存在
+		if _, err := os.Stat(externalFrontendPath); err == nil {
+			common.SysLog("using external frontend path: " + externalFrontendPath)
+		} else {
+			common.SysLog("external frontend path not found, fallback to embedded frontend: " + externalFrontendPath)
+			externalFrontendPath = ""
+		}
+	}
+
 	// Initialize HTTP server
 	server := gin.New()
 	server.Use(gin.CustomRecovery(func(c *gin.Context, err any) {
@@ -164,7 +176,7 @@ func main() {
 	InjectGoogleAnalytics()
 
 	// 设置路由
-	router.SetRouter(server, buildFS, indexPage)
+	router.SetRouter(server, buildFS, indexPage, externalFrontendPath)
 	var port = os.Getenv("PORT")
 	if port == "" {
 		port = strconv.Itoa(*common.Port)
