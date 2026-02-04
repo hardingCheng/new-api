@@ -255,9 +255,70 @@ func SendEmailVerification(c *gin.Context) {
 	code := common.GenerateVerificationCode(6)
 	common.RegisterVerificationCodeWithKey(email, code, common.EmailVerificationPurpose)
 	subject := fmt.Sprintf("%s邮箱验证邮件", common.SystemName)
-	content := fmt.Sprintf("<p>您好，你正在进行%s邮箱验证。</p>"+
-		"<p>您的验证码为: <strong>%s</strong></p>"+
-		"<p>验证码 %d 分钟内有效，如果不是本人操作，请忽略。</p>", common.SystemName, code, common.VerificationValidMinutes)
+	content := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); }
+        .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .header { background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); padding: 40px 20px; text-align: center; position: relative; overflow: hidden; }
+        .header::before { content: ''; position: absolute; top: -50%%; left: -50%%; width: 200%%; height: 200%%; background: radial-gradient(circle, rgba(255,255,255,0.1) 0%%, transparent 70%%); animation: pulse 4s ease-in-out infinite; }
+        @keyframes pulse { 0%%, 100%% { transform: scale(1); opacity: 0.5; } 50%% { transform: scale(1.1); opacity: 0.8; } }
+        .logo { font-size: 32px; font-weight: 700; color: #ffffff; margin: 0; position: relative; z-index: 1; letter-spacing: 1px; text-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        .subtitle { font-size: 16px; color: rgba(255,255,255,0.95); margin: 10px 0 0 0; position: relative; z-index: 1; font-weight: 300; }
+        .content { padding: 40px 30px; }
+        .greeting { font-size: 18px; color: #333333; margin-bottom: 20px; font-weight: 500; }
+        .message { font-size: 15px; color: #666666; line-height: 1.6; margin-bottom: 30px; }
+        .code-container { background: linear-gradient(135deg, #f5f7fa 0%%, #e8ecf1 100%%); border-radius: 12px; padding: 30px; text-align: center; margin: 30px 0; border: 2px solid #e1e8ed; position: relative; overflow: hidden; }
+        .code-container::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #667eea, #764ba2, #667eea); }
+        .code-label { font-size: 13px; color: #8b95a5; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+        .code { font-size: 36px; font-weight: 700; color: #667eea; letter-spacing: 8px; font-family: 'Courier New', monospace; text-shadow: 0 2px 4px rgba(102,126,234,0.2); }
+        .warning { display: flex; align-items: center; background: #fff9e6; border-left: 4px solid #ffc107; padding: 15px; border-radius: 8px; margin: 25px 0; }
+        .warning-icon { font-size: 20px; margin-right: 12px; }
+        .warning-text { font-size: 14px; color: #856404; line-height: 1.5; }
+        .expiry { display: flex; align-items: center; justify-content: center; font-size: 14px; color: #8b95a5; margin-top: 20px; }
+        .expiry-icon { margin-right: 8px; font-size: 16px; }
+        .footer { background: #f8f9fa; padding: 30px; text-align: center; border-top: 1px solid #e9ecef; }
+        .footer-text { font-size: 13px; color: #8b95a5; margin: 5px 0; line-height: 1.6; }
+        .footer-brand { font-size: 14px; color: #667eea; margin-top: 15px; font-weight: 600; }
+        .ai-badge { display: inline-block; background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); color: white; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; margin-left: 8px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="logo">%s<span class="ai-badge">AI</span></h1>
+            <p class="subtitle">邮箱验证</p>
+        </div>
+        <div class="content">
+            <div class="greeting">您好，</div>
+            <div class="message">
+                您正在进行 <strong>%s</strong> 邮箱验证，请使用以下验证码完成验证：
+            </div>
+            <div class="code-container">
+                <div class="code-label">验证码</div>
+                <div class="code">%s</div>
+                <div class="expiry">
+                    <span class="expiry-icon">⏱</span>
+                    <span>验证码 %d 分钟内有效</span>
+                </div>
+            </div>
+            <div class="warning">
+                <span class="warning-icon">⚠️</span>
+                <span class="warning-text">如果这不是您本人的操作，请忽略此邮件</span>
+            </div>
+        </div>
+        <div class="footer">
+            <p class="footer-text">此邮件由系统自动发送，请勿直接回复</p>
+            <p class="footer-brand">© %s</p>
+        </div>
+    </div>
+</body>
+</html>
+`, common.SystemName, common.SystemName, code, common.VerificationValidMinutes, common.SystemName)
 	err := common.SendEmail(subject, email, content)
 	if err != nil {
 		common.ApiError(c, err)
@@ -290,10 +351,79 @@ func SendPasswordResetEmail(c *gin.Context) {
 	common.RegisterVerificationCodeWithKey(email, code, common.PasswordResetPurpose)
 	link := fmt.Sprintf("%s/user/reset?email=%s&token=%s", system_setting.ServerAddress, email, code)
 	subject := fmt.Sprintf("%s密码重置", common.SystemName)
-	content := fmt.Sprintf("<p>您好，你正在进行%s密码重置。</p>"+
-		"<p>点击 <a href='%s'>此处</a> 进行密码重置。</p>"+
-		"<p>如果链接无法点击，请尝试点击下面的链接或将其复制到浏览器中打开：<br> %s </p>"+
-		"<p>重置链接 %d 分钟内有效，如果不是本人操作，请忽略。</p>", common.SystemName, link, link, common.VerificationValidMinutes)
+	content := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); }
+        .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .header { background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); padding: 40px 20px; text-align: center; position: relative; overflow: hidden; }
+        .header::before { content: ''; position: absolute; top: -50%%; left: -50%%; width: 200%%; height: 200%%; background: radial-gradient(circle, rgba(255,255,255,0.1) 0%%, transparent 70%%); animation: pulse 4s ease-in-out infinite; }
+        @keyframes pulse { 0%%, 100%% { transform: scale(1); opacity: 0.5; } 50%% { transform: scale(1.1); opacity: 0.8; } }
+        .logo { font-size: 32px; font-weight: 700; color: #ffffff; margin: 0; position: relative; z-index: 1; letter-spacing: 1px; text-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        .subtitle { font-size: 16px; color: rgba(255,255,255,0.95); margin: 10px 0 0 0; position: relative; z-index: 1; font-weight: 300; }
+        .content { padding: 40px 30px; }
+        .greeting { font-size: 18px; color: #333333; margin-bottom: 20px; font-weight: 500; }
+        .message { font-size: 15px; color: #666666; line-height: 1.6; margin-bottom: 30px; }
+        .button-container { text-align: center; margin: 35px 0; }
+        .reset-button { display: inline-block; background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 30px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 15px rgba(102,126,234,0.4); transition: all 0.3s ease; }
+        .reset-button:hover { box-shadow: 0 6px 20px rgba(102,126,234,0.6); transform: translateY(-2px); }
+        .link-container { background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 25px 0; border: 1px solid #e9ecef; }
+        .link-label { font-size: 13px; color: #8b95a5; margin-bottom: 10px; font-weight: 600; }
+        .link-text { font-size: 13px; color: #667eea; word-break: break-all; line-height: 1.6; }
+        .warning { display: flex; align-items: center; background: #fff9e6; border-left: 4px solid #ffc107; padding: 15px; border-radius: 8px; margin: 25px 0; }
+        .warning-icon { font-size: 20px; margin-right: 12px; }
+        .warning-text { font-size: 14px; color: #856404; line-height: 1.5; }
+        .expiry { display: flex; align-items: center; justify-content: center; font-size: 14px; color: #8b95a5; margin-top: 20px; }
+        .expiry-icon { margin-right: 8px; font-size: 16px; }
+        .footer { background: #f8f9fa; padding: 30px; text-align: center; border-top: 1px solid #e9ecef; }
+        .footer-text { font-size: 13px; color: #8b95a5; margin: 5px 0; line-height: 1.6; }
+        .footer-brand { font-size: 14px; color: #667eea; margin-top: 15px; font-weight: 600; }
+        .ai-badge { display: inline-block; background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); color: white; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; margin-left: 8px; }
+        .security-icon { font-size: 48px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="logo">%s<span class="ai-badge">AI</span></h1>
+            <p class="subtitle">密码重置</p>
+        </div>
+        <div class="content">
+            <div style="text-align: center;">
+                <div class="security-icon">🔐</div>
+            </div>
+            <div class="greeting">您好，</div>
+            <div class="message">
+                您正在进行 <strong>%s</strong> 密码重置。点击下方按钮即可重置您的密码：
+            </div>
+            <div class="button-container">
+                <a href="%s" class="reset-button">重置密码</a>
+            </div>
+            <div class="link-container">
+                <div class="link-label">如果按钮无法点击，请复制以下链接到浏览器中打开：</div>
+                <div class="link-text">%s</div>
+            </div>
+            <div class="expiry">
+                <span class="expiry-icon">⏱</span>
+                <span>重置链接 %d 分钟内有效</span>
+            </div>
+            <div class="warning">
+                <span class="warning-icon">⚠️</span>
+                <span class="warning-text">如果这不是您本人的操作，请忽略此邮件并确保您的账户安全</span>
+            </div>
+        </div>
+        <div class="footer">
+            <p class="footer-text">此邮件由系统自动发送，请勿直接回复</p>
+            <p class="footer-brand">© %s</p>
+        </div>
+    </div>
+</body>
+</html>
+`, common.SystemName, common.SystemName, link, link, common.VerificationValidMinutes, common.SystemName)
 	err := common.SendEmail(subject, email, content)
 	if err != nil {
 		common.ApiError(c, err)
