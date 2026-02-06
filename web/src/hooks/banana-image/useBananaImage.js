@@ -465,10 +465,22 @@ export const useBananaImage = () => {
               candidate.content.parts.forEach((part, subIndex) => {
                 if (part.inlineData && part.inlineData.mimeType && part.inlineData.data) {
                   const mimeType = part.inlineData.mimeType;
-                  const base64Data = part.inlineData.data;
+                  let base64Data = part.inlineData.data;
+                  
+                  // 如果 base64 数据已经包含 data: 前缀，直接使用
+                  // 否则构建完整的 data URL
+                  let imageUrl;
+                  if (base64Data.startsWith('data:')) {
+                    imageUrl = base64Data;
+                  } else {
+                    // 确保 base64 数据不包含换行符和空格
+                    base64Data = base64Data.replace(/\s/g, '');
+                    imageUrl = `data:${mimeType};base64,${base64Data}`;
+                  }
+                  
                   images.push({
                     id: `${Date.now()}-${index}-${subIndex}`,
-                    url: `data:${mimeType};base64,${base64Data}`,
+                    url: imageUrl,
                     revisedPrompt: null,
                   });
                 }
