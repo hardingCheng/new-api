@@ -36,9 +36,9 @@ export const IMAGE_MODEL_PREFIXES = [
 
 // 默认图像生成模型列表（当无法从API获取时使用）
 export const DEFAULT_IMAGE_MODELS = [
-  'gemini-2.5-flash-image',
-  'gemini-2.5-flash-image-preview',
   'gemini-3-pro-image-preview',
+  'gemini-2.5-flash-image-preview',
+  'gemini-2.5-flash-image',
 ];
 
 // 分辨率选项

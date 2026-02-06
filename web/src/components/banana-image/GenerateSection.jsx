@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Button, Typography } from '@douyinfe/semi-ui';
+import { Button, Typography, Toast } from '@douyinfe/semi-ui';
 import { IconImage } from '@douyinfe/semi-icons';
 
 const { Text } = Typography;
@@ -29,7 +29,48 @@ const GenerateSection = ({
   disabled,
   currentSize,
   numberOfImages,
+  prompt,
+  selectedModel,
+  selectedToken,
 }) => {
+  const getDisabledReason = () => {
+    const reasons = [];
+    if (!selectedToken) {
+      reasons.push('请选择令牌');
+    }
+    if (!selectedModel) {
+      reasons.push('请选择模型');
+    }
+    if (!prompt?.trim()) {
+      reasons.push('请输入提示词');
+    }
+    return reasons;
+  };
+
+  const handleClick = () => {
+    if (disabled && !isGenerating) {
+      const reasons = getDisabledReason();
+      if (reasons.length > 0) {
+        Toast.warning({
+          content: (
+            <div>
+              <div className='font-semibold mb-1'>无法生成图像</div>
+              <div>必填项：</div>
+              <ul className='list-disc list-inside mt-1'>
+                {reasons.map((reason, index) => (
+                  <li key={index}>{reason}</li>
+                ))}
+              </ul>
+            </div>
+          ),
+          duration: 3,
+        });
+      }
+    } else if (!disabled && !isGenerating) {
+      onGenerate();
+    }
+  };
+
   return (
     <div className='mb-6'>
       <div className='flex flex-col sm:flex-row items-stretch sm:items-center gap-4'>
@@ -39,9 +80,10 @@ const GenerateSection = ({
           size='large'
           icon={<IconImage />}
           loading={isGenerating}
-          disabled={disabled || isGenerating}
-          onClick={onGenerate}
+          disabled={isGenerating}
+          onClick={handleClick}
           className='flex-1 sm:flex-none sm:min-w-[200px] h-12'
+          style={disabled && !isGenerating ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
         >
           {isGenerating ? '生成中...' : '🍌 生成图像'}
         </Button>

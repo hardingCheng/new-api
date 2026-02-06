@@ -123,7 +123,7 @@ const HistoryModal = ({
       if (record.images && record.images.length > 0) {
         for (let i = 0; i < record.images.length; i++) {
           const img = record.images[i];
-          const filename = `banana-image-${record.id}-${i + 1}.png`;
+          const filename = `zlai-image-${record.id}-${i + 1}.png`;
           const success = await downloadImage(img.url, filename);
           if (success) {
             exportedCount++;
@@ -182,93 +182,11 @@ const HistoryModal = ({
       visible={visible}
       onCancel={onClose}
       footer={null}
-      width={800}
+      width='90vw'
+      style={{ maxWidth: '800px' }}
       bodyStyle={{ padding: 0, height: '70vh' }}
-      title={
-        <div className='flex items-center justify-between pr-4'>
-          <span>历史记录</span>
-          {activeTab === 'history' && records.length > 0 && (
-            <div className='flex items-center gap-2'>
-              {isSelectionMode ? (
-                <>
-                  <Button
-                    size='small'
-                    theme='borderless'
-                    onClick={selectAll}
-                    disabled={selectedIds.length === filteredRecords.length}
-                  >
-                    全选
-                  </Button>
-                  <Button
-                    size='small'
-                    theme='borderless'
-                    onClick={invertSelection}
-                  >
-                    反选
-                  </Button>
-                  <Button
-                    size='small'
-                    theme='borderless'
-                    icon={<IconDownload />}
-                    onClick={handleBatchExport}
-                    disabled={selectedIds.length === 0}
-                  >
-                    导出 ({selectedIds.length})
-                  </Button>
-                  <Popconfirm
-                    title='确定要删除选中的记录吗？'
-                    content='此操作不可恢复'
-                    onConfirm={handleBatchDelete}
-                  >
-                    <Button
-                      size='small'
-                      theme='borderless'
-                      type='danger'
-                      icon={<IconDelete />}
-                      disabled={selectedIds.length === 0}
-                    >
-                      删除 ({selectedIds.length})
-                    </Button>
-                  </Popconfirm>
-                  <Button
-                    size='small'
-                    onClick={toggleSelectionMode}
-                  >
-                    取消
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    size='small'
-                    theme='borderless'
-                    onClick={toggleSelectionMode}
-                  >
-                    批量操作
-                  </Button>
-                  <Popconfirm
-                    title='确定要清空所有历史记录吗？'
-                    content='此操作不可恢复'
-                    onConfirm={() => {
-                      onClear();
-                      Toast.success('已清空历史记录');
-                    }}
-                  >
-                    <Button
-                      icon={<IconDeleteStroked />}
-                      theme='borderless'
-                      type='danger'
-                      size='small'
-                    >
-                      清空
-                    </Button>
-                  </Popconfirm>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      }
+      fullScreen={window.innerWidth < 768}
+      title='历史记录'
     >
       <Tabs
         activeKey={activeTab}
@@ -320,8 +238,8 @@ const HistoryModal = ({
               </div>
             ) : (
               <>
-                {/* 搜索框 */}
-                <div className='p-4 pb-2 sticky top-0 bg-[var(--semi-color-bg-0)] z-10'>
+                {/* 搜索框和操作区域 */}
+                <div className='p-4 pb-2 sticky top-0 bg-[var(--semi-color-bg-0)] z-10 space-y-3'>
                   <Input
                     prefix={<IconSearch />}
                     placeholder='搜索提示词...'
@@ -329,19 +247,92 @@ const HistoryModal = ({
                     onChange={setSearchText}
                     showClear
                   />
+                  
+                  {/* 操作按钮区域 */}
+                  <div className='flex items-center gap-2 p-3 bg-[var(--semi-color-fill-0)] rounded-lg border border-[var(--semi-color-border)]'>
+                    <Text type='tertiary' size='small' className='mr-2'>
+                      操作：
+                    </Text>
+                    
+                    <Button
+                      size='small'
+                      theme='borderless'
+                      onClick={toggleSelectionMode}
+                      type={isSelectionMode ? 'primary' : 'tertiary'}
+                    >
+                      {isSelectionMode ? '✓ 批量选择' : '批量选择'}
+                    </Button>
+                    
+                    {isSelectionMode && (
+                      <>
+                        <Button
+                          size='small'
+                          theme='borderless'
+                          onClick={selectAll}
+                          disabled={selectedIds.length === filteredRecords.length}
+                        >
+                          全选
+                        </Button>
+                        <Button
+                          size='small'
+                          theme='borderless'
+                          onClick={invertSelection}
+                        >
+                          反选
+                        </Button>
+                      </>
+                    )}
+                    
+                    <div className='flex-1' />
+                    
+                    <Button
+                      size='small'
+                      theme='borderless'
+                      icon={<IconDownload />}
+                      onClick={handleBatchExport}
+                      disabled={!isSelectionMode || selectedIds.length === 0}
+                    >
+                      导出 {isSelectionMode && selectedIds.length > 0 && `(${selectedIds.length})`}
+                    </Button>
+                    
+                    <Popconfirm
+                      title={isSelectionMode ? '确定要删除选中的记录吗？' : '确定要清空所有历史记录吗？'}
+                      content='此操作不可恢复'
+                      onConfirm={() => {
+                        if (isSelectionMode) {
+                          handleBatchDelete();
+                        } else {
+                          onClear();
+                          Toast.success('已清空历史记录');
+                        }
+                      }}
+                    >
+                      <Button
+                        size='small'
+                        theme='borderless'
+                        type='danger'
+                        icon={isSelectionMode ? <IconDelete /> : <IconDeleteStroked />}
+                        disabled={isSelectionMode && selectedIds.length === 0}
+                      >
+                        {isSelectionMode 
+                          ? `删除 ${selectedIds.length > 0 ? `(${selectedIds.length})` : ''}` 
+                          : '清空全部'}
+                      </Button>
+                    </Popconfirm>
+                  </div>
                 </div>
 
                 {/* 记录列表 */}
                 {filteredRecords.length === 0 ? (
-                  <div className='p-8'>
+                  <div className='p-4 md:p-8'>
                     <Empty
-                      image={<div className='text-4xl'>🔍</div>}
+                      image={<div className='text-3xl md:text-4xl'>🔍</div>}
                       title='未找到匹配的记录'
                       description='尝试使用其他关键词搜索'
                     />
                   </div>
                 ) : (
-                  <div className='p-4 pt-2 grid grid-cols-1 md:grid-cols-2 gap-4'>
+                  <div className='p-3 md:p-4 pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4'>
                     {filteredRecords.map((record) => (
                       <HistoryCard
                         key={record.id}
@@ -414,7 +405,7 @@ const HistoryCard = ({
     >
       {/* 缩略图 */}
       <div
-        className='relative w-full h-40 bg-[var(--semi-color-fill-1)] cursor-pointer'
+        className='relative w-full h-32 sm:h-40 bg-[var(--semi-color-fill-1)] cursor-pointer'
         onClick={handleCardClick}
       >
         {thumbnailUrl ? (

@@ -202,13 +202,34 @@ export const useBananaImage = () => {
 
       // 辅助函数：设置模型选项
       const setModelOptions = (modelOptions) => {
+        // 按照 DEFAULT_IMAGE_MODELS 的顺序对模型进行排序
+        const sortedModelOptions = [...modelOptions].sort((a, b) => {
+          const indexA = DEFAULT_IMAGE_MODELS.indexOf(a.value);
+          const indexB = DEFAULT_IMAGE_MODELS.indexOf(b.value);
+          
+          // 如果两个模型都在默认列表中，按默认列表顺序排序
+          if (indexA !== -1 && indexB !== -1) {
+            return indexA - indexB;
+          }
+          // 如果只有 a 在默认列表中，a 排在前面
+          if (indexA !== -1) {
+            return -1;
+          }
+          // 如果只有 b 在默认列表中，b 排在前面
+          if (indexB !== -1) {
+            return 1;
+          }
+          // 如果都不在默认列表中，保持原顺序
+          return 0;
+        });
+        
         updateFields({
-          availableModels: modelOptions,
+          availableModels: sortedModelOptions,
           modelsLoading: false,
           selectedModel:
-            modelOptions.some((m) => m.value === state.selectedModel) && state.selectedModel
+            sortedModelOptions.some((m) => m.value === state.selectedModel) && state.selectedModel
               ? state.selectedModel
-              : modelOptions[0]?.value || '',
+              : sortedModelOptions[0]?.value || '',
         });
       };
 
