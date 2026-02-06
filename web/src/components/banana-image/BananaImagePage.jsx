@@ -73,12 +73,12 @@ const BananaImagePage = () => {
 
   return (
     <Layout className='h-full bg-transparent'>
-      <div className='h-[calc(100vh-66px)] mt-[60px] flex flex-col lg:flex-row'>
+      <div className='h-full flex flex-col lg:flex-row'>
         {/* 左侧：参数配置区 */}
         <div
           className={`
             ${isMobile ? 'w-full' : 'w-[420px] flex-shrink-0'}
-            h-full overflow-auto border-r border-[var(--semi-color-border)]
+            h-full overflow-y-auto border-r border-[var(--semi-color-border)]
             bg-[var(--semi-color-bg-0)]
           `}
         >
@@ -150,7 +150,7 @@ const BananaImagePage = () => {
         </div>
 
         {/* 右侧：结果展示区 */}
-        <div className='flex-1 h-full overflow-auto bg-[var(--semi-color-bg-1)]'>
+        <div className='flex-1 h-full overflow-y-auto bg-[var(--semi-color-bg-1)]'>
           <div className='h-full p-4 md:p-6'>
             <ResultSection
               status={generationStatus}

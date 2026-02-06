@@ -23,7 +23,7 @@ import BananaImagePage from '../../components/banana-image/BananaImagePage';
 
 const BananaImage = () => {
   return (
-    <Layout className='h-full'>
+    <Layout className='h-full overflow-hidden'>
       <BananaImagePage />
     </Layout>
   );
