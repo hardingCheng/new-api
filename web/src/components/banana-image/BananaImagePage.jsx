@@ -58,6 +58,7 @@ const BananaImagePage = () => {
     historyRecords,
     currentSize,
     cacheStats,
+    generationStartTime,
 
     // 更新方法
     updateField,
@@ -168,6 +169,7 @@ const BananaImagePage = () => {
               onSelectImage={(index) => updateField('selectedImageIndex', index)}
               onReset={resetGeneration}
               prompt={prompt}
+              startTime={generationStartTime}
             />
           </div>
         </div>

@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Typography,
   Spin,
@@ -46,9 +46,28 @@ const ResultSection = ({
   onSelectImage,
   onReset,
   prompt,
+  startTime,
 }) => {
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewSrc, setPreviewSrc] = useState('');
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // 计时器效果
+  useEffect(() => {
+    if (status === GENERATION_STATUS.LOADING && startTime) {
+      // 立即更新一次
+      setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
+      
+      // 每秒更新一次
+      const timer = setInterval(() => {
+        setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
+      }, 1000);
+
+      return () => clearInterval(timer);
+    } else {
+      setElapsedSeconds(0);
+    }
+  }, [status, startTime]);
 
   const selectedImage = images[selectedIndex];
 
@@ -112,6 +131,12 @@ const ResultSection = ({
             <Text type='tertiary' size='small' className='mt-2'>
               这可能需要几秒到几十秒不等
             </Text>
+            <div className='mt-4 flex items-center justify-center gap-2'>
+              <Text type='secondary' className='text-2xl font-mono font-bold'>
+                {elapsedSeconds}
+              </Text>
+              <Text type='tertiary'>秒</Text>
+            </div>
           </div>
         </div>
       </div>

@@ -79,6 +79,7 @@ const defaultState = {
   generationError: null,
   generatedImages: [],
   selectedImageIndex: 0,
+  generationStartTime: null, // 生成开始时间
 
   // 历史记录
   historyRecords: [],
@@ -419,6 +420,7 @@ export const useBananaImage = () => {
     updateFields({
       generationStatus: GENERATION_STATUS.LOADING,
       generationError: null,
+      generationStartTime: Date.now(),
     });
 
     try {
@@ -648,6 +650,7 @@ export const useBananaImage = () => {
           generationStatus: GENERATION_STATUS.SUCCESS,
           generatedImages: images,
           selectedImageIndex: 0,
+          generationStartTime: null,
         });
 
         Toast.success('图像生成成功');
@@ -661,6 +664,7 @@ export const useBananaImage = () => {
       updateFields({
         generationStatus: GENERATION_STATUS.ERROR,
         generationError: errorMessage,
+        generationStartTime: null,
       });
 
       Toast.error(errorMessage);
@@ -686,6 +690,7 @@ export const useBananaImage = () => {
       generationError: null,
       generatedImages: [],
       selectedImageIndex: 0,
+      generationStartTime: null,
     });
   }, [updateFields]);
 
