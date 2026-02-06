@@ -40,6 +40,7 @@ const routerMap = {
   subscription: '/console/subscription',
   log: '/console/log',
   midjourney: '/console/midjourney',
+  bananaImage: '/console/banana-image',
   setting: '/console/setting',
   about: '/about',
   detail: '/console',
@@ -70,6 +71,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
 
   const workspaceItems = useMemo(() => {
     const items = [
+      {
+        text: t('香蕉生图'),
+        itemKey: 'bananaImage',
+        to: '/banana-image',
+      },
       {
         text: t('数据看板'),
         itemKey: 'detail',

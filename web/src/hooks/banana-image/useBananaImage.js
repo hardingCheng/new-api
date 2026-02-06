@@ -28,6 +28,11 @@ import {
   calculateImageSize,
   DEFAULT_IMAGE_MODELS,
 } from '../../constants/banana-image.constants';
+import {
+  saveImageToCache,
+  getCacheStats,
+  cleanupCache,
+} from '../../utils/imageCache';
 
 // 获取服务器地址
 const getServerAddress = () => {
@@ -76,6 +81,13 @@ const defaultState = {
 
   // 历史记录
   historyRecords: [],
+
+  // 缓存统计
+  cacheStats: {
+    count: 0,
+    totalSize: 0,
+    oldestTimestamp: Date.now(),
+  },
 };
 
 // 初始状态（从本地存储恢复）
@@ -309,6 +321,17 @@ export const useBananaImage = () => {
   useEffect(() => {
     loadHistory();
   }, [loadHistory]);
+
+  // 加载缓存统计
+  const loadCacheStats = useCallback(async () => {
+    const stats = await getCacheStats();
+    updateField('cacheStats', stats);
+  }, [updateField]);
+
+  // 初始加载缓存统计
+  useEffect(() => {
+    loadCacheStats();
+  }, [loadCacheStats]);
 
   // 保存历史记录
   const saveHistory = useCallback((records) => {
@@ -547,9 +570,21 @@ export const useBananaImage = () => {
       }
 
       if (images.length > 0) {
+        // 保存图片到 IndexedDB
+        const recordId = Date.now().toString();
+        for (let i = 0; i < images.length; i++) {
+          const img = images[i];
+          const imageId = `${recordId}-${i}`;
+          await saveImageToCache(imageId, img.url, {
+            prompt: state.prompt,
+            model: state.selectedModel,
+            timestamp: Date.now(),
+          });
+        }
+
         // 添加到历史记录
         const historyRecord = {
-          id: Date.now().toString(),
+          id: recordId,
           timestamp: Date.now(),
           prompt: state.prompt,
           negativePrompt: state.negativePrompt,
@@ -565,6 +600,9 @@ export const useBananaImage = () => {
           status: 'success',
         };
         addHistoryRecord(historyRecord);
+
+        // 更新缓存统计
+        await loadCacheStats();
 
         updateFields({
           generationStatus: GENERATION_STATUS.SUCCESS,
@@ -632,5 +670,8 @@ export const useBananaImage = () => {
     deleteHistoryRecord,
     clearHistory,
     loadFromHistory,
+
+    // 缓存方法
+    loadCacheStats,
   };
 };

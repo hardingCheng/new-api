@@ -33,6 +33,7 @@ import {
   IconExpand,
 } from '@douyinfe/semi-icons';
 import { GENERATION_STATUS } from '../../constants/banana-image.constants';
+import { downloadImage } from '../../utils/imageCache';
 
 const { Text, Title } = Typography;
 
@@ -52,20 +53,11 @@ const ResultSection = ({
 
   // 下载图像
   const handleDownload = async (url, index) => {
-    try {
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const downloadUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = `banana-image-${Date.now()}-${index + 1}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(downloadUrl);
+    const filename = `banana-image-${Date.now()}-${index + 1}.png`;
+    const success = await downloadImage(url, filename);
+    if (success) {
       Toast.success('图像下载成功');
-    } catch (err) {
-      console.error('Download failed:', err);
+    } else {
       Toast.error('下载失败，请右键另存为');
     }
   };

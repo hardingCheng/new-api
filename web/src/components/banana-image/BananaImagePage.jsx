@@ -28,10 +28,9 @@ import ModelSelector from './ModelSelector';
 import ParamsSection from './ParamsSection';
 import GenerateSection from './GenerateSection';
 import ResultSection from './ResultSection';
-import HistorySidebar from './HistorySidebar';
+import HistoryModal from './HistoryModal';
 
 const { Title } = Typography;
-const { Sider, Content } = Layout;
 
 const BananaImagePage = () => {
   const isMobile = useIsMobile();
@@ -56,6 +55,7 @@ const BananaImagePage = () => {
     selectedImageIndex,
     historyRecords,
     currentSize,
+    cacheStats,
 
     // 更新方法
     updateField,
@@ -95,7 +95,9 @@ const BananaImagePage = () => {
                 icon={<IconHistory />}
                 theme='borderless'
                 onClick={() => setShowHistory(true)}
-              />
+              >
+                查看历史
+              </Button>
             </div>
 
             {/* 令牌选择 */}
@@ -163,30 +165,16 @@ const BananaImagePage = () => {
         </div>
       </div>
 
-      {/* 历史记录侧边栏 */}
-      {showHistory && (
-        <>
-          <div
-            className='fixed inset-0 bg-black/50 z-[999]'
-            onClick={() => setShowHistory(false)}
-          />
-          <Sider
-            className='fixed top-0 right-0 bottom-0 z-[1000] w-80 shadow-xl bg-[var(--semi-color-bg-1)]'
-            width={320}
-          >
-            <HistorySidebar
-              records={historyRecords}
-              onSelect={(record) => {
-                loadFromHistory(record);
-                setShowHistory(false);
-              }}
-              onDelete={deleteHistoryRecord}
-              onClear={clearHistory}
-              onClose={() => setShowHistory(false)}
-            />
-          </Sider>
-        </>
-      )}
+      {/* 历史记录弹窗 */}
+      <HistoryModal
+        visible={showHistory}
+        records={historyRecords}
+        onSelect={loadFromHistory}
+        onDelete={deleteHistoryRecord}
+        onClear={clearHistory}
+        onClose={() => setShowHistory(false)}
+        cacheStats={cacheStats}
+      />
     </Layout>
   );
 };
