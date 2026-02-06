@@ -439,6 +439,7 @@ export const useBananaImage = () => {
             },
           ],
           generationConfig: {
+            responseModalities: ['IMAGE'],
             imageConfig: {
               aspectRatio: aspectRatioMap[state.aspectRatio] || '1:1',
               imageSize: imageSizeMap[state.resolution] || '1K',
