@@ -98,7 +98,7 @@ const BananaImagePage = () => {
                 theme='borderless'
                 onClick={() => setShowHistory(true)}
               >
-                查看历史
+                查看历史 ({historyRecords.reduce((total, record) => total + (record.images?.length || 0), 0)})
               </Button>
             </div>
 

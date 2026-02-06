@@ -31,6 +31,7 @@ import {
   IconCopy,
   IconRefresh,
   IconExpand,
+  IconDelete,
 } from '@douyinfe/semi-icons';
 import { GENERATION_STATUS } from '../../constants/banana-image.constants';
 import { downloadImage } from '../../utils/imageCache';
@@ -168,6 +169,12 @@ const ResultSection = ({
               theme='borderless'
               className='!text-white hover:!bg-white/20'
               onClick={handleCopyPrompt}
+            />
+            <Button
+              icon={<IconDelete />}
+              theme='borderless'
+              className='!text-white hover:!bg-white/20'
+              onClick={onReset}
             />
           </div>
         </div>
