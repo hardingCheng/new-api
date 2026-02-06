@@ -25,6 +25,7 @@ import { useIsMobile } from '../../hooks/common/useIsMobile';
 import PromptSection from './PromptSection';
 import TokenSelector from './TokenSelector';
 import ModelSelector from './ModelSelector';
+import ReferenceImageSection from './ReferenceImageSection';
 import ParamsSection from './ParamsSection';
 import GenerateSection from './GenerateSection';
 import ResultSection from './ResultSection';
@@ -49,6 +50,7 @@ const BananaImagePage = () => {
     resolution,
     aspectRatio,
     numberOfImages,
+    referenceImages,
     generationStatus,
     generationError,
     generatedImages,
@@ -125,6 +127,12 @@ const BananaImagePage = () => {
               onNegativePromptChange={(value) => updateField('negativePrompt', value)}
               onGenerate={generateImage}
               isGenerating={generationStatus === 'loading'}
+            />
+
+            {/* 参考图片 */}
+            <ReferenceImageSection
+              referenceImages={referenceImages}
+              onImagesChange={(images) => updateField('referenceImages', images)}
             />
 
             {/* 参数配置 */}

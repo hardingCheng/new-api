@@ -72,6 +72,7 @@ const defaultState = {
   resolution: '1k',
   aspectRatio: '1:1',
   numberOfImages: 1,
+  referenceImages: [], // 参考图片
 
   // 生成状态
   generationStatus: GENERATION_STATUS.IDLE,
@@ -385,6 +386,7 @@ export const useBananaImage = () => {
         resolution: record.params?.resolution || '1k',
         aspectRatio: record.params?.aspectRatio || '1:1',
         numberOfImages: record.params?.numberOfImages || 1,
+        referenceImages: record.referenceImages || [],
       });
     },
     [updateFields, state.availableModels]
@@ -451,14 +453,36 @@ export const useBananaImage = () => {
           '4k': '4K',
         };
 
+        // 构建 parts 数组
+        const parts = [];
+
+        // 添加参考图片（如果有）
+        if (state.referenceImages && state.referenceImages.length > 0) {
+          state.referenceImages.forEach((img) => {
+            // 从 data URL 中提取 base64 数据和 mime type
+            const matches = img.url.match(/^data:([^;]+);base64,(.+)$/);
+            if (matches) {
+              const mimeType = matches[1];
+              const base64Data = matches[2];
+              parts.push({
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64Data,
+                },
+              });
+            }
+          });
+        }
+
+        // 添加文本提示词
+        parts.push({
+          text: state.prompt,
+        });
+
         const payload = {
           contents: [
             {
-              parts: [
-                {
-                  text: state.prompt,
-                },
-              ],
+              parts: parts,
             },
           ],
           generationConfig: {
@@ -541,6 +565,18 @@ export const useBananaImage = () => {
           payload.negative_prompt = state.negativePrompt;
         }
 
+        // 如果有参考图片，添加到 payload
+        if (state.referenceImages && state.referenceImages.length > 0) {
+          // 将参考图片转换为 base64 数组
+          payload.reference_images = state.referenceImages.map((img) => {
+            // 如果已经是 data URL，直接返回
+            if (img.url.startsWith('data:')) {
+              return img.url;
+            }
+            return img.url;
+          });
+        }
+
         res = await fetch(`${serverAddress}/v1/images/generations`, {
           method: 'POST',
           headers: {
@@ -596,6 +632,10 @@ export const useBananaImage = () => {
             width,
             height,
           },
+          referenceImages: state.referenceImages.map((img) => ({
+            id: img.id,
+            name: img.name,
+          })),
           images: images.map((img) => ({ url: img.url })),
           status: 'success',
         };
