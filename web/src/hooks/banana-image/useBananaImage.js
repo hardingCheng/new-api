@@ -459,11 +459,12 @@ export const useBananaImage = () => {
         const result = response.data;
 
         // 从 Gemini 原生响应中提取图像
-        // 响应格式: candidates[].content.parts[].inlineData
+        // 响应格式: candidates[].content.parts[].inlineData 或 candidates[].content.parts[].text
         if (result.candidates && result.candidates.length > 0) {
           result.candidates.forEach((candidate, index) => {
             if (candidate.content && candidate.content.parts) {
               candidate.content.parts.forEach((part, subIndex) => {
+                // 处理 inlineData 格式
                 if (part.inlineData && part.inlineData.mimeType && part.inlineData.data) {
                   const mimeType = part.inlineData.mimeType;
                   let base64Data = part.inlineData.data;
@@ -484,6 +485,19 @@ export const useBananaImage = () => {
                     url: imageUrl,
                     revisedPrompt: null,
                   });
+                }
+                // 处理 text 格式（markdown 图像）
+                else if (part.text && typeof part.text === 'string') {
+                  // 匹配 markdown 格式: ![image](data:image/jpeg;base64,...)
+                  const markdownImageRegex = /!\[.*?\]\((data:image\/[^;]+;base64,[^)]+)\)/g;
+                  let match;
+                  while ((match = markdownImageRegex.exec(part.text)) !== null) {
+                    images.push({
+                      id: `${Date.now()}-${index}-${subIndex}-${images.length}`,
+                      url: match[1],
+                      revisedPrompt: null,
+                    });
+                  }
                 }
               });
             }
