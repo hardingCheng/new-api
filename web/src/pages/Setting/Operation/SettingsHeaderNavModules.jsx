@@ -41,6 +41,7 @@ export default function SettingsHeaderNavModules(props) {
   // 顶栏模块管理状态
   const [headerNavModules, setHeaderNavModules] = useState({
     home: true,
+    bananaImage: true,
     console: true,
     pricing: {
       enabled: true,
@@ -81,6 +82,7 @@ export default function SettingsHeaderNavModules(props) {
   function resetHeaderNavModules() {
     const defaultModules = {
       home: true,
+      bananaImage: true,
       console: true,
       pricing: {
         enabled: true,
@@ -142,11 +144,17 @@ export default function SettingsHeaderNavModules(props) {
           };
         }
 
+        // 确保bananaImage存在，如果不存在则默认为true
+        if (modules.bananaImage === undefined) {
+          modules.bananaImage = true;
+        }
+
         setHeaderNavModules(modules);
       } catch (error) {
         // 使用默认配置
         const defaultModules = {
           home: true,
+          bananaImage: true,
           console: true,
           pricing: {
             enabled: true,
@@ -166,6 +174,11 @@ export default function SettingsHeaderNavModules(props) {
       key: 'home',
       title: t('首页'),
       description: t('用户主页，展示系统信息'),
+    },
+    {
+      key: 'bananaImage',
+      title: t('香蕉生图'),
+      description: t('AI图像生成工具'),
     },
     {
       key: 'console',

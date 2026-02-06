@@ -64,9 +64,6 @@ const PromptSection = ({
           showClear
           className='w-full'
         />
-        <Text type='tertiary' size='small' className='mt-1 block'>
-          提示：按 Ctrl/Cmd + Enter 快速生成
-        </Text>
       </div>
 
       {/* 反向提示词（可折叠） */}
