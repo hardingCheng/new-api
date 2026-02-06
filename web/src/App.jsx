@@ -152,7 +152,7 @@ function App() {
           }
         />
         <Route
-          path='/console/banana-image'
+          path='/banana-image'
           element={
             <PrivateRoute>
               <Suspense fallback={<Loading></Loading>} key={location.pathname}>

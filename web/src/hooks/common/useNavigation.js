@@ -53,7 +53,7 @@ export const useNavigation = (t, docsLink, headerNavModules) => {
       {
         text: t('香蕉生图'),
         itemKey: 'bananaImage',
-        to: '/console/banana-image',
+        to: '/banana-image',
       },
       ...(docsLink
         ? [
