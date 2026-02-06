@@ -75,7 +75,7 @@ const BananaImagePage = () => {
   } = useBananaImage();
 
   return (
-    <Layout className='h-full bg-transparent'>
+    <Layout className='h-full bg-transparent rounded-lg shadow-lg overflow-hidden'>
       <div className='h-full flex flex-col lg:flex-row'>
         {/* 左侧：参数配置区 */}
         <div
