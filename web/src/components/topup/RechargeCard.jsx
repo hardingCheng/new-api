@@ -97,18 +97,10 @@ const RechargeCard = ({
 }) => {
   const onlineFormApiRef = useRef(null);
   const redeemFormApiRef = useRef(null);
-  const initialTabSetRef = useRef(false);
   const showAmountSkeleton = useMinimumLoadingTime(amountLoading);
-  const [activeTab, setActiveTab] = useState('topup');
   const shouldShowSubscription =
     !subscriptionLoading && subscriptionPlans.length > 0;
-
-  useEffect(() => {
-    if (initialTabSetRef.current) return;
-    if (subscriptionLoading) return;
-    setActiveTab(shouldShowSubscription ? 'topup' : 'subscription');
-    initialTabSetRef.current = true;
-  }, [shouldShowSubscription, subscriptionLoading]);
+  const [activeTab, setActiveTab] = useState('topup');
 
   useEffect(() => {
     if (!shouldShowSubscription && activeTab !== 'topup') {
@@ -609,6 +601,17 @@ const RechargeCard = ({
           <TabPane
             tab={
               <div className='flex items-center gap-2'>
+                <Wallet size={16} />
+                {t('额度充值')}
+              </div>
+            }
+            itemKey='topup'
+          >
+            <div className='py-2'>{topupContent}</div>
+          </TabPane>
+          <TabPane
+            tab={
+              <div className='flex items-center gap-2'>
                 <Sparkles size={16} />
                 {t('订阅套餐')}
               </div>
@@ -632,17 +635,6 @@ const RechargeCard = ({
                 withCard={false}
               />
             </div>
-          </TabPane>
-          <TabPane
-            tab={
-              <div className='flex items-center gap-2'>
-                <Wallet size={16} />
-                {t('额度充值')}
-              </div>
-            }
-            itemKey='topup'
-          >
-            <div className='py-2'>{topupContent}</div>
           </TabPane>
         </Tabs>
       ) : (
