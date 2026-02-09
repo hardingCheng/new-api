@@ -26,6 +26,18 @@ const AvailableModels = () => {
       color: 'orange',
       models: [
         {
+          name: 'claude-opus-4-6',
+          description: '百万上下文窗口',
+          type: '旗舰',
+          typeColor: 'orange',
+        },
+        {
+          name: 'claude-opus-4-6-thinking',
+          description: '自适应深度推理',
+          type: '推理',
+          typeColor: 'purple',
+        },
+        {
           name: 'claude-opus-4-5-20251101',
           description: '最强推理',
           type: '旗舰',
@@ -99,6 +111,12 @@ const AvailableModels = () => {
       icon: <OpenAI size={20} type='color' />,
       color: 'green',
       models: [
+        {
+          name: 'gpt-5.3',
+          description: '智能体编码25%提速',
+          type: '代码',
+          typeColor: 'purple',
+        },
         {
           name: 'gpt-5',
           description: '最新旗舰',
