@@ -19,8 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 
 // IndexedDB 配置
 const DB_NAME = 'BananaImageCache';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // 升级版本以添加新的 store
 const STORE_NAME = 'images';
+const HISTORY_STORE_NAME = 'history'; // 新增：历史记录 store
 
 // 默认清理配置
 export const DEFAULT_CACHE_CONFIG = {
@@ -60,10 +61,17 @@ const openDB = () => {
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
       
+      // 图片存储
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
         store.createIndex('timestamp', 'timestamp', { unique: false });
         store.createIndex('size', 'size', { unique: false });
+      }
+      
+      // 历史记录存储
+      if (!db.objectStoreNames.contains(HISTORY_STORE_NAME)) {
+        const historyStore = db.createObjectStore(HISTORY_STORE_NAME, { keyPath: 'id' });
+        historyStore.createIndex('timestamp', 'timestamp', { unique: false });
       }
     };
   });
@@ -304,3 +312,71 @@ export const downloadImage = async (url, filename = 'image.png') => {
     return false;
   }
 };
+
+// ==================== 历史记录管理 ====================
+
+// 保存历史记录
+export const saveHistoryRecord = async (record) => {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction([HISTORY_STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(HISTORY_STORE_NAME);
+    await store.put(record);
+    return true;
+  } catch (error) {
+    console.error('Failed to save history record:', error);
+    return false;
+  }
+};
+
+// 获取所有历史记录
+export const getAllHistoryRecords = async () => {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction([HISTORY_STORE_NAME], 'readonly');
+    const store = transaction.objectStore(HISTORY_STORE_NAME);
+    
+    return new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onsuccess = () => {
+        const records = request.result || [];
+        // 按时间倒序排序（最新的在前）
+        records.sort((a, b) => b.timestamp - a.timestamp);
+        resolve(records);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Failed to get history records:', error);
+    return [];
+  }
+};
+
+// 删除历史记录
+export const deleteHistoryRecord = async (id) => {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction([HISTORY_STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(HISTORY_STORE_NAME);
+    await store.delete(id);
+    return true;
+  } catch (error) {
+    console.error('Failed to delete history record:', error);
+    return false;
+  }
+};
+
+// 清空所有历史记录
+export const clearAllHistory = async () => {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction([HISTORY_STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(HISTORY_STORE_NAME);
+    await store.clear();
+    return true;
+  } catch (error) {
+    console.error('Failed to clear history:', error);
+    return false;
+  }
+};
+
