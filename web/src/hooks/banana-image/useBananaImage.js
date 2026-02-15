@@ -328,12 +328,41 @@ export const useBananaImage = () => {
   }, []);
 
   // 加载历史记录
-  const loadHistory = useCallback(() => {
+  const loadHistory = useCallback(async () => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.HISTORY);
       if (saved) {
         const records = JSON.parse(saved);
-        updateField('historyRecords', records);
+        
+        // 从 IndexedDB 加载图片 URL
+        const recordsWithImages = await Promise.all(
+          records.map(async (record) => {
+            if (record.imageIds && record.imageIds.length > 0) {
+              // 从 IndexedDB 加载图片
+              const { getImageFromCache } = await import('../../utils/imageCache');
+              const images = await Promise.all(
+                record.imageIds.map(async (imageId) => {
+                  const cachedImage = await getImageFromCache(imageId);
+                  if (cachedImage) {
+                    return { url: cachedImage.url || cachedImage.objectUrl };
+                  }
+                  return null;
+                })
+              );
+              
+              // 过滤掉加载失败的图片
+              const validImages = images.filter(img => img !== null);
+              
+              return {
+                ...record,
+                images: validImages.length > 0 ? validImages : record.images || []
+              };
+            }
+            return record;
+          })
+        );
+        
+        updateField('historyRecords', recordsWithImages);
       }
     } catch (e) {
       console.error('Failed to load history:', e);
@@ -380,23 +409,44 @@ export const useBananaImage = () => {
 
   // 删除历史记录
   const deleteHistoryRecord = useCallback(
-    (id) => {
+    async (id) => {
+      // 先从 IndexedDB 删除图片
+      const record = state.historyRecords.find(r => r.id === id);
+      if (record && record.imageIds) {
+        const { deleteImageFromCache } = await import('../../utils/imageCache');
+        for (const imageId of record.imageIds) {
+          await deleteImageFromCache(imageId);
+        }
+      }
+      
+      // 再从历史记录中删除
       setState((prev) => {
         const newRecords = prev.historyRecords.filter((r) => r.id !== id);
         saveHistory(newRecords);
         return { ...prev, historyRecords: newRecords };
       });
+      
+      // 更新缓存统计
+      await loadCacheStats();
     },
-    [saveHistory]
+    [saveHistory, state.historyRecords, loadCacheStats]
   );
 
   // 清空历史记录
-  const clearHistory = useCallback(() => {
+  const clearHistory = useCallback(async () => {
+    // 先从 IndexedDB 删除所有图片
+    const { clearAllCache } = await import('../../utils/imageCache');
+    await clearAllCache();
+    
+    // 再清空历史记录
     setState((prev) => {
       saveHistory([]);
       return { ...prev, historyRecords: [] };
     });
-  }, [saveHistory]);
+    
+    // 更新缓存统计
+    await loadCacheStats();
+  }, [saveHistory, loadCacheStats]);
 
   // 从历史记录加载
   const loadFromHistory = useCallback(
@@ -631,6 +681,7 @@ export const useBananaImage = () => {
       if (images.length > 0) {
         // 保存图片到 IndexedDB
         const recordId = Date.now().toString();
+        const imageIds = [];
         for (let i = 0; i < images.length; i++) {
           const img = images[i];
           const imageId = `${recordId}-${i}`;
@@ -639,9 +690,10 @@ export const useBananaImage = () => {
             model: state.selectedModel,
             timestamp: Date.now(),
           });
+          imageIds.push(imageId);
         }
 
-        // 添加到历史记录
+        // 添加到历史记录 - 保存图片 ID 而不是 URL
         const historyRecord = {
           id: recordId,
           timestamp: Date.now(),
@@ -659,7 +711,11 @@ export const useBananaImage = () => {
             id: img.id,
             name: img.name,
           })),
-          images: images.map((img) => ({ url: img.url })),
+          imageIds: imageIds, // 保存图片 ID
+          images: images.map((img, idx) => ({ 
+            url: img.url,
+            imageId: imageIds[idx] // 同时保存 imageId 用于后续加载
+          })),
           status: 'success',
         };
         addHistoryRecord(historyRecord);

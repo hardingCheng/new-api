@@ -107,8 +107,11 @@ const HistoryModal = ({
   };
 
   // 批量删除
-  const handleBatchDelete = () => {
-    selectedIds.forEach((id) => onDelete(id));
+  const handleBatchDelete = async () => {
+    // 逐个删除（这样会同时删除 IndexedDB 中的图片）
+    for (const id of selectedIds) {
+      await onDelete(id);
+    }
     setSelectedIds([]);
     setIsSelectionMode(false);
     Toast.success(`已删除 ${selectedIds.length} 条记录`);
@@ -298,11 +301,11 @@ const HistoryModal = ({
                     <Popconfirm
                       title={isSelectionMode ? '确定要删除选中的记录吗？' : '确定要清空所有历史记录吗？'}
                       content='此操作不可恢复'
-                      onConfirm={() => {
+                      onConfirm={async () => {
                         if (isSelectionMode) {
-                          handleBatchDelete();
+                          await handleBatchDelete();
                         } else {
-                          onClear();
+                          await onClear();
                           Toast.success('已清空历史记录');
                         }
                       }}
