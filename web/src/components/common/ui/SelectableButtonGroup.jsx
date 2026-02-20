@@ -59,7 +59,7 @@ const SelectableButtonGroup = ({
   withCheckbox = false,
   loading = false,
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
   const [skeletonCount] = useState(12);
   const [containerRef, containerWidth] = useContainerWidth();
 
