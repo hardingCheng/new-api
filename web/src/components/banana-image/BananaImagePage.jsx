@@ -168,6 +168,8 @@ const BananaImagePage = () => {
               prompt={prompt}
               selectedModel={selectedModel}
               selectedToken={selectedToken}
+              resolution={resolution}
+              aspectRatio={aspectRatio}
             />
           </div>
         </div>

@@ -37,6 +37,7 @@ import {
   IconSetting,
   IconSearch,
   IconInfoCircle,
+  IconCopy,
 } from '@douyinfe/semi-icons';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -469,12 +470,27 @@ const HistoryCard = ({
 
       {/* 信息区域 */}
       <div className='p-3'>
-        <Text
-          ellipsis={{ showTooltip: true, rows: 2 }}
-          className='block text-sm font-medium mb-2'
-        >
-          {record.prompt || '无提示词'}
-        </Text>
+        <div className='flex items-start gap-2 mb-2'>
+          <Text
+            ellipsis={{ showTooltip: true, rows: 2 }}
+            className='flex-1 text-sm font-medium'
+          >
+            {record.prompt || '无提示词'}
+          </Text>
+          {record.prompt && (
+            <Button
+              icon={<IconCopy />}
+              theme='borderless'
+              size='small'
+              onClick={(e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(record.prompt);
+                Toast.success('提示词已复制');
+              }}
+              style={{ flexShrink: 0 }}
+            />
+          )}
+        </div>
         
         <div className='flex items-center justify-between text-xs'>
           <div className='flex items-center gap-2 flex-1 min-w-0'>

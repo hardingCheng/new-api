@@ -27,8 +27,8 @@ const ReferenceImageSection = ({ referenceImages = [], onImagesChange }) => {
   const fileInputRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  const MAX_IMAGES = 3;
-  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+  const MAX_IMAGES = 20;
+  const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB
   const ACCEPTED_FORMATS = ['image/jpeg', 'image/png', 'image/webp'];
 
   // 验证文件
@@ -38,7 +38,7 @@ const ReferenceImageSection = ({ referenceImages = [], onImagesChange }) => {
       return false;
     }
     if (file.size > MAX_FILE_SIZE) {
-      Toast.error(`文件过大: ${file.name}。最大支持 5MB`);
+      Toast.error(`文件过大: ${file.name}。最大支持 15MB`);
       return false;
     }
     return true;
@@ -133,7 +133,7 @@ const ReferenceImageSection = ({ referenceImages = [], onImagesChange }) => {
   return (
     <div className='mb-6'>
       <div className='flex items-center justify-between mb-2'>
-        <Text strong>参考图片（可选，1-3张）</Text>
+        <Text strong>参考图片（可选，1-20张）</Text>
         <Text type='tertiary' size='small'>
           {referenceImages.length} / {MAX_IMAGES}
         </Text>
@@ -161,7 +161,7 @@ const ReferenceImageSection = ({ referenceImages = [], onImagesChange }) => {
             点击或拖拽图片到此处上传
           </Text>
           <Text type='tertiary' size='small' className='block text-xs md:text-sm'>
-            支持 JPEG、PNG、WebP 格式，单张最大 5MB，1-3张
+            支持 JPEG、PNG、WebP 格式，单张最大 15MB，1-20张
           </Text>
 
           <input
@@ -177,7 +177,7 @@ const ReferenceImageSection = ({ referenceImages = [], onImagesChange }) => {
 
       {/* 图片预览列表 */}
       {referenceImages.length > 0 && (
-        <div className='mt-3 grid grid-cols-3 gap-2'>
+        <div className='mt-3 grid grid-cols-4 gap-2'>
           {referenceImages.map((image) => (
             <div
               key={image.id}

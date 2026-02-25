@@ -763,7 +763,32 @@ export const useBananaImage = () => {
       }
     } catch (error) {
       console.error('Image generation failed:', error);
-      const errorMessage = error.message || '图像生成失败';
+      
+      // 更精准的错误信息提取
+      let errorMessage = '图像生成失败';
+      
+      if (error.response) {
+        // HTTP 响应错误
+        const data = error.response.data;
+        if (data?.error?.message) {
+          errorMessage = data.error.message;
+        } else if (data?.message) {
+          errorMessage = data.message;
+        } else if (data?.error) {
+          errorMessage = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+        } else {
+          errorMessage = `请求失败 (${error.response.status})`;
+        }
+      } else if (error.message) {
+        // 网络错误或其他错误
+        if (error.message.includes('Failed to fetch') || error.message.includes('Network')) {
+          errorMessage = '网络连接失败，请检查网络设置';
+        } else if (error.message.includes('timeout')) {
+          errorMessage = '请求超时，请稍后重试';
+        } else {
+          errorMessage = error.message;
+        }
+      }
 
       updateFields({
         generationStatus: GENERATION_STATUS.ERROR,

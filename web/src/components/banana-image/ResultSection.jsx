@@ -51,24 +51,20 @@ const ResultSection = ({
 }) => {
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewSrc, setPreviewSrc] = useState('');
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [loadingDots, setLoadingDots] = useState('');
 
-  // 计时器效果
+  // 动画点点点效果
   useEffect(() => {
-    if (status === GENERATION_STATUS.LOADING && startTime) {
-      // 立即更新一次
-      setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
-      
-      // 每秒更新一次
+    if (status === GENERATION_STATUS.LOADING) {
       const timer = setInterval(() => {
-        setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
-      }, 1000);
+        setLoadingDots((prev) => (prev.length >= 3 ? '' : prev + '.'));
+      }, 500);
 
       return () => clearInterval(timer);
     } else {
-      setElapsedSeconds(0);
+      setLoadingDots('');
     }
-  }, [status, startTime]);
+  }, [status]);
 
   const selectedImage = images[selectedIndex];
 
@@ -128,16 +124,12 @@ const ResultSection = ({
             </div>
           </div>
           <div className='text-center px-4'>
-            <Text className={`block ${isMobile ? 'text-base' : 'text-lg'}`}>正在生成图像...</Text>
-            <Text type='tertiary' size='small' className='mt-2'>
-              这可能需要几秒到几十秒不等
+            <Text className={`block ${isMobile ? 'text-base' : 'text-lg'} font-medium`}>
+              正在生成图像{loadingDots}
             </Text>
-            <div className='mt-3 md:mt-4 flex items-center justify-center gap-2'>
-              <Text type='secondary' className={`${isMobile ? 'text-xl' : 'text-2xl'} font-mono font-bold`}>
-                {elapsedSeconds}
-              </Text>
-              <Text type='tertiary'>秒</Text>
-            </div>
+            <Text type='tertiary' size='small' className='mt-2'>
+              AI 正在创作中，请稍候
+            </Text>
           </div>
         </div>
       </div>

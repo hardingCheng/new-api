@@ -32,6 +32,8 @@ const GenerateSection = ({
   prompt,
   selectedModel,
   selectedToken,
+  resolution,
+  aspectRatio,
 }) => {
   const getDisabledReason = () => {
     const reasons = [];
@@ -90,7 +92,7 @@ const GenerateSection = ({
 
         <div className='text-center sm:text-left'>
           <Text type='tertiary'>
-            将生成 {numberOfImages} 张 {currentSize.width}×{currentSize.height} 的图像
+            将生成 {numberOfImages} 张 {resolution.toUpperCase()} {aspectRatio} 的图像
           </Text>
         </div>
       </div>
