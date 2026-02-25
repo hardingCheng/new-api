@@ -132,15 +132,68 @@ const ReferenceImageSection = ({ referenceImages = [], onImagesChange }) => {
 
   return (
     <div className='mb-6'>
-      <div className='flex items-center justify-between mb-2'>
-        <Text strong>参考图片（可选，1-20张）</Text>
+      <div className='flex items-center justify-between mb-3'>
+        <Text strong>参考图片（可选）</Text>
         <Text type='tertiary' size='small'>
           {referenceImages.length} / {MAX_IMAGES}
         </Text>
       </div>
 
-      {/* 上传区域 */}
-      {referenceImages.length < MAX_IMAGES && (
+      {/* 图片预览列表 */}
+      {referenceImages.length > 0 && (
+        <div className='mb-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3'>
+          {referenceImages.map((image) => (
+            <div
+              key={image.id}
+              className='relative group aspect-square rounded-lg overflow-hidden border border-[var(--semi-color-border)] bg-[var(--semi-color-fill-0)] hover:border-[var(--semi-color-primary)] transition-colors'
+            >
+              <img
+                src={image.url}
+                alt={image.name}
+                className='w-full h-full object-cover'
+              />
+              {/* 文件名提示 */}
+              <div className='absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity'>
+                <Text
+                  size='small'
+                  className='text-white truncate block'
+                  title={image.name}
+                >
+                  {image.name}
+                </Text>
+              </div>
+              {/* 删除按钮 - 始终显示在移动端，桌面端 hover 显示 */}
+              <Button
+                icon={<IconClose />}
+                type='danger'
+                theme='solid'
+                size='small'
+                className='absolute top-2 right-2 md:opacity-0 md:group-hover:opacity-100 transition-opacity shadow-lg'
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRemoveImage(image.id);
+                }}
+              />
+            </div>
+          ))}
+
+          {/* 添加更多按钮 */}
+          {referenceImages.length < MAX_IMAGES && (
+            <div
+              onClick={handleClick}
+              className='aspect-square rounded-lg border-2 border-dashed border-[var(--semi-color-border)] hover:border-[var(--semi-color-primary)] bg-[var(--semi-color-fill-0)] hover:bg-[var(--semi-color-fill-1)] cursor-pointer transition-all flex flex-col items-center justify-center gap-2'
+            >
+              <IconImage size='extra-large' className='text-[var(--semi-color-text-2)]' />
+              <Text type='tertiary' size='small'>
+                添加图片
+              </Text>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 初始上传区域 - 仅在没有图片时显示 */}
+      {referenceImages.length === 0 && (
         <div
           onClick={handleClick}
           onDragEnter={handleDragEnter}
@@ -148,7 +201,7 @@ const ReferenceImageSection = ({ referenceImages = [], onImagesChange }) => {
           onDragOver={handleDragOver}
           onDrop={handleDrop}
           className={`
-            relative border-2 border-dashed rounded-lg p-4 md:p-6 text-center cursor-pointer transition-all
+            relative border-2 border-dashed rounded-lg p-8 md:p-12 text-center cursor-pointer transition-all
             ${
               isDragging
                 ? 'border-[var(--semi-color-primary)] bg-[var(--semi-color-primary-light-default)]'
@@ -156,55 +209,24 @@ const ReferenceImageSection = ({ referenceImages = [], onImagesChange }) => {
             }
           `}
         >
-          <IconImage size='large' className='text-[var(--semi-color-text-2)] mb-2' />
-          <Text type='secondary' className='block mb-1 text-sm md:text-base'>
+          <IconImage size='extra-large' className='text-[var(--semi-color-text-2)] mb-3' />
+          <Text type='secondary' className='block mb-2 text-base md:text-lg'>
             点击或拖拽图片到此处上传
           </Text>
-          <Text type='tertiary' size='small' className='block text-xs md:text-sm'>
-            支持 JPEG、PNG、WebP 格式，单张最大 15MB，1-20张
+          <Text type='tertiary' size='small' className='block'>
+            支持 JPEG、PNG、WebP 格式，单张最大 15MB，最多 20 张
           </Text>
-
-          <input
-            ref={fileInputRef}
-            type='file'
-            accept='image/jpeg,image/png,image/webp'
-            multiple
-            onChange={handleFileInputChange}
-            className='hidden'
-          />
         </div>
       )}
 
-      {/* 图片预览列表 */}
-      {referenceImages.length > 0 && (
-        <div className='mt-3 grid grid-cols-4 gap-2'>
-          {referenceImages.map((image) => (
-            <div
-              key={image.id}
-              className='relative group aspect-square rounded-lg overflow-hidden border border-[var(--semi-color-border)]'
-            >
-              <img
-                src={image.url}
-                alt={image.name}
-                className='w-full h-full object-cover'
-              />
-              <div className='absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition-all flex items-center justify-center'>
-                <Button
-                  icon={<IconClose />}
-                  type='danger'
-                  theme='solid'
-                  size='small'
-                  className='opacity-0 group-hover:opacity-100 transition-opacity'
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRemoveImage(image.id);
-                  }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <input
+        ref={fileInputRef}
+        type='file'
+        accept='image/jpeg,image/png,image/webp'
+        multiple
+        onChange={handleFileInputChange}
+        className='hidden'
+      />
     </div>
   );
 };
