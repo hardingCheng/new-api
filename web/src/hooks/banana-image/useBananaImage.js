@@ -84,6 +84,7 @@ const defaultState = {
   generatedImages: [],
   selectedImageIndex: 0,
   generationStartTime: null, // 生成开始时间
+  retryMessage: null, // 重试提示信息
 
   // 历史记录
   historyRecords: [],
@@ -522,18 +523,24 @@ export const useBananaImage = () => {
       generationStatus: GENERATION_STATUS.LOADING,
       generationError: null,
       generationStartTime: Date.now(),
+      retryMessage: null, // 清空重试消息
     });
 
-    try {
-      const { width, height } = currentSize;
-      const serverAddress = getServerAddress();
-      const tokenKey = state.selectedToken.key || state.selectedToken.value;
-      const isGemini = isGeminiImageModel(state.selectedModel);
+    const MAX_RETRIES = 10;
+    let retryCount = 0;
+    let shownRetryMessage = false; // 使用局部变量跟踪本次生成是否已显示提示
 
-      let res;
-      let images = [];
+    const attemptGeneration = async () => {
+      try {
+        const { width, height } = currentSize;
+        const serverAddress = getServerAddress();
+        const tokenKey = state.selectedToken.key || state.selectedToken.value;
+        const isGemini = isGeminiImageModel(state.selectedModel);
 
-      if (isGemini) {
+        let res;
+        let images = [];
+
+        if (isGemini) {
         // Gemini 图像模型使用 Gemini 原生格式接口
         // 接口: /v1beta/models/{model}:generateContent
 
@@ -691,9 +698,11 @@ export const useBananaImage = () => {
 
         if (!res.ok) {
           const errorData = await res.json().catch(() => ({}));
-          throw new Error(
+          const error = new Error(
             errorData.error?.message || errorData.message || `HTTP error! status: ${res.status}`
           );
+          error.response = { status: res.status, data: errorData };
+          throw error;
         }
 
         const result = await res.json();
@@ -755,49 +764,81 @@ export const useBananaImage = () => {
           generatedImages: images,
           selectedImageIndex: 0,
           generationStartTime: null,
+          retryMessage: null, // 清空重试消息
         });
 
         Toast.success('图像生成成功');
       } else {
         throw new Error('未返回图像数据');
       }
-    } catch (error) {
-      console.error('Image generation failed:', error);
-      
-      // 更精准的错误信息提取
-      let errorMessage = '图像生成失败';
-      
-      if (error.response) {
-        // HTTP 响应错误
-        const data = error.response.data;
-        if (data?.error?.message) {
-          errorMessage = data.error.message;
-        } else if (data?.message) {
-          errorMessage = data.message;
-        } else if (data?.error) {
-          errorMessage = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
-        } else {
-          errorMessage = `请求失败 (${error.response.status})`;
+      } catch (error) {
+        console.error('Image generation failed:', error);
+        
+        // 更精准的错误信息提取
+        let errorMessage = '图像生成失败';
+        let statusCode = null;
+        
+        if (error.response) {
+          // HTTP 响应错误
+          statusCode = error.response.status;
+          const data = error.response.data;
+          if (data?.error?.message) {
+            errorMessage = data.error.message;
+          } else if (data?.message) {
+            errorMessage = data.message;
+          } else if (data?.error) {
+            errorMessage = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+          } else {
+            errorMessage = `请求失败 (${statusCode})`;
+          }
+        } else if (error.message) {
+          // 网络错误或其他错误
+          if (error.message.includes('Failed to fetch') || error.message.includes('Network')) {
+            errorMessage = '网络连接失败，请检查网络设置';
+          } else if (error.message.includes('timeout')) {
+            errorMessage = '请求超时，请稍后重试';
+          } else {
+            errorMessage = error.message;
+          }
         }
-      } else if (error.message) {
-        // 网络错误或其他错误
-        if (error.message.includes('Failed to fetch') || error.message.includes('Network')) {
-          errorMessage = '网络连接失败，请检查网络设置';
-        } else if (error.message.includes('timeout')) {
-          errorMessage = '请求超时，请稍后重试';
-        } else {
-          errorMessage = error.message;
+
+        // 检查是否为 500x 错误，如果是则重试
+        if (statusCode && statusCode >= 500 && statusCode < 600 && retryCount < MAX_RETRIES) {
+          retryCount++;
+          
+          // 设置重试提示信息（持续显示）
+          if (!shownRetryMessage) {
+            updateField('retryMessage', '由于官方负载太高，生图时间有所延长，请耐心等待');
+            shownRetryMessage = true;
+          }
+          
+          console.log(`遇到 ${statusCode} 错误，正在进行第 ${retryCount}/${MAX_RETRIES} 次重试...`);
+          
+          // 等待一段时间后重试（指数退避）
+          const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          
+          return attemptGeneration();
         }
+
+        // 达到最大重试次数或非 500x 错误
+        if (retryCount >= MAX_RETRIES) {
+          errorMessage = `${errorMessage} (已重试 ${MAX_RETRIES} 次)`;
+        }
+
+        updateFields({
+          generationStatus: GENERATION_STATUS.ERROR,
+          generationError: errorMessage,
+          generationStartTime: null,
+          retryMessage: null, // 清空重试消息
+        });
+
+        Toast.error(errorMessage);
       }
+    };
 
-      updateFields({
-        generationStatus: GENERATION_STATUS.ERROR,
-        generationError: errorMessage,
-        generationStartTime: null,
-      });
-
-      Toast.error(errorMessage);
-    }
+    // 开始生成
+    await attemptGeneration();
   }, [
     state.prompt,
     state.negativePrompt,

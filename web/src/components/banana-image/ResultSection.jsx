@@ -40,6 +40,7 @@ const { Text, Title } = Typography;
 const ResultSection = ({
   status,
   error,
+  retryMessage,
   images,
   selectedIndex,
   onSelectImage,
@@ -121,11 +122,13 @@ const ResultSection = ({
           </div>
           <div className='text-center px-4'>
             <Text className={`block ${isMobile ? 'text-base' : 'text-lg'} font-medium`}>
-              正在生成图像{loadingDots}
+              {retryMessage || `正在生成图像${loadingDots}`}
             </Text>
-            <Text type='tertiary' size='small' className='mt-2'>
-              AI 正在创作中，请稍候
-            </Text>
+            {!retryMessage && (
+              <Text type='tertiary' size='small' className='mt-2'>
+                AI 正在创作中，请稍候
+              </Text>
+            )}
           </div>
         </div>
       </div>

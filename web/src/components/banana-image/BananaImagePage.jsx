@@ -59,6 +59,7 @@ const BananaImagePage = () => {
     currentSize,
     cacheStats,
     generationStartTime,
+    retryMessage,
 
     // 更新方法
     updateField,
@@ -180,6 +181,7 @@ const BananaImagePage = () => {
             <ResultSection
               status={generationStatus}
               error={generationError}
+              retryMessage={retryMessage}
               images={generatedImages}
               selectedIndex={selectedImageIndex}
               onSelectImage={(index) => updateField('selectedImageIndex', index)}
