@@ -133,7 +133,7 @@ const BananaImagePage = () => {
                   size={isMobile ? 'small' : 'default'}
                   onClick={() => setShowHistory(true)}
                 >
-                  {isMobile ? '历史' : `查看历史 (${historyRecords.reduce((total, record) => total + (record.images?.length || 0), 0)})`}
+                  {isMobile ? '历史' : '查看历史'}
                 </Button>
               </div>
             </div>
