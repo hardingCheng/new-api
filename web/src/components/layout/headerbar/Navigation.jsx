@@ -37,6 +37,9 @@ const Navigation = ({
     const commonLinkClasses = `${baseClasses} ${spacingClasses} ${hoverClasses}`;
 
     return mainNavLinks.map((link) => {
+      const linkClasses = link.highlight
+        ? `${commonLinkClasses} animate-pulse text-semi-color-primary`
+        : commonLinkClasses;
       const linkContent = <span>{link.text}</span>;
 
       if (link.isExternal) {
@@ -46,7 +49,7 @@ const Navigation = ({
             href={link.externalLink}
             target='_blank'
             rel='noopener noreferrer'
-            className={commonLinkClasses}
+            className={linkClasses}
           >
             {linkContent}
           </a>
@@ -62,7 +65,7 @@ const Navigation = ({
       }
 
       return (
-        <Link key={link.itemKey} to={targetPath} className={commonLinkClasses}>
+        <Link key={link.itemKey} to={targetPath} className={linkClasses}>
           {linkContent}
         </Link>
       );

@@ -24,13 +24,12 @@ import {
   Button,
   Toast,
   Empty,
-  Modal,
+  Image,
 } from '@douyinfe/semi-ui';
 import {
   IconDownload,
   IconCopy,
   IconRefresh,
-  IconExpand,
   IconDelete,
 } from '@douyinfe/semi-icons';
 import { GENERATION_STATUS } from '../../constants/banana-image.constants';
@@ -49,8 +48,6 @@ const ResultSection = ({
   startTime,
   isMobile = false,
 }) => {
-  const [previewVisible, setPreviewVisible] = useState(false);
-  const [previewSrc, setPreviewSrc] = useState('');
   const [loadingDots, setLoadingDots] = useState('');
 
   // 动画点点点效果
@@ -66,8 +63,6 @@ const ResultSection = ({
     }
   }, [status]);
 
-  const selectedImage = images[selectedIndex];
-
   // 下载图像
   const handleDownload = async (url, index) => {
     const filename = `banana-image-${Date.now()}-${index + 1}.png`;
@@ -80,17 +75,11 @@ const ResultSection = ({
   };
 
   // 复制提示词
-  const handleCopyPrompt = () => {
-    if (prompt) {
-      navigator.clipboard.writeText(prompt);
+  const handleCopyPrompt = (text) => {
+    if (text) {
+      navigator.clipboard.writeText(text);
       Toast.success('提示词已复制');
     }
-  };
-
-  // 放大查看
-  const handlePreview = (url) => {
-    setPreviewSrc(url);
-    setPreviewVisible(true);
   };
 
   // 空状态
@@ -163,99 +152,114 @@ const ResultSection = ({
 
   // 成功状态
   if (status === GENERATION_STATUS.SUCCESS && images.length > 0) {
+    // 准备图片预览组
+    const imageUrls = images.map(img => img.url);
+
     return (
       <div className='h-full flex flex-col'>
-        {/* 主图预览 */}
-        <div className='flex-1 relative bg-[var(--semi-color-fill-0)] rounded-lg md:rounded-xl overflow-hidden flex items-center justify-center min-h-[200px]'>
-          <img
-            src={selectedImage?.url}
-            alt='Generated image'
-            className='max-w-full max-h-full object-contain'
-          />
+        {/* 缩略图网格 */}
+        <div className={`grid ${images.length === 1 ? 'grid-cols-1' : isMobile ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-3'} gap-3 md:gap-4`}>
+          {images.map((img, index) => (
+            <div key={img.id || index} className='relative group'>
+              {/* 使用 Semi Design Image 组件，支持预览 */}
+              <Image
+                src={img.url}
+                alt={`Generated ${index + 1}`}
+                width='100%'
+                height={isMobile ? 150 : 200}
+                className='rounded-lg object-cover'
+                preview={{
+                  src: img.url,
+                  visible: false,
+                  getPopupContainer: () => document.body,
+                  // 支持图片组预览
+                  ...(images.length > 1 && {
+                    previewSrcList: imageUrls,
+                    currentIndex: index,
+                  }),
+                }}
+              />
 
-          {/* 操作按钮悬浮层 */}
-          <div className={`absolute ${isMobile ? 'bottom-2' : 'bottom-4'} left-1/2 -translate-x-1/2 flex gap-1 md:gap-2 bg-black/60 backdrop-blur-sm rounded-full px-2 md:px-4 py-1.5 md:py-2`}>
-            <Button
-              icon={<IconExpand />}
-              theme='borderless'
-              size={isMobile ? 'small' : 'default'}
-              className='!text-white hover:!bg-white/20'
-              onClick={() => handlePreview(selectedImage?.url)}
-            />
-            <Button
-              icon={<IconDownload />}
-              theme='borderless'
-              size={isMobile ? 'small' : 'default'}
-              className='!text-white hover:!bg-white/20'
-              onClick={() => handleDownload(selectedImage?.url, selectedIndex)}
-            />
-            <Button
-              icon={<IconCopy />}
-              theme='borderless'
-              size={isMobile ? 'small' : 'default'}
-              className='!text-white hover:!bg-white/20'
-              onClick={handleCopyPrompt}
-            />
-            <Button
-              icon={<IconDelete />}
-              theme='borderless'
-              size={isMobile ? 'small' : 'default'}
-              className='!text-white hover:!bg-white/20'
-              onClick={onReset}
-            />
-          </div>
+              {/* 操作按钮悬浮层 */}
+              <div className='absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all rounded-lg flex items-center justify-center gap-1 md:gap-2 opacity-0 group-hover:opacity-100'>
+                <Button
+                  icon={<IconDownload />}
+                  theme='solid'
+                  size={isMobile ? 'small' : 'default'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownload(img.url, index);
+                  }}
+                />
+                {img.revisedPrompt && (
+                  <Button
+                    icon={<IconCopy />}
+                    theme='solid'
+                    size={isMobile ? 'small' : 'default'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCopyPrompt(img.revisedPrompt);
+                    }}
+                  />
+                )}
+              </div>
+
+              {/* 图片序号标签 */}
+              {images.length > 1 && (
+                <div className='absolute top-2 left-2 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded'>
+                  {index + 1}/{images.length}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
 
-        {/* 多图缩略图 */}
-        {images.length > 1 && (
-          <div className={`flex gap-2 md:gap-3 mt-3 md:mt-4 justify-center ${isMobile ? 'overflow-x-auto pb-2' : ''}`}>
-            {images.map((img, index) => (
-              <button
-                key={img.id || index}
-                type='button'
-                onClick={() => onSelectImage(index)}
-                className={`
-                  flex-shrink-0 ${isMobile ? 'w-12 h-12' : 'w-16 h-16'} rounded-lg overflow-hidden border-2 transition-all
-                  ${
-                    index === selectedIndex
-                      ? 'border-[var(--semi-color-primary)] ring-2 ring-[var(--semi-color-primary-light-default)]'
-                      : 'border-transparent hover:border-[var(--semi-color-border)]'
-                  }
-                `}
-              >
-                <img
-                  src={img.url}
-                  alt={`Generated ${index + 1}`}
-                  className='w-full h-full object-cover'
-                />
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* 修订后的提示词 */}
-        {selectedImage?.revisedPrompt && (
+        {/* 原始提示词 */}
+        {prompt && (
           <div className='mt-3 md:mt-4 p-2 md:p-3 bg-[var(--semi-color-fill-0)] rounded-lg'>
-            <Text type='secondary' size='small' className='text-xs md:text-sm'>
-              <strong>优化后的提示词：</strong>
-              {selectedImage.revisedPrompt}
-            </Text>
+            <div className='flex items-start justify-between gap-2'>
+              <Text type='secondary' size='small' className='text-xs md:text-sm flex-1'>
+                <strong>原始提示词：</strong>
+                {prompt}
+              </Text>
+              <Button
+                icon={<IconCopy />}
+                size='small'
+                theme='borderless'
+                onClick={() => handleCopyPrompt(prompt)}
+              />
+            </div>
           </div>
         )}
 
-        {/* 图片预览 Modal */}
-        <Modal
-          visible={previewVisible}
-          onCancel={() => setPreviewVisible(false)}
-          footer={null}
-          width={isMobile ? '95vw' : '90vw'}
-          style={{ maxWidth: isMobile ? '100%' : '1200px' }}
-          bodyStyle={{ padding: 0 }}
-          closable
-          fullScreen={isMobile}
-        >
-          <img src={previewSrc} alt='Preview' className='w-full h-auto' />
-        </Modal>
+        {/* 修订后的提示词（显示第一张图的） */}
+        {images[0]?.revisedPrompt && (
+          <div className='mt-2 md:mt-3 p-2 md:p-3 bg-[var(--semi-color-fill-0)] rounded-lg'>
+            <div className='flex items-start justify-between gap-2'>
+              <Text type='secondary' size='small' className='text-xs md:text-sm flex-1'>
+                <strong>优化后的提示词：</strong>
+                {images[0].revisedPrompt}
+              </Text>
+              <Button
+                icon={<IconCopy />}
+                size='small'
+                theme='borderless'
+                onClick={() => handleCopyPrompt(images[0].revisedPrompt)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* 重置按钮 */}
+        <div className='mt-3 md:mt-4 flex justify-center'>
+          <Button
+            icon={<IconDelete />}
+            onClick={onReset}
+            size={isMobile ? 'small' : 'default'}
+          >
+            清除结果
+          </Button>
+        </div>
       </div>
     );
   }

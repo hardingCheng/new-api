@@ -23,11 +23,9 @@ import BananaImagePage from '../../components/banana-image/BananaImagePage';
 
 const BananaImage = () => {
   return (
-    <Layout className='h-full overflow-auto flex items-center justify-center p-2 sm:p-4 md:p-8'>
-      <div className='w-full max-w-[1400px] min-h-[600px] max-h-[800px] h-full md:h-auto'>
-        <BananaImagePage />
-      </div>
-    </Layout>
+    <div className='w-full overflow-hidden' style={{ height: 'calc(100vh - 64px)', marginTop: '64px' }}>
+      <BananaImagePage />
+    </div>
   );
 };
 

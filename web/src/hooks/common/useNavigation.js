@@ -54,6 +54,7 @@ export const useNavigation = (t, docsLink, headerNavModules) => {
         text: t('香蕉生图'),
         itemKey: 'bananaImage',
         to: '/banana-image',
+        highlight: true, // 添加闪动特效标记
       },
       ...(docsLink
         ? [

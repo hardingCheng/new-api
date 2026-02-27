@@ -80,7 +80,7 @@ const BananaImagePage = () => {
         {/* 左侧：参数配置区 */}
         <div
           className={`
-            w-full md:w-[420px] md:flex-shrink-0
+            w-full md:w-[520px] md:flex-shrink-0
             ${isMobile ? 'max-h-[50vh]' : 'h-full'}
             border-b md:border-b-0 md:border-r border-[var(--semi-color-border)]
             bg-[var(--semi-color-bg-0)]
@@ -88,7 +88,7 @@ const BananaImagePage = () => {
           `}
         >
           {/* 固定在顶部的标题栏 */}
-          <div className='border-b border-[var(--semi-color-border)] bg-[var(--semi-color-bg-0)] p-3 sm:p-4 md:p-6'>
+          <div className='border-b border-[var(--semi-color-border)] bg-[var(--semi-color-bg-0)] p-3 sm:p-3 md:p-4'>
             <div className='flex items-center justify-between'>
               <div className='flex items-center gap-2 md:gap-3'>
                 <span className='text-2xl md:text-3xl'>🍌</span>
@@ -109,7 +109,7 @@ const BananaImagePage = () => {
 
           {/* 可滚动的参数区域 */}
           <div className='flex-1 overflow-y-auto'>
-            <div className='p-3 sm:p-4 md:p-6'>
+            <div className='p-3 sm:p-3 md:p-4'>
 
               {/* 令牌选择 */}
               <TokenSelector
@@ -158,7 +158,7 @@ const BananaImagePage = () => {
           </div>
 
           {/* 固定在底部的生成按钮 */}
-          <div className='border-t border-[var(--semi-color-border)] bg-[var(--semi-color-bg-0)] p-3 sm:p-4 md:p-6'>
+          <div className='border-t border-[var(--semi-color-border)] bg-[var(--semi-color-bg-0)] p-3 sm:p-3 md:p-4'>
             <GenerateSection
               onGenerate={generateImage}
               isGenerating={generationStatus === 'loading'}
@@ -175,8 +175,8 @@ const BananaImagePage = () => {
         </div>
 
         {/* 右侧：结果展示区 */}
-        <div className='flex-1 h-full overflow-y-auto bg-[var(--semi-color-bg-1)]'>
-          <div className='h-full p-3 sm:p-4 md:p-6'>
+        <div className='flex-1 h-full flex flex-col bg-[var(--semi-color-bg-1)]'>
+          <div className='flex-1 p-3 sm:p-3 md:p-4 overflow-y-auto'>
             <ResultSection
               status={generationStatus}
               error={generationError}

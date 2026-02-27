@@ -201,7 +201,7 @@ const ReferenceImageSection = ({ referenceImages = [], onImagesChange }) => {
           onDragOver={handleDragOver}
           onDrop={handleDrop}
           className={`
-            relative border-2 border-dashed rounded-lg p-8 md:p-12 text-center cursor-pointer transition-all
+            relative border-2 border-dashed rounded-lg p-4 md:p-6 text-center cursor-pointer transition-all
             ${
               isDragging
                 ? 'border-[var(--semi-color-primary)] bg-[var(--semi-color-primary-light-default)]'
@@ -209,8 +209,8 @@ const ReferenceImageSection = ({ referenceImages = [], onImagesChange }) => {
             }
           `}
         >
-          <IconImage size='extra-large' className='text-[var(--semi-color-text-2)] mb-3' />
-          <Text type='secondary' className='block mb-2 text-base md:text-lg'>
+          <IconImage size='large' className='text-[var(--semi-color-text-2)] mb-2' />
+          <Text type='secondary' className='block mb-1 text-sm md:text-base'>
             点击或拖拽图片到此处上传
           </Text>
           <Text type='tertiary' size='small' className='block'>
