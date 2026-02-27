@@ -830,11 +830,20 @@ export const useBananaImage = () => {
         // 更精准的错误信息提取
         let errorMessage = '图像生成失败';
         let statusCode = null;
+        let errorCode = null;
         
         if (error.response) {
           // HTTP 响应错误
           statusCode = error.response.status;
           const data = error.response.data;
+          
+          // 提取错误代码
+          if (data?.error?.code) {
+            errorCode = data.error.code;
+          } else if (data?.code) {
+            errorCode = data.code;
+          }
+          
           if (data?.error?.message) {
             errorMessage = data.error.message;
           } else if (data?.message) {
@@ -853,6 +862,18 @@ export const useBananaImage = () => {
           } else {
             errorMessage = error.message;
           }
+        }
+
+        // 如果是 model_not_found 错误，不重试
+        if (errorCode === 'model_not_found') {
+          updateFields({
+            generationStatus: GENERATION_STATUS.ERROR,
+            generationError: errorMessage,
+            generationStartTime: null,
+            retryMessage: null,
+          });
+          Toast.error(errorMessage);
+          return;
         }
 
         // 检查是否为 500x 错误，如果是则重试

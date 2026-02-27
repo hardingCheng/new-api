@@ -30,7 +30,7 @@ export let API = axios.create({
   baseURL: import.meta.env.VITE_REACT_APP_SERVER_URL
     ? import.meta.env.VITE_REACT_APP_SERVER_URL
     : '',
-  timeout: 10 * 60 * 1000, // 5分钟超时（毫秒）
+  timeout: 30 * 60 * 1000, // 20分钟超时（毫秒）
   headers: {
     'New-API-User': getUserIdFromLocalStorage(),
     'Cache-Control': 'no-store',
@@ -72,7 +72,7 @@ export function updateAPI() {
     baseURL: import.meta.env.VITE_REACT_APP_SERVER_URL
       ? import.meta.env.VITE_REACT_APP_SERVER_URL
       : '',
-    timeout: 5 * 60 * 1000, // 5分钟超时（毫秒）
+    timeout: 20 * 60 * 1000, // 20分钟超时（毫秒）
     headers: {
       'New-API-User': getUserIdFromLocalStorage(),
       'Cache-Control': 'no-store',
