@@ -58,12 +58,18 @@ const HistoryModal = ({
   onClear,
   onClose,
   cacheStats,
+  hasMore,
+  onLoadMore,
+  onSearch,
+  totalCount,
+  isLoading,
 }) => {
   const [activeTab, setActiveTab] = useState('history');
   const [searchText, setSearchText] = useState('');
   const [cacheConfig, setCacheConfig] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
 
   // 加载缓存配置
   useEffect(() => {
@@ -73,13 +79,28 @@ const HistoryModal = ({
     }
   }, [visible]);
 
-  // 重置选择状态
+  // 重置选择状态和搜索
   useEffect(() => {
     if (!visible) {
       setSelectedIds([]);
       setIsSelectionMode(false);
+      setSearchText('');
+      setIsSearching(false);
     }
   }, [visible]);
+
+  // 处理搜索
+  const handleSearch = async (value) => {
+    setSearchText(value);
+    if (value.trim()) {
+      setIsSearching(true);
+      await onSearch(value);
+    } else {
+      setIsSearching(false);
+      // 清空搜索，重新加载第一页
+      await onSearch('');
+    }
+  };
 
   // 切换选择模式
   const toggleSelectionMode = () => {
@@ -98,12 +119,12 @@ const HistoryModal = ({
 
   // 全选
   const selectAll = () => {
-    setSelectedIds(filteredRecords.map((r) => r.id));
+    setSelectedIds(records.map((r) => r.id));
   };
 
   // 反选
   const invertSelection = () => {
-    const allIds = filteredRecords.map((r) => r.id);
+    const allIds = records.map((r) => r.id);
     setSelectedIds(allIds.filter((id) => !selectedIds.includes(id)));
   };
 
@@ -142,18 +163,6 @@ const HistoryModal = ({
       Toast.error('导出失败');
     }
   };
-
-  // 根据搜索文本过滤记录
-  const filteredRecords = useMemo(() => {
-    if (!searchText.trim()) {
-      return records;
-    }
-    const lowerSearchText = searchText.toLowerCase();
-    return records.filter((record) => {
-      const prompt = record.prompt || '';
-      return prompt.toLowerCase().includes(lowerSearchText);
-    });
-  }, [records, searchText]);
 
   const formatTime = (timestamp) => {
     return dayjs(timestamp).fromNow();
@@ -201,7 +210,7 @@ const HistoryModal = ({
         <TabPane
           tab={
             <span>
-              📜 历史记录 {records.length > 0 && `(${records.length})`}
+              📜 历史记录 {totalCount > 0 && `(${totalCount})`}
             </span>
           }
           itemKey='history'
@@ -232,7 +241,7 @@ const HistoryModal = ({
               </div>
             )}
 
-            {records.length === 0 ? (
+            {totalCount === 0 ? (
               <div className='p-8'>
                 <Empty
                   image={<div className='text-4xl'>📜</div>}
@@ -246,9 +255,9 @@ const HistoryModal = ({
                 <div className='p-4 pb-2 sticky top-0 bg-[var(--semi-color-bg-0)] z-10 space-y-3'>
                   <Input
                     prefix={<IconSearch />}
-                    placeholder='搜索提示词...'
+                    placeholder='搜索提示词（搜索全部记录）...'
                     value={searchText}
-                    onChange={setSearchText}
+                    onChange={handleSearch}
                     showClear
                   />
                   
@@ -273,7 +282,7 @@ const HistoryModal = ({
                           size='small'
                           theme='borderless'
                           onClick={selectAll}
-                          disabled={selectedIds.length === filteredRecords.length}
+                          disabled={selectedIds.length === records.length}
                         >
                           全选
                         </Button>
@@ -327,7 +336,7 @@ const HistoryModal = ({
                 </div>
 
                 {/* 记录列表 */}
-                {filteredRecords.length === 0 ? (
+                {records.length === 0 && !isLoading ? (
                   <div className='p-4 md:p-8'>
                     <Empty
                       image={<div className='text-3xl md:text-4xl'>🔍</div>}
@@ -336,26 +345,55 @@ const HistoryModal = ({
                     />
                   </div>
                 ) : (
-                  <div className='p-3 md:p-4 pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4'>
-                    {filteredRecords.map((record) => (
-                      <HistoryCard
-                        key={record.id}
-                        record={record}
-                        isSelectionMode={isSelectionMode}
-                        isSelected={selectedIds.includes(record.id)}
-                        onToggleSelection={() => toggleSelection(record.id)}
-                        onSelect={() => {
-                          if (!isSelectionMode) {
-                            onSelect(record);
-                            onClose();
-                          }
-                        }}
-                        onDelete={() => onDelete(record.id)}
-                        onDownload={handleDownloadImage}
-                        formatTime={formatTime}
-                      />
-                    ))}
-                  </div>
+                  <>
+                    <div className='p-3 md:p-4 pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4'>
+                      {records.map((record) => (
+                        <HistoryCard
+                          key={record.id}
+                          record={record}
+                          isSelectionMode={isSelectionMode}
+                          isSelected={selectedIds.includes(record.id)}
+                          onToggleSelection={() => toggleSelection(record.id)}
+                          onSelect={() => {
+                            if (!isSelectionMode) {
+                              onSelect(record);
+                              onClose();
+                            }
+                          }}
+                          onDelete={() => onDelete(record.id)}
+                          onDownload={handleDownloadImage}
+                          formatTime={formatTime}
+                        />
+                      ))}
+                    </div>
+                    
+                    {/* 加载更多按钮 */}
+                    {!isSearching && hasMore && (
+                      <div className='p-4 flex justify-center'>
+                        <Button
+                          onClick={onLoadMore}
+                          loading={isLoading}
+                          disabled={isLoading}
+                        >
+                          {isLoading ? '加载中...' : '加载更多'}
+                        </Button>
+                      </div>
+                    )}
+                    
+                    {/* 加载中提示 */}
+                    {isLoading && records.length === 0 && (
+                      <div className='p-8 text-center'>
+                        <Text type='tertiary'>加载中...</Text>
+                      </div>
+                    )}
+                    
+                    {/* 没有更多数据提示 */}
+                    {!hasMore && records.length > 0 && !isSearching && (
+                      <div className='p-4 text-center'>
+                        <Text type='tertiary' size='small'>已加载全部 {totalCount} 条记录</Text>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}

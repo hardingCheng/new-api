@@ -352,6 +352,93 @@ export const getAllHistoryRecords = async () => {
   }
 };
 
+// 分页获取历史记录
+export const getHistoryRecordsPaginated = async (page = 1, pageSize = 10) => {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction([HISTORY_STORE_NAME], 'readonly');
+    const store = transaction.objectStore(HISTORY_STORE_NAME);
+    const index = store.index('timestamp');
+    
+    return new Promise((resolve, reject) => {
+      const records = [];
+      let skipped = 0;
+      const skipCount = (page - 1) * pageSize;
+      
+      // 使用游标从最新的记录开始遍历（倒序）
+      const request = index.openCursor(null, 'prev');
+      
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        
+        if (cursor) {
+          // 跳过前面的记录
+          if (skipped < skipCount) {
+            skipped++;
+            cursor.continue();
+            return;
+          }
+          
+          // 收集当前页的记录
+          if (records.length < pageSize) {
+            records.push(cursor.value);
+            cursor.continue();
+          } else {
+            // 已收集足够的记录
+            resolve(records);
+          }
+        } else {
+          // 没有更多记录
+          resolve(records);
+        }
+      };
+      
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Failed to get paginated history records:', error);
+    return [];
+  }
+};
+
+// 获取历史记录总数
+export const getHistoryRecordsCount = async () => {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction([HISTORY_STORE_NAME], 'readonly');
+    const store = transaction.objectStore(HISTORY_STORE_NAME);
+    
+    return new Promise((resolve, reject) => {
+      const request = store.count();
+      request.onsuccess = () => resolve(request.result || 0);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Failed to get history records count:', error);
+    return 0;
+  }
+};
+
+// 搜索历史记录（搜索所有记录）
+export const searchHistoryRecords = async (searchText) => {
+  try {
+    const allRecords = await getAllHistoryRecords();
+    
+    if (!searchText || !searchText.trim()) {
+      return allRecords;
+    }
+    
+    const lowerSearchText = searchText.toLowerCase();
+    return allRecords.filter((record) => {
+      const prompt = record.prompt || '';
+      return prompt.toLowerCase().includes(lowerSearchText);
+    });
+  } catch (error) {
+    console.error('Failed to search history records:', error);
+    return [];
+  }
+};
+
 // 删除历史记录
 export const deleteHistoryRecord = async (id) => {
   try {

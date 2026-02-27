@@ -31,8 +31,10 @@ import {
 import {
   saveImageToCache,
   getCacheStats,
-  cleanupCache,
   getAllHistoryRecords,
+  getHistoryRecordsPaginated,
+  getHistoryRecordsCount,
+  searchHistoryRecords,
   saveHistoryRecord,
   deleteHistoryRecord as deleteHistoryFromDB,
   clearAllHistory,
@@ -88,6 +90,11 @@ const defaultState = {
 
   // 历史记录
   historyRecords: [],
+  historyPage: 1,
+  historyPageSize: 10,
+  historyHasMore: true,
+  historyTotalCount: 0,
+  historyLoading: false,
 
   // 缓存统计
   cacheStats: {
@@ -332,35 +339,16 @@ export const useBananaImage = () => {
     loadTokens();
   }, []);
 
-  // 加载历史记录
-  const loadHistory = useCallback(async () => {
+  // 加载历史记录（分页）
+  const loadHistory = useCallback(async (page = 1, append = false) => {
     try {
-      // 先尝试从 IndexedDB 加载
-      let records = await getAllHistoryRecords();
+      updateField('historyLoading', true);
       
-      // 如果 IndexedDB 为空，尝试从 localStorage 迁移旧数据
-      if (records.length === 0) {
-        const saved = localStorage.getItem(STORAGE_KEYS.HISTORY);
-        if (saved) {
-          try {
-            const oldRecords = JSON.parse(saved);
-            console.log('Migrating history from localStorage to IndexedDB...');
-            
-            // 迁移到 IndexedDB
-            for (const record of oldRecords) {
-              await saveHistoryRecord(record);
-            }
-            
-            // 迁移成功后删除 localStorage 中的数据
-            localStorage.removeItem(STORAGE_KEYS.HISTORY);
-            console.log(`Migrated ${oldRecords.length} history records`);
-            
-            records = oldRecords;
-          } catch (migrateError) {
-            console.error('Failed to migrate history:', migrateError);
-          }
-        }
-      }
+      // 获取总数
+      const totalCount = await getHistoryRecordsCount();
+      
+      // 分页加载
+      const records = await getHistoryRecordsPaginated(page, state.historyPageSize);
       
       // 从 IndexedDB 加载图片 URL
       const recordsWithImages = await Promise.all(
@@ -389,16 +377,77 @@ export const useBananaImage = () => {
         })
       );
       
-      updateField('historyRecords', recordsWithImages);
+      updateFields({
+        historyRecords: append ? [...state.historyRecords, ...recordsWithImages] : recordsWithImages,
+        historyPage: page,
+        historyTotalCount: totalCount,
+        historyHasMore: page * state.historyPageSize < totalCount,
+        historyLoading: false,
+      });
     } catch (e) {
       console.error('Failed to load history:', e);
+      updateField('historyLoading', false);
     }
-  }, [updateField]);
+  }, [updateField, updateFields, state.historyPageSize, state.historyRecords]);
+
+  // 加载更多历史记录
+  const loadMoreHistory = useCallback(async () => {
+    if (!state.historyHasMore || state.historyLoading) {
+      return;
+    }
+    await loadHistory(state.historyPage + 1, true);
+  }, [state.historyHasMore, state.historyLoading, state.historyPage, loadHistory]);
+
+  // 搜索历史记录（搜索全部）
+  const searchHistory = useCallback(async (searchText) => {
+    try {
+      updateField('historyLoading', true);
+      
+      // 搜索所有记录
+      const records = await searchHistoryRecords(searchText);
+      
+      // 从 IndexedDB 加载图片 URL
+      const recordsWithImages = await Promise.all(
+        records.map(async (record) => {
+          if (record.imageIds && record.imageIds.length > 0) {
+            const { getImageFromCache } = await import('../../utils/imageCache');
+            const images = await Promise.all(
+              record.imageIds.map(async (imageId) => {
+                const cachedImage = await getImageFromCache(imageId);
+                if (cachedImage) {
+                  return { url: cachedImage.url || cachedImage.objectUrl };
+                }
+                return null;
+              })
+            );
+            
+            // 过滤掉加载失败的图片
+            const validImages = images.filter(img => img !== null);
+            
+            return {
+              ...record,
+              images: validImages.length > 0 ? validImages : []
+            };
+          }
+          return record;
+        })
+      );
+      
+      updateFields({
+        historyRecords: recordsWithImages,
+        historyHasMore: false, // 搜索结果不分页
+        historyLoading: false,
+      });
+    } catch (e) {
+      console.error('Failed to search history:', e);
+      updateField('historyLoading', false);
+    }
+  }, [updateField, updateFields]);
 
   // 初始加载历史记录
   useEffect(() => {
-    loadHistory();
-  }, [loadHistory]);
+    loadHistory(1, false);
+  }, []);
 
   // 加载缓存统计
   const loadCacheStats = useCallback(async () => {
@@ -420,13 +469,13 @@ export const useBananaImage = () => {
       // 保存到 IndexedDB
       await saveHistoryRecord(record);
       
-      // 更新状态
+      // 更新状态 - 添加到列表开头
       setState((prev) => {
         const newRecords = [record, ...prev.historyRecords];
-        // 限制内存中的记录数量
         return { 
           ...prev, 
-          historyRecords: newRecords.slice(0, MAX_HISTORY_RECORDS) 
+          historyRecords: newRecords,
+          historyTotalCount: prev.historyTotalCount + 1,
         };
       });
     },
@@ -451,7 +500,8 @@ export const useBananaImage = () => {
       // 更新状态
       setState((prev) => ({
         ...prev,
-        historyRecords: prev.historyRecords.filter((r) => r.id !== id)
+        historyRecords: prev.historyRecords.filter((r) => r.id !== id),
+        historyTotalCount: Math.max(0, prev.historyTotalCount - 1),
       }));
       
       // 更新缓存统计
@@ -472,7 +522,10 @@ export const useBananaImage = () => {
     // 更新状态
     setState((prev) => ({
       ...prev,
-      historyRecords: []
+      historyRecords: [],
+      historyPage: 1,
+      historyHasMore: false,
+      historyTotalCount: 0,
     }));
     
     // 更新缓存统计
@@ -885,6 +938,9 @@ export const useBananaImage = () => {
     deleteHistoryRecord: deleteHistoryRecordHandler,
     clearHistory: clearHistoryHandler,
     loadFromHistory,
+    loadHistory,
+    loadMoreHistory,
+    searchHistory,
 
     // 缓存方法
     loadCacheStats,

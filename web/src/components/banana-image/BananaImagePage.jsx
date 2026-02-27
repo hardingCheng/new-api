@@ -56,6 +56,9 @@ const BananaImagePage = () => {
     generatedImages,
     selectedImageIndex,
     historyRecords,
+    historyHasMore,
+    historyTotalCount,
+    historyLoading,
     currentSize,
     cacheStats,
     generationStartTime,
@@ -74,6 +77,8 @@ const BananaImagePage = () => {
     deleteHistoryRecord,
     clearHistory,
     loadFromHistory,
+    loadMoreHistory,
+    searchHistory,
   } = useBananaImage();
 
   // 模拟图片数据（用于测试）
@@ -229,6 +234,11 @@ const BananaImagePage = () => {
         onClear={clearHistory}
         onClose={() => setShowHistory(false)}
         cacheStats={cacheStats}
+        hasMore={historyHasMore}
+        onLoadMore={loadMoreHistory}
+        onSearch={searchHistory}
+        totalCount={historyTotalCount}
+        isLoading={historyLoading}
       />
     </Layout>
   );
