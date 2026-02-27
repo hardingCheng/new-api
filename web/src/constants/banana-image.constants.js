@@ -17,22 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-// 图像生成模型前缀列表
-export const IMAGE_MODEL_PREFIXES = [
-  'flux',
-  'imagen',
-  'stable-diffusion',
-  'midjourney',
-  'sd-',
-  'sdxl-',
-  'sd3',
-  'playground',
-  'ideogram',
-  'recraft',
-  'gemini-2.0-flash-exp-image',
-  'gemini-2.5-flash-image',
-  'gemini-3-pro-image',
-];
+// 图像生成模型识别关键词
+export const IMAGE_MODEL_KEYWORD = '-image';
 
 // 默认图像生成模型列表（当无法从API获取时使用）
 // 注意：使用前请确认您的令牌是否已启用所选模型，未启用的模型将无法使用
@@ -202,10 +188,26 @@ export const calculateImageSize = (resolution, aspectRatio) => {
  * @returns {Array} 过滤后的图像生成模型列表
  */
 export const filterImageModels = (models) => {
-  return models.filter((model) => {
+  const filtered = models.filter((model) => {
     const modelId = typeof model === 'string' ? model : model.id || model.value;
-    return IMAGE_MODEL_PREFIXES.some((prefix) =>
-      modelId.toLowerCase().includes(prefix.toLowerCase())
-    );
+    return modelId.toLowerCase().includes(IMAGE_MODEL_KEYWORD.toLowerCase());
   });
+
+  // 确保 DEFAULT_IMAGE_MODELS 中的模型都包含在结果中
+  const filteredIds = new Set(
+    filtered.map((model) => (typeof model === 'string' ? model : model.id || model.value))
+  );
+
+  DEFAULT_IMAGE_MODELS.forEach((defaultModel) => {
+    if (!filteredIds.has(defaultModel)) {
+      // 如果默认模型不在过滤结果中，添加它
+      filtered.push(
+        typeof filtered[0] === 'string'
+          ? defaultModel
+          : { id: defaultModel, value: defaultModel, label: defaultModel }
+      );
+    }
+  });
+
+  return filtered;
 };
