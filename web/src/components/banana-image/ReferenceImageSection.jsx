@@ -189,6 +189,11 @@ const ReferenceImageSection = ({ referenceImages = [], onImagesChange }) => {
         </Text>
       </div>
 
+      {/* 拖拽排序提示 */}
+      <Text type='tertiary' size='small' className='block mb-3'>
+        💡 提示：可以拖拽图片更改顺序
+      </Text>
+
       {/* 图片预览列表 */}
       {referenceImages.length > 0 && (
         <div className='mb-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3'>
