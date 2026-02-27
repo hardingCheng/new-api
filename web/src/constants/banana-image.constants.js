@@ -35,7 +35,9 @@ export const IMAGE_MODEL_PREFIXES = [
 ];
 
 // 默认图像生成模型列表（当无法从API获取时使用）
+// 注意：使用前请确认您的令牌是否已启用所选模型，未启用的模型将无法使用
 export const DEFAULT_IMAGE_MODELS = [
+  'gemini-3.1-flash-image-preview',
   'gemini-3-pro-image-preview',
   'gemini-2.5-flash-image-preview',
   'gemini-2.5-flash-image',

@@ -223,8 +223,8 @@ export const useBananaImage = () => {
           if (indexB !== -1) {
             return 1;
           }
-          // 如果都不在默认列表中，保持原顺序
-          return 0;
+          // 如果都不在默认列表中，按字母顺序排序
+          return a.value.localeCompare(b.value);
         });
         
         updateFields({

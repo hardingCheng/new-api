@@ -57,6 +57,10 @@ const ModelSelector = ({
         }
       />
 
+      <Text type='tertiary' size='small' className='mt-2 block'>
+        注意：使用前请确认您的令牌是否已包含所选模型，未包含此模型将无法使用
+      </Text>
+
       {!disabled && availableModels.length === 0 && !loading && (
         <Text type='tertiary' size='small' className='mt-1 block'>
           未找到图像生成模型（如 dall-e、flux、imagen 等）
