@@ -86,17 +86,24 @@ const ResultSection = ({
   if (status === GENERATION_STATUS.IDLE) {
     return (
       <div className='h-full flex items-center justify-center'>
-        <Empty
-          image={<div className={`${isMobile ? 'text-5xl' : 'text-8xl'} opacity-50`}>🖼️</div>}
-          title={
-            <span className='text-[var(--semi-color-text-2)]'>等待生成</span>
-          }
-          description={
-            <span className='text-[var(--semi-color-text-3)] text-sm'>
-              {isMobile ? '配置参数后点击生成' : '在左侧配置参数后点击生成按钮开始创作'}
-            </span>
-          }
-        />
+        <div className='flex flex-col items-center gap-4'>
+          <div className='flex items-center justify-center w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-[#FFF9E6]'>
+            <svg className='w-10 h-10 md:w-12 md:h-12 animate-bounce' viewBox='0 0 64 64' fill='none'>
+              <path d='M45 8C45 8 48 8 50 10C52 12 52 15 52 15C52 15 52 18 50 20C48 22 45 22 45 22' stroke='#8B6914' strokeWidth='2' strokeLinecap='round'/>
+              <path d='M45 10C45 10 42 12 40 18C38 24 36 32 34 38C32 44 28 52 22 56C16 60 10 58 8 54C6 50 8 44 12 40C16 36 22 34 28 32C34 30 40 28 44 24C48 20 50 14 50 10' fill='#FFD93D' stroke='#F4B400' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'/>
+              <ellipse cx='28' cy='38' rx='3' ry='2' fill='#8B6914' opacity='0.2'/>
+              <ellipse cx='20' cy='46' rx='2.5' ry='1.5' fill='#8B6914' opacity='0.2'/>
+            </svg>
+          </div>
+          <div className='text-center'>
+            <div className='text-[var(--semi-color-text-0)] text-base md:text-lg font-medium mb-2'>
+              开始创作你的图片
+            </div>
+            <div className='text-[var(--semi-color-text-2)] text-sm'>
+              在左侧配置面板输入提示词进行文生图，或上传参考图片进行图生图
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
