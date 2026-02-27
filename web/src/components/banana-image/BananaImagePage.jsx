@@ -63,6 +63,7 @@ const BananaImagePage = () => {
 
     // 更新方法
     updateField,
+    updateFields,
 
     // 操作方法
     handleTokenChange,
@@ -74,6 +75,22 @@ const BananaImagePage = () => {
     clearHistory,
     loadFromHistory,
   } = useBananaImage();
+
+  // 模拟图片数据（用于测试）
+  const simulateImage = () => {
+    // 生成10张测试图片
+    const mockImages = Array.from({ length: 10 }, (_, index) => ({
+      id: `mock-${Date.now()}-${index}`,
+      url: `https://picsum.photos/500/500?random=${Date.now()}-${index}`,
+      revisedPrompt: `这是第 ${index + 1} 张模拟的测试图片，用于展示图片预览和下载功能`,
+    }));
+
+    updateFields({
+      generationStatus: 'success',
+      generatedImages: mockImages,
+      prompt: '模拟测试图片（10张）',
+    });
+  };
 
   return (
     <Layout className='h-full bg-transparent rounded-lg shadow-lg overflow-hidden'>
@@ -97,14 +114,23 @@ const BananaImagePage = () => {
                   香蕉生图
                 </Title>
               </div>
-              <Button
-                icon={<IconHistory />}
-                theme='borderless'
-                size={isMobile ? 'small' : 'default'}
-                onClick={() => setShowHistory(true)}
-              >
-                {isMobile ? '历史' : `查看历史 (${historyRecords.reduce((total, record) => total + (record.images?.length || 0), 0)})`}
-              </Button>
+              <div className='flex gap-2'>
+                {/* <Button
+                  theme='borderless'
+                  size='small'
+                  onClick={simulateImage}
+                >
+                  测试
+                </Button> */}
+                <Button
+                  icon={<IconHistory />}
+                  theme='borderless'
+                  size={isMobile ? 'small' : 'default'}
+                  onClick={() => setShowHistory(true)}
+                >
+                  {isMobile ? '历史' : `查看历史 (${historyRecords.reduce((total, record) => total + (record.images?.length || 0), 0)})`}
+                </Button>
+              </div>
             </div>
           </div>
 

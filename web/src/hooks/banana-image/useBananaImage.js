@@ -526,7 +526,7 @@ export const useBananaImage = () => {
       retryMessage: null, // 清空重试消息
     });
 
-    const MAX_RETRIES = 10;
+    const MAX_RETRIES = 15;
     let retryCount = 0;
     let shownRetryMessage = false; // 使用局部变量跟踪本次生成是否已显示提示
 

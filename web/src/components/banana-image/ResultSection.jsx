@@ -17,20 +17,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Typography,
   Spin,
   Button,
   Toast,
-  Empty,
   Image,
 } from '@douyinfe/semi-ui';
 import {
   IconDownload,
-  IconCopy,
   IconRefresh,
   IconDelete,
+  IconEyeOpened,
 } from '@douyinfe/semi-icons';
 import { GENERATION_STATUS } from '../../constants/banana-image.constants';
 import { downloadImage } from '../../utils/imageCache';
@@ -42,14 +41,12 @@ const ResultSection = ({
   error,
   retryMessage,
   images,
-  selectedIndex,
-  onSelectImage,
   onReset,
   prompt,
-  startTime,
   isMobile = false,
 }) => {
   const [loadingDots, setLoadingDots] = useState('');
+  const imageRefs = useRef([]);
 
   // 动画点点点效果
   useEffect(() => {
@@ -66,7 +63,10 @@ const ResultSection = ({
 
   // 下载图像
   const handleDownload = async (url, index) => {
-    const filename = `banana-image-${Date.now()}-${index + 1}.png`;
+    // 生成更具描述性的文件名
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const promptPrefix = prompt ? prompt.slice(0, 30).replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_') : 'image';
+    const filename = `${promptPrefix}_${timestamp}_${index + 1}.png`;
     const success = await downloadImage(url, filename);
     if (success) {
       Toast.success('图像下载成功');
@@ -75,13 +75,20 @@ const ResultSection = ({
     }
   };
 
-  // 复制提示词
-  const handleCopyPrompt = (text) => {
-    if (text) {
-      navigator.clipboard.writeText(text);
-      Toast.success('提示词已复制');
+  // 浏览图像 - 触发 Image 组件的预览功能
+  const handleView = (index) => {
+    if (imageRefs.current[index]) {
+      // 模拟点击图片来触发预览
+      const imgElement = imageRefs.current[index].querySelector('img');
+      if (imgElement) {
+        imgElement.click();
+      }
     }
   };
+
+
+
+
 
   // 空状态
   if (status === GENERATION_STATUS.IDLE) {
@@ -162,36 +169,45 @@ const ResultSection = ({
 
   // 成功状态
   if (status === GENERATION_STATUS.SUCCESS && images.length > 0) {
-    // 准备图片预览组
-    const imageUrls = images.map(img => img.url);
-
     return (
       <div className='h-full flex flex-col'>
         {/* 缩略图网格 */}
-        <div className={`grid ${images.length === 1 ? 'grid-cols-1' : isMobile ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-3'} gap-3 md:gap-4`}>
+        <div className='flex flex-wrap justify-center md:justify-start' style={{ gap: '10px 10px' }}>
           {images.map((img, index) => (
-            <div key={img.id || index} className='relative group'>
-              {/* 使用 Semi Design Image 组件，支持预览 */}
+            <div 
+              key={img.id || index} 
+              className='relative group overflow-hidden' 
+              style={{ width: '350px', height: '350px' }}
+              ref={(el) => (imageRefs.current[index] = el)}
+            >
+              {/* 使用 Semi Design Image 组件，支持预览和下载 */}
               <Image
                 src={img.url}
                 alt={`Generated ${index + 1}`}
-                width='100%'
-                height={isMobile ? 150 : 200}
-                className='rounded-lg object-cover'
+                width={350}
+                height={350}
+                className='rounded-lg'
+                style={{ display: 'block', width: '350px', height: '350px', objectFit: 'cover' }}
                 preview={{
                   src: img.url,
-                  visible: false,
                   getPopupContainer: () => document.body,
-                  // 支持图片组预览
-                  ...(images.length > 1 && {
-                    previewSrcList: imageUrls,
-                    currentIndex: index,
-                  }),
+                  // 禁用内置下载按钮，使用自定义下载功能
+                  download: false,
                 }}
               />
 
               {/* 操作按钮悬浮层 */}
-              <div className='absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all rounded-lg flex items-center justify-center gap-1 md:gap-2 opacity-0 group-hover:opacity-100'>
+              <div className='absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-200 rounded-lg flex items-center justify-center gap-1 md:gap-2 opacity-0 group-hover:opacity-100 z-10'>
+                <Button
+                  icon={<IconEyeOpened />}
+                  theme='solid'
+                  size={isMobile ? 'small' : 'default'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleView(index);
+                  }}
+                  title='浏览图片'
+                />
                 <Button
                   icon={<IconDownload />}
                   theme='solid'
@@ -200,23 +216,13 @@ const ResultSection = ({
                     e.stopPropagation();
                     handleDownload(img.url, index);
                   }}
+                  title='下载图片'
                 />
-                {img.revisedPrompt && (
-                  <Button
-                    icon={<IconCopy />}
-                    theme='solid'
-                    size={isMobile ? 'small' : 'default'}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCopyPrompt(img.revisedPrompt);
-                    }}
-                  />
-                )}
               </div>
 
               {/* 图片序号标签 */}
               {images.length > 1 && (
-                <div className='absolute top-2 left-2 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded'>
+                <div className='absolute top-2 right-2.5 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded z-10'>
                   {index + 1}/{images.length}
                 </div>
               )}
@@ -224,41 +230,7 @@ const ResultSection = ({
           ))}
         </div>
 
-        {/* 原始提示词 */}
-        {prompt && (
-          <div className='mt-3 md:mt-4 p-2 md:p-3 bg-[var(--semi-color-fill-0)] rounded-lg'>
-            <div className='flex items-start justify-between gap-2'>
-              <Text type='secondary' size='small' className='text-xs md:text-sm flex-1'>
-                <strong>原始提示词：</strong>
-                {prompt}
-              </Text>
-              <Button
-                icon={<IconCopy />}
-                size='small'
-                theme='borderless'
-                onClick={() => handleCopyPrompt(prompt)}
-              />
-            </div>
-          </div>
-        )}
 
-        {/* 修订后的提示词（显示第一张图的） */}
-        {images[0]?.revisedPrompt && (
-          <div className='mt-2 md:mt-3 p-2 md:p-3 bg-[var(--semi-color-fill-0)] rounded-lg'>
-            <div className='flex items-start justify-between gap-2'>
-              <Text type='secondary' size='small' className='text-xs md:text-sm flex-1'>
-                <strong>优化后的提示词：</strong>
-                {images[0].revisedPrompt}
-              </Text>
-              <Button
-                icon={<IconCopy />}
-                size='small'
-                theme='borderless'
-                onClick={() => handleCopyPrompt(images[0].revisedPrompt)}
-              />
-            </div>
-          </div>
-        )}
 
         {/* 重置按钮 */}
         <div className='mt-3 md:mt-4 flex justify-center'>
