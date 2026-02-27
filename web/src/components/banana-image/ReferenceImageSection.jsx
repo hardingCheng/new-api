@@ -26,6 +26,8 @@ const { Text } = Typography;
 const ReferenceImageSection = ({ referenceImages = [], onImagesChange }) => {
   const fileInputRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
 
   const MAX_IMAGES = 20;
   const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB
@@ -130,6 +132,54 @@ const ReferenceImageSection = ({ referenceImages = [], onImagesChange }) => {
     onImagesChange(referenceImages.filter((img) => img.id !== id));
   };
 
+  // 图片拖拽排序
+  const handleImageDragStart = (e, index) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    // 设置拖拽数据，防止与文件拖拽冲突
+    e.dataTransfer.setData('text/plain', 'reorder');
+  };
+
+  const handleImageDragOver = (e, index) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // 检查是否是图片重排序（而非文件上传）
+    if (draggedIndex === null) return;
+    
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  };
+
+  const handleImageDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleImageDrop = (e, dropIndex) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // 检查是否是图片重排序
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    const newImages = [...referenceImages];
+    const [draggedImage] = newImages.splice(draggedIndex, 1);
+    newImages.splice(dropIndex, 0, draggedImage);
+    
+    onImagesChange(newImages);
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleImageDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
   return (
     <div className='mb-6'>
       <div className='flex items-center justify-between mb-3'>
@@ -142,15 +192,28 @@ const ReferenceImageSection = ({ referenceImages = [], onImagesChange }) => {
       {/* 图片预览列表 */}
       {referenceImages.length > 0 && (
         <div className='mb-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3'>
-          {referenceImages.map((image) => (
+          {referenceImages.map((image, index) => (
             <div
               key={image.id}
-              className='relative group aspect-square rounded-lg overflow-hidden border border-[var(--semi-color-border)] bg-[var(--semi-color-fill-0)] hover:border-[var(--semi-color-primary)] transition-colors'
+              draggable
+              onDragStart={(e) => handleImageDragStart(e, index)}
+              onDragOver={(e) => handleImageDragOver(e, index)}
+              onDragLeave={handleImageDragLeave}
+              onDrop={(e) => handleImageDrop(e, index)}
+              onDragEnd={handleImageDragEnd}
+              className={`
+                relative group aspect-square rounded-lg overflow-hidden border bg-[var(--semi-color-fill-0)] transition-all cursor-move
+                ${draggedIndex === index ? 'opacity-50 scale-95' : ''}
+                ${dragOverIndex === index && draggedIndex !== null && draggedIndex !== index 
+                  ? 'border-2 border-[var(--semi-color-primary)] scale-105' 
+                  : 'border-[var(--semi-color-border)] hover:border-[var(--semi-color-primary)]'
+                }
+              `}
             >
               <img
                 src={image.url}
                 alt={image.name}
-                className='w-full h-full object-cover'
+                className='w-full h-full object-cover pointer-events-none'
               />
               {/* 文件名提示 */}
               <div className='absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity'>

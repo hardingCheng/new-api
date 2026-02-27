@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React, { useState, useEffect } from 'react';
 import {
-  Form,
+  InputNumber,
   Button,
   Typography,
   Toast,
@@ -120,58 +120,72 @@ const CacheSettings = ({ cacheStats }) => {
 
       {/* 清理规则 */}
       <Card title='自动清理规则' className='mt-4'>
-        <Form
-          labelPosition='left'
-          labelAlign='right'
-          labelWidth={120}
-        >
-          <Form.InputNumber
-            field='maxAge'
-            label='保存时间'
-            suffix='天'
-            min={1}
-            max={365}
-            value={formatDays(config.maxAge)}
-            onChange={(value) => {
-              setConfig({
-                ...config,
-                maxAge: value * 24 * 60 * 60 * 1000,
-              });
-            }}
-            extraText={`超过此时间的图片将被自动清理（默认：${formatDays(DEFAULT_CACHE_CONFIG.maxAge)}天）`}
-          />
+        <div className='space-y-4'>
+          <div>
+            <div className='flex items-center gap-2 mb-2'>
+              <Text>保存时间</Text>
+              <InputNumber
+                suffix='天'
+                min={1}
+                max={365}
+                value={formatDays(config.maxAge)}
+                onChange={(value) => {
+                  setConfig({
+                    ...config,
+                    maxAge: value * 24 * 60 * 60 * 1000,
+                  });
+                }}
+                style={{ width: 200 }}
+              />
+            </div>
+            <Text type='secondary' size='small'>
+              超过此时间的图片将被自动清理（默认：{formatDays(DEFAULT_CACHE_CONFIG.maxAge)}天）
+            </Text>
+          </div>
 
-          <Form.InputNumber
-            field='maxCount'
-            label='最大数量'
-            suffix='张'
-            min={10}
-            max={1000}
-            value={config.maxCount}
-            onChange={(value) => {
-              setConfig({
-                ...config,
-                maxCount: value,
-              });
-            }}
-            extraText={`超过此数量时，最旧的图片将被清理（默认：${DEFAULT_CACHE_CONFIG.maxCount}张）`}
-          />
+          <div>
+            <div className='flex items-center gap-2 mb-2'>
+              <Text>最大数量</Text>
+              <InputNumber
+                suffix='张'
+                min={10}
+                max={1000}
+                value={config.maxCount}
+                onChange={(value) => {
+                  setConfig({
+                    ...config,
+                    maxCount: value,
+                  });
+                }}
+                style={{ width: 200 }}
+              />
+            </div>
+            <Text type='secondary' size='small'>
+              超过此数量时，最旧的图片将被清理（默认：{DEFAULT_CACHE_CONFIG.maxCount}张）
+            </Text>
+          </div>
 
-          <Form.InputNumber
-            field='maxSize'
-            label='最大存储'
-            suffix='MB'
-            min={10}
-            max={1000}
-            value={Math.round(config.maxSize / (1024 * 1024))}
-            onChange={(value) => {
-              setConfig({
-                ...config,
-                maxSize: value * 1024 * 1024,
-              });
-            }}
-            extraText={`超过此大小时，最旧的图片将被清理（默认：${Math.round(DEFAULT_CACHE_CONFIG.maxSize / (1024 * 1024))}MB）`}
-          />
+          <div>
+            <div className='flex items-center gap-2 mb-2'>
+              <Text>最大存储</Text>
+              <InputNumber
+                suffix='MB'
+                min={10}
+                max={1000}
+                value={Math.round(config.maxSize / (1024 * 1024))}
+                onChange={(value) => {
+                  setConfig({
+                    ...config,
+                    maxSize: value * 1024 * 1024,
+                  });
+                }}
+                style={{ width: 200 }}
+              />
+            </div>
+            <Text type='secondary' size='small'>
+              超过此大小时，最旧的图片将被清理（默认：{Math.round(DEFAULT_CACHE_CONFIG.maxSize / (1024 * 1024))}MB）
+            </Text>
+          </div>
 
           <div className='flex justify-end gap-2 mt-4'>
             <Button
@@ -191,7 +205,7 @@ const CacheSettings = ({ cacheStats }) => {
               保存设置
             </Button>
           </div>
-        </Form>
+        </div>
       </Card>
     </div>
   );
