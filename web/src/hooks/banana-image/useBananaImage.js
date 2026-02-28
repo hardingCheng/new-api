@@ -865,16 +865,16 @@ export const useBananaImage = () => {
         }
 
         // 如果是 model_not_found 错误，不重试
-        if (errorCode === 'model_not_found') {
-          updateFields({
-            generationStatus: GENERATION_STATUS.ERROR,
-            generationError: errorMessage,
-            generationStartTime: null,
-            retryMessage: null,
-          });
-          Toast.error(errorMessage);
-          return;
-        }
+        // if (errorCode === 'model_not_found') {
+        //   updateFields({
+        //     generationStatus: GENERATION_STATUS.ERROR,
+        //     generationError: errorMessage,
+        //     generationStartTime: null,
+        //     retryMessage: null,
+        //   });
+        //   Toast.error(errorMessage);
+        //   return;
+        // }
 
         // 检查是否为 500x 错误，如果是则重试
         if (statusCode && statusCode >= 500 && statusCode < 600 && retryCount < MAX_RETRIES) {

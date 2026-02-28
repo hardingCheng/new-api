@@ -24,6 +24,11 @@ import { IconKey } from '@douyinfe/semi-icons';
 const { Text } = Typography;
 
 const TokenSelector = ({ selectedToken, availableTokens, loading, onChange }) => {
+  // 过滤出 group 以 "生图_" 开头的令牌
+  const filteredTokens = availableTokens.filter((token) => {
+    return token.group && token.group.startsWith('生图_');
+  });
+
   return (
     <div className='mb-4'>
       <div className='flex items-center gap-2 mb-2'>
@@ -35,20 +40,20 @@ const TokenSelector = ({ selectedToken, availableTokens, loading, onChange }) =>
       <Select
         value={selectedToken?.value}
         onChange={(value) => {
-          const token = availableTokens.find((t) => t.value === value);
+          const token = filteredTokens.find((t) => t.value === value);
           onChange(token);
         }}
         placeholder='请选择令牌'
-        optionList={availableTokens}
+        optionList={filteredTokens}
         loading={loading}
         filter
         className='w-full'
-        emptyContent={loading ? '加载中...' : '暂无可用令牌，请先创建令牌'}
+        emptyContent={loading ? '加载中...' : '暂无可用的生图令牌，请先创建生图_开头的令牌组'}
       />
 
-      {availableTokens.length === 0 && !loading && (
+      {filteredTokens.length === 0 && !loading && (
         <Text type='warning' size='small' className='mt-1 block'>
-          请先在令牌管理中创建令牌
+          请先在令牌管理中创建属于"生图_"开头分组的令牌
         </Text>
       )}
     </div>
