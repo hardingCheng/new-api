@@ -37,22 +37,40 @@ const ParamsSection = ({
 }) => {
   return (
     <div className='mb-6 space-y-4'>
-      {/* 分辨率选择 */}
-      <div>
-        <Text strong className='block mb-2'>
-          分辨率
-        </Text>
-        <RadioGroup
-          type='button'
-          value={resolution}
-          onChange={(e) => onResolutionChange(e.target.value)}
-        >
-          {RESOLUTION_OPTIONS.map((option) => (
-            <Tooltip content={option.description} key={option.key}>
-              <Radio value={option.key}>{option.label}</Radio>
-            </Tooltip>
-          ))}
-        </RadioGroup>
+      {/* 分辨率和生成数量 */}
+      <div className='flex gap-6'>
+        <div className='flex-1'>
+          <Text strong className='block mb-2'>
+            分辨率
+          </Text>
+          <RadioGroup
+            type='button'
+            value={resolution}
+            onChange={(e) => onResolutionChange(e.target.value)}
+          >
+            {RESOLUTION_OPTIONS.map((option) => (
+              <Tooltip content={option.description} key={option.key}>
+                <Radio value={option.key}>{option.label}</Radio>
+              </Tooltip>
+            ))}
+          </RadioGroup>
+        </div>
+
+        <div className='flex-1'>
+          <Text strong className='block mb-2'>
+            生成数量
+          </Text>
+          <div className='flex items-center gap-3'>
+            <InputNumber
+              value={numberOfImages}
+              onChange={onNumberOfImagesChange}
+              min={1}
+              max={4}
+              className='w-24'
+            />
+            <Text type='tertiary' size='small'>张（1-4张）</Text>
+          </div>
+        </div>
       </div>
 
       {/* 比例选择 */}
@@ -123,23 +141,6 @@ const ParamsSection = ({
           <Text type='secondary' size='small'>
             输出尺寸: <Text strong>{currentSize.width} × {currentSize.height}</Text> px
           </Text>
-        </div>
-      </div>
-
-      {/* 生成数量 */}
-      <div>
-        <Text strong className='block mb-2'>
-          生成数量
-        </Text>
-        <div className='flex items-center gap-3'>
-          <InputNumber
-            value={numberOfImages}
-            onChange={onNumberOfImagesChange}
-            min={1}
-            max={4}
-            className='w-24'
-          />
-          <Text type='tertiary' size='small'>张（1-4张）</Text>
         </div>
       </div>
     </div>

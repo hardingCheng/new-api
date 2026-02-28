@@ -26,8 +26,16 @@ const { Text } = Typography;
 const TokenSelector = ({ selectedToken, availableTokens, loading, onChange }) => {
   // 过滤出 group 以 "生图_" 开头的令牌
   const filteredTokens = availableTokens.filter((token) => {
-    return token.group && token.group.startsWith('生图_');
+    // 必须有 group 属性，且不能是 "default"，且必须以 "生图_" 开头
+    return token.group && 
+           token.group !== 'default' && 
+           token.group.startsWith('生图_');
   });
+
+  // 如果当前选中的令牌不在过滤后的列表中，清空选中状态
+  const currentValue = filteredTokens.some((t) => t.value === selectedToken?.value)
+    ? selectedToken?.value
+    : undefined;
 
   return (
     <div className='mb-4'>
@@ -38,13 +46,16 @@ const TokenSelector = ({ selectedToken, availableTokens, loading, onChange }) =>
       </div>
 
       <Select
-        value={selectedToken?.value}
+        value={currentValue}
         onChange={(value) => {
           const token = filteredTokens.find((t) => t.value === value);
           onChange(token);
         }}
         placeholder='请选择令牌'
-        optionList={filteredTokens}
+        optionList={filteredTokens.map((token) => ({
+          ...token,
+          label: token.name,
+        }))}
         loading={loading}
         filter
         className='w-full'
