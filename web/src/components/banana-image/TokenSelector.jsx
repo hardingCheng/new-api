@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Select, Typography, Spin } from '@douyinfe/semi-ui';
 import { IconKey } from '@douyinfe/semi-icons';
 
@@ -31,6 +31,13 @@ const TokenSelector = ({ selectedToken, availableTokens, loading, onChange }) =>
            token.group !== 'default' && 
            token.group.startsWith('生图_');
   });
+
+  // 自动选择第一个令牌（当有数据且未选中时）
+  useEffect(() => {
+    if (!loading && filteredTokens.length > 0 && !selectedToken) {
+      onChange(filteredTokens[0]);
+    }
+  }, [loading, filteredTokens.length]);
 
   // 如果当前选中的令牌不在过滤后的列表中，清空选中状态
   const currentValue = filteredTokens.some((t) => t.value === selectedToken?.value)
