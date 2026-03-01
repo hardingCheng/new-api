@@ -921,9 +921,12 @@ export const useBananaImage = () => {
     state.numberOfImages,
     state.resolution,
     state.aspectRatio,
+    state.referenceImages,
     currentSize,
+    updateField,
     updateFields,
     addHistoryRecord,
+    loadCacheStats,
     isGeminiImageModel,
   ]);
 
