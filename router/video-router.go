@@ -30,6 +30,11 @@ func SetVideoRouter(router *gin.Engine) {
 		videoV1Router.POST("/videos", controller.RelayTask)
 		videoV1Router.GET("/videos/:task_id", controller.RelayTaskFetch)
 	}
+	// veo compatible API video routes
+	{
+		videoV1Router.POST("/video/create", controller.RelayTask)
+		videoV1Router.GET("/video/create/:task_id", controller.RelayTaskFetch)
+	}
 
 	klingV1Router := router.Group("/kling/v1")
 	klingV1Router.Use(middleware.RouteTag("relay"))

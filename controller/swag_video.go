@@ -134,3 +134,37 @@ func KlingImage2videoTaskId(c *gin.Context) {}
 // @Param task_id path string true "Task ID"
 // @Router /kling/v1/videos/text2video/{task_id} [get]
 func KlingText2videoTaskId(c *gin.Context) {}
+
+// VideoCreate
+// @Summary 生成视频 (Veo)
+// @Description 调用视频生成接口生成视频 (Veo 兼容格式)
+// @Description 支持多种视频生成服务
+// @Tags Video
+// @Accept json
+// @Produce json
+// @Param Authorization header string true "用户认证令牌 (Aeess-Token: sk-xxxx)"
+// @Param request body dto.VideoRequest true "视频生成请求参数"
+// @Failure 400 {object} dto.OpenAIError "请求参数错误"
+// @Failure 401 {object} dto.OpenAIError "未授权"
+// @Failure 403 {object} dto.OpenAIError "无权限"
+// @Failure 500 {object} dto.OpenAIError "服务器内部错误"
+// @Router /v1/video/create [post]
+func VideoCreate(c *gin.Context) {
+}
+
+// VideoCreateTaskId
+// @Summary 查询视频 (Veo)
+// @Description 根据任务ID查询视频生成任务的状态和结果 (Veo 兼容格式)
+// @Tags Video
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param task_id path string true "Task ID"
+// @Success 200 {object} dto.VideoTaskResponse "任务状态和结果"
+// @Failure 400 {object} dto.OpenAIError "请求参数错误"
+// @Failure 401 {object} dto.OpenAIError "未授权"
+// @Failure 403 {object} dto.OpenAIError "无权限"
+// @Failure 500 {object} dto.OpenAIError "服务器内部错误"
+// @Router /v1/video/create/{task_id} [get]
+func VideoCreateTaskId(c *gin.Context) {
+}
