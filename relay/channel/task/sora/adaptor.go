@@ -106,13 +106,14 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		return nil
 	}
 
-	seconds, _ := strconv.Atoi(req.Seconds)
-	if seconds == 0 {
-		seconds = req.Duration
-	}
-	if seconds <= 0 {
-		seconds = 4
-	}
+	// 屏蔽秒数计费
+	//seconds, _ := strconv.Atoi(req.Seconds)
+	//if seconds == 0 {
+	//	seconds = req.Duration
+	//}
+	//if seconds <= 0 {
+	//	seconds = 4
+	//}
 
 	size := req.Size
 	if size == "" {
@@ -120,8 +121,8 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	}
 
 	ratios := map[string]float64{
-		"seconds": float64(seconds),
-		"size":    1,
+		//"seconds": float64(seconds), // 屏蔽秒数计费
+		"size": 1,
 	}
 	if size == "1792x1024" || size == "1024x1792" {
 		ratios["size"] = 1.666667
