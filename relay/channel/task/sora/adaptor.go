@@ -7,7 +7,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
-	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
