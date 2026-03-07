@@ -38,18 +38,21 @@ type ImageURL struct {
 }
 
 type responseTask struct {
-	ID                 string `json:"id"`
-	TaskID             string `json:"task_id,omitempty"` //兼容旧接口
-	Object             string `json:"object"`
-	Model              string `json:"model"`
-	Status             string `json:"status"`
-	Progress           int    `json:"progress"`
-	CreatedAt          int64  `json:"created_at"`
-	CompletedAt        int64  `json:"completed_at,omitempty"`
-	ExpiresAt          int64  `json:"expires_at,omitempty"`
-	Seconds            string `json:"seconds,omitempty"`
-	Size               string `json:"size,omitempty"`
-	RemixedFromVideoID string `json:"remixed_from_video_id,omitempty"`
+	ID                 string         `json:"id"`
+	TaskID             string         `json:"task_id,omitempty"` //兼容旧接口
+	Object             string         `json:"object"`
+	Model              string         `json:"model"`
+	Status             string         `json:"status"`
+	Progress           int            `json:"progress"`
+	CreatedAt          int64          `json:"created_at"`
+	CompletedAt        int64          `json:"completed_at,omitempty"`
+	ExpiresAt          int64          `json:"expires_at,omitempty"`
+	Seconds            string         `json:"seconds,omitempty"`
+	Size               string         `json:"size,omitempty"`
+	RemixedFromVideoID string         `json:"remixed_from_video_id,omitempty"`
+	URL                string         `json:"url,omitempty"`       // 视频下载地址
+	VideoURL           string         `json:"video_url,omitempty"` // 视频播放地址（与 url 相同）
+	Metadata           map[string]any `json:"metadata,omitempty"`  // 额外元数据
 	Error              *struct {
 		Message string `json:"message"`
 		Code    string `json:"code"`
@@ -304,7 +307,13 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 		taskResult.Status = model.TaskStatusInProgress
 	case "completed":
 		taskResult.Status = model.TaskStatusSuccess
-		// Url intentionally left empty — the caller constructs the proxy URL using the public task ID
+		// 保存上游返回的视频 URL（优先使用 url 字段）
+		if resTask.URL != "" {
+			taskResult.Url = resTask.URL
+		} else if resTask.VideoURL != "" {
+			taskResult.Url = resTask.VideoURL
+		}
+		// 如果上游没有返回 URL，调用者会构建代理 URL
 	case "failed", "cancelled":
 		taskResult.Status = model.TaskStatusFailure
 		if resTask.Error != nil {
@@ -324,8 +333,56 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	data := task.Data
 	var err error
+	
+	// 替换为公开的 task ID
 	if data, err = sjson.SetBytes(data, "id", task.TaskID); err != nil {
 		return nil, errors.Wrap(err, "set id failed")
 	}
+	
+	// 如果任务成功，确保 url 和 video_url 字段存在
+	if task.Status == model.TaskStatusSuccess {
+		var respMap map[string]any
+		if err := common.Unmarshal(data, &respMap); err == nil {
+			// 确定最终的视频 URL
+			var videoURL string
+			
+			// 优先使用上游返回的 url
+			if existingURL, ok := respMap["url"].(string); ok && existingURL != "" {
+				videoURL = existingURL
+			} else if existingVideoURL, ok := respMap["video_url"].(string); ok && existingVideoURL != "" {
+				// 其次使用上游返回的 video_url
+				videoURL = existingVideoURL
+			} else if task.PrivateData.ResultURL != "" {
+				// 最后使用系统保存的 ResultURL
+				videoURL = task.PrivateData.ResultURL
+			}
+			
+			// 如果有视频 URL，确保顶层的 url 和 video_url 都存在
+			if videoURL != "" {
+				// 设置顶层 url（如果不存在）
+				if _, hasURL := respMap["url"]; !hasURL {
+					if data, err = sjson.SetBytes(data, "url", videoURL); err != nil {
+						return nil, errors.Wrap(err, "set url failed")
+					}
+				}
+				
+				// 设置顶层 video_url（如果不存在）
+				if _, hasVideoURL := respMap["video_url"]; !hasVideoURL {
+					if data, err = sjson.SetBytes(data, "video_url", videoURL); err != nil {
+						return nil, errors.Wrap(err, "set video_url failed")
+					}
+				}
+				
+				// 同时将 url 和 video_url 添加到 metadata 中
+				if data, err = sjson.SetBytes(data, "metadata.url", videoURL); err != nil {
+					return nil, errors.Wrap(err, "set metadata.url failed")
+				}
+				if data, err = sjson.SetBytes(data, "metadata.video_url", videoURL); err != nil {
+					return nil, errors.Wrap(err, "set metadata.video_url failed")
+				}
+			}
+		}
+	}
+	
 	return data, nil
 }

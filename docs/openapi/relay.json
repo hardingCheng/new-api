@@ -716,25 +716,75 @@
                   "type": "object",
                   "properties": {
                     "id": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "任务 ID"
                     },
                     "object": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "对象类型，固定为 video"
                     },
                     "model": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "使用的模型"
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "任务状态：queued, in_progress, completed, failed",
+                      "enum": ["queued", "in_progress", "completed", "failed"]
                     },
                     "progress": {
-                      "type": "integer"
+                      "type": "integer",
+                      "description": "进度百分比 (0-100)"
                     },
                     "created_at": {
-                      "type": "integer"
+                      "type": "integer",
+                      "description": "创建时间戳（秒）"
+                    },
+                    "completed_at": {
+                      "type": "integer",
+                      "description": "完成时间戳（秒）"
+                    },
+                    "expires_at": {
+                      "type": "integer",
+                      "description": "过期时间戳（秒）"
                     },
                     "seconds": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "视频时长（秒）"
+                    },
+                    "size": {
+                      "type": "string",
+                      "description": "视频尺寸，如 720x1280"
+                    },
+                    "url": {
+                      "type": "string",
+                      "description": "视频下载地址（任务完成后可用）"
+                    },
+                    "video_url": {
+                      "type": "string",
+                      "description": "视频播放地址（与 url 相同）"
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "description": "额外元数据",
+                      "additionalProperties": true,
+                      "properties": {
+                        "upstream_task_id": {
+                          "type": "string",
+                          "description": "上游任务 ID"
+                        },
+                        "generation_id": {
+                          "type": "string",
+                          "description": "生成 ID"
+                        },
+                        "permalink": {
+                          "type": "string",
+                          "description": "永久链接"
+                        }
+                      }
+                    },
+                    "error": {
+                      "$ref": "#/components/schemas/OpenAIVideoError"
                     }
                   },
                   "required": [
@@ -743,18 +793,27 @@
                     "model",
                     "status",
                     "progress",
-                    "created_at",
-                    "seconds"
+                    "created_at"
                   ]
                 },
                 "example": {
-                  "id": "sora-2-123456",
+                  "id": "task_XhXNaRSFJEoSpTKSW9heXVf3Csa9ErPy",
                   "object": "video",
                   "model": "sora-2",
-                  "status": "queued",
-                  "progress": 0,
-                  "created_at": 1764347090922,
-                  "seconds": "8"
+                  "status": "completed",
+                  "progress": 100,
+                  "created_at": 1772894307,
+                  "completed_at": 1772894593,
+                  "expires_at": 1772898193,
+                  "seconds": "15",
+                  "size": "720x1280",
+                  "url": "https://videos.openai.com/az/files/00000000-5828-7280-8093-28753a36dbf4%2Fraw?se=2026-03-13T14%3A00%3A00Z&sp=r&sv=2026-02-06&sr=b&skoid=cfbc986b-d2bc-4088-8b71-4f962129715b&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-03-07T12%3A15%3A02Z&ske=2026-03-14T12%3A20%3A02Z&sks=b&skv=2026-02-06&sig=R0QmwS/zVxNRJc46Ue9OwWT3tOWx764HJd%2BKi3BHG4E%3D&ac=oaisdsorprsouthcentralus",
+                  "video_url": "https://videos.openai.com/az/files/00000000-5828-7280-8093-28753a36dbf4%2Fraw?se=2026-03-13T14%3A00%3A00Z&sp=r&sv=2026-02-06&sr=b&skoid=cfbc986b-d2bc-4088-8b71-4f962129715b&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-03-07T12%3A15%3A02Z&ske=2026-03-14T12%3A20%3A02Z&sks=b&skv=2026-02-06&sig=R0QmwS/zVxNRJc46Ue9OwWT3tOWx764HJd%2BKi3BHG4E%3D&ac=oaisdsorprsouthcentralus",
+                  "metadata": {
+                    "upstream_task_id": "task_01kk4bs01gfqe8pfaf1x9c60rp",
+                    "generation_id": "gen_01kk4bzfd2fatszfrgk2zw3sdq",
+                    "permalink": "https://sora.chatgpt.com/p/s_69ac397c54fc81918264c43abfff8570"
+                  }
                 }
               }
             },

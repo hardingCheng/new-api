@@ -407,7 +407,7 @@ export const getTaskLogsColumns = ({
           );
         }
 
-        // 视频预览：优先使用 result_url，兼容旧数据 fail_reason 中的 URL
+        // 视频预览：优先使用响应数据中的 url/video_url，最后使用 result_url
         const isVideoTask =
           record.action === TASK_ACTION_GENERATE ||
           record.action === TASK_ACTION_TEXT_GENERATE ||
@@ -415,15 +415,29 @@ export const getTaskLogsColumns = ({
           record.action === TASK_ACTION_REFERENCE_GENERATE ||
           record.action === TASK_ACTION_REMIX_GENERATE;
         const isSuccess = record.status === 'SUCCESS';
-        const resultUrl = record.result_url;
-        const hasResultUrl = typeof resultUrl === 'string' && /^https?:\/\//.test(resultUrl);
-        if (isSuccess && isVideoTask && hasResultUrl) {
+        
+        // 优先级：data.url > data.video_url > result_url
+        let videoUrl = null;
+        if (record.data) {
+          try {
+            const dataObj = typeof record.data === 'string' ? JSON.parse(record.data) : record.data;
+            videoUrl = dataObj.url || dataObj.video_url;
+          } catch (e) {
+            // 解析失败，继续使用 result_url
+          }
+        }
+        if (!videoUrl) {
+          videoUrl = record.result_url;
+        }
+        
+        const hasVideoUrl = typeof videoUrl === 'string' && /^https?:\/\//.test(videoUrl);
+        if (isSuccess && isVideoTask && hasVideoUrl) {
           return (
             <a
               href='#'
               onClick={(e) => {
                 e.preventDefault();
-                openVideoModal(resultUrl);
+                openVideoModal(videoUrl);
               }}
             >
               {t('点击预览视频')}
