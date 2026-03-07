@@ -35,6 +35,7 @@ var defaultVendorRules = map[string]string{
 	"kling":    "快手",
 	"jimeng":   "即梦",
 	"vidu":     "Vidu",
+	"sora":     "OpenAI",
 }
 
 // 供应商默认图标映射
@@ -125,4 +126,42 @@ func getDefaultVendorIcon(vendorName string) string {
 		return icon
 	}
 	return ""
+}
+
+// EnsureDefaultVendors 确保默认供应商存在于数据库中
+func EnsureDefaultVendors() error {
+	// 获取所有已存在的供应商
+	existingVendors, err := GetAllVendors()
+	if err != nil {
+		return err
+	}
+
+	// 创建供应商名称映射，用于快速查找
+	vendorMap := make(map[string]bool)
+	for _, vendor := range existingVendors {
+		vendorMap[vendor.Name] = true
+	}
+
+	// 从 defaultVendorRules 中提取所有唯一的供应商名称
+	uniqueVendors := make(map[string]bool)
+	for _, vendorName := range defaultVendorRules {
+		uniqueVendors[vendorName] = true
+	}
+
+	// 创建缺失的供应商
+	for vendorName := range uniqueVendors {
+		if !vendorMap[vendorName] {
+			newVendor := &Vendor{
+				Name:   vendorName,
+				Status: 1,
+				Icon:   getDefaultVendorIcon(vendorName),
+			}
+			if err := newVendor.Insert(); err != nil {
+				// 记录错误但继续处理其他供应商
+				continue
+			}
+		}
+	}
+
+	return nil
 }

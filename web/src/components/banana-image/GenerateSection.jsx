@@ -34,6 +34,7 @@ const GenerateSection = ({
   selectedToken,
   resolution,
   aspectRatio,
+  generationProgress,
 }) => {
   const getDisabledReason = () => {
     const reasons = [];
@@ -91,9 +92,25 @@ const GenerateSection = ({
         </Button>
 
         <div className='text-center sm:text-left'>
-          <Text type='tertiary'>
-            将生成 {numberOfImages} 张 {resolution.toUpperCase()} {aspectRatio} 的图像
-          </Text>
+          {isGenerating && generationProgress ? (
+            <div>
+              <Text type='primary' strong>
+                进度: {generationProgress.completed}/{generationProgress.total}
+              </Text>
+              <Text type='tertiary' size='small' className='ml-2'>
+                成功 {generationProgress.succeeded} 张
+                {generationProgress.failed > 0 && (
+                  <Text type='danger' size='small' className='ml-1'>
+                    · 失败 {generationProgress.failed} 张
+                  </Text>
+                )}
+              </Text>
+            </div>
+          ) : (
+            <Text type='tertiary'>
+              将生成 {numberOfImages} 张 {resolution.toUpperCase()} {aspectRatio} 的图像
+            </Text>
+          )}
         </div>
       </div>
     </div>

@@ -273,6 +273,11 @@ func InitResources() error {
 	// Initialize options, should after model.InitDB()
 	model.InitOptionMap()
 
+	// 确保默认供应商存在
+	if err := model.EnsureDefaultVendors(); err != nil {
+		common.SysLog("warning: failed to ensure default vendors: " + err.Error())
+	}
+
 	// 清理旧的磁盘缓存文件
 	common.CleanupOldCacheFiles()
 

@@ -87,6 +87,14 @@ const defaultState = {
   selectedImageIndex: 0,
   generationStartTime: null, // 生成开始时间
   retryMessage: null, // 重试提示信息
+  
+  // 生成进度
+  generationProgress: {
+    total: 0,      // 总共要生成的数量
+    completed: 0,  // 已完成的数量
+    succeeded: 0,  // 成功的数量
+    failed: 0,     // 失败的数量
+  },
 
   // 历史记录
   historyRecords: [],
@@ -577,6 +585,13 @@ export const useBananaImage = () => {
       generationError: null,
       generationStartTime: Date.now(),
       retryMessage: null, // 清空重试消息
+      generatedImages: [], // 清空之前的图片
+      generationProgress: {
+        total: state.numberOfImages,
+        completed: 0,
+        succeeded: 0,
+        failed: 0,
+      },
     });
 
     const MAX_RETRIES = 15;
@@ -596,6 +611,7 @@ export const useBananaImage = () => {
         if (isGemini) {
         // Gemini 图像模型使用 Gemini 原生格式接口
         // 接口: /v1beta/models/{model}:generateContent
+        // Gemini 不支持一次生成多张，需要循环调用
 
         // 根据比例转换为 Gemini 支持的格式
         const aspectRatioMap = {
@@ -616,102 +632,146 @@ export const useBananaImage = () => {
           '4k': '4K',
         };
 
-        // 构建 parts 数组
-        const parts = [];
+        // 循环生成指定数量的图片
+        for (let i = 0; i < state.numberOfImages; i++) {
+          try {
+            // 构建 parts 数组
+            const parts = [];
 
-        // 添加参考图片（如果有）
-        if (state.referenceImages && state.referenceImages.length > 0) {
-          state.referenceImages.forEach((img) => {
-            // 从 data URL 中提取 base64 数据和 mime type
-            const matches = img.url.match(/^data:([^;]+);base64,(.+)$/);
-            if (matches) {
-              const mimeType = matches[1];
-              const base64Data = matches[2];
-              parts.push({
-                inlineData: {
-                  mimeType: mimeType,
-                  data: base64Data,
-                },
-              });
-            }
-          });
-        }
-
-        // 添加文本提示词
-        parts.push({
-          text: state.prompt,
-        });
-
-        const payload = {
-          contents: [
-            {
-              parts: parts,
-            },
-          ],
-          generationConfig: {
-            responseModalities: ['IMAGE'],
-            imageConfig: {
-              aspectRatio: aspectRatioMap[state.aspectRatio] || '1:1',
-              imageSize: imageSizeMap[state.resolution] || '1K',
-            },
-          },
-        };
-
-        const apiUrl = `/v1beta/models/${state.selectedModel}:generateContent`;
-
-        // 使用系统封装的 API 发送请求
-        const response = await API.post(apiUrl, payload, {
-          headers: {
-            Authorization: `Bearer sk-${tokenKey}`,
-          },
-        });
-
-        const result = response.data;
-
-        // 从 Gemini 原生响应中提取图像
-        // 响应格式: candidates[].content.parts[].inlineData 或 candidates[].content.parts[].text
-        if (result.candidates && result.candidates.length > 0) {
-          result.candidates.forEach((candidate, index) => {
-            if (candidate.content && candidate.content.parts) {
-              candidate.content.parts.forEach((part, subIndex) => {
-                // 处理 inlineData 格式
-                if (part.inlineData && part.inlineData.mimeType && part.inlineData.data) {
-                  const mimeType = part.inlineData.mimeType;
-                  let base64Data = part.inlineData.data;
-                  
-                  // 如果 base64 数据已经包含 data: 前缀，直接使用
-                  // 否则构建完整的 data URL
-                  let imageUrl;
-                  if (base64Data.startsWith('data:')) {
-                    imageUrl = base64Data;
-                  } else {
-                    // 确保 base64 数据不包含换行符和空格
-                    base64Data = base64Data.replace(/\s/g, '');
-                    imageUrl = `data:${mimeType};base64,${base64Data}`;
-                  }
-                  
-                  images.push({
-                    id: `${Date.now()}-${index}-${subIndex}`,
-                    url: imageUrl,
-                    revisedPrompt: null,
+            // 添加参考图片（如果有）
+            if (state.referenceImages && state.referenceImages.length > 0) {
+              state.referenceImages.forEach((img) => {
+                // 从 data URL 中提取 base64 数据和 mime type
+                const matches = img.url.match(/^data:([^;]+);base64,(.+)$/);
+                if (matches) {
+                  const mimeType = matches[1];
+                  const base64Data = matches[2];
+                  parts.push({
+                    inlineData: {
+                      mimeType: mimeType,
+                      data: base64Data,
+                    },
                   });
                 }
-                // 处理 text 格式（markdown 图像）
-                else if (part.text && typeof part.text === 'string') {
-                  // 匹配 markdown 格式: ![image](data:image/jpeg;base64,...)
-                  const markdownImageRegex = /!\[.*?\]\((data:image\/[^;]+;base64,[^)]+)\)/g;
-                  let match;
-                  while ((match = markdownImageRegex.exec(part.text)) !== null) {
-                    images.push({
-                      id: `${Date.now()}-${index}-${subIndex}-${images.length}`,
-                      url: match[1],
-                      revisedPrompt: null,
-                    });
-                  }
+              });
+            }
+
+            // 添加文本提示词
+            parts.push({
+              text: state.prompt,
+            });
+
+            const payload = {
+              contents: [
+                {
+                  parts: parts,
+                },
+              ],
+              generationConfig: {
+                responseModalities: ['IMAGE'],
+                imageConfig: {
+                  aspectRatio: aspectRatioMap[state.aspectRatio] || '1:1',
+                  imageSize: imageSizeMap[state.resolution] || '1K',
+                },
+              },
+            };
+
+            const apiUrl = `/v1beta/models/${state.selectedModel}:generateContent`;
+
+            // 使用系统封装的 API 发送请求
+            const response = await API.post(apiUrl, payload, {
+              headers: {
+                Authorization: `Bearer sk-${tokenKey}`,
+              },
+            });
+
+            const result = response.data;
+
+            // 从 Gemini 原生响应中提取图像
+            // 响应格式: candidates[].content.parts[].inlineData 或 candidates[].content.parts[].text
+            let currentImages = [];
+            if (result.candidates && result.candidates.length > 0) {
+              result.candidates.forEach((candidate, index) => {
+                if (candidate.content && candidate.content.parts) {
+                  candidate.content.parts.forEach((part, subIndex) => {
+                    // 处理 inlineData 格式
+                    if (part.inlineData && part.inlineData.mimeType && part.inlineData.data) {
+                      const mimeType = part.inlineData.mimeType;
+                      let base64Data = part.inlineData.data;
+                      
+                      // 如果 base64 数据已经包含 data: 前缀，直接使用
+                      // 否则构建完整的 data URL
+                      let imageUrl;
+                      if (base64Data.startsWith('data:')) {
+                        imageUrl = base64Data;
+                      } else {
+                        // 确保 base64 数据不包含换行符和空格
+                        base64Data = base64Data.replace(/\s/g, '');
+                        imageUrl = `data:${mimeType};base64,${base64Data}`;
+                      }
+                      
+                      currentImages.push({
+                        id: `${Date.now()}-${i}-${index}-${subIndex}`,
+                        url: imageUrl,
+                        revisedPrompt: null,
+                      });
+                    }
+                    // 处理 text 格式（markdown 图像）
+                    else if (part.text && typeof part.text === 'string') {
+                      // 匹配 markdown 格式: ![image](data:image/jpeg;base64,...)
+                      const markdownImageRegex = /!\[.*?\]\((data:image\/[^;]+;base64,[^)]+)\)/g;
+                      let match;
+                      while ((match = markdownImageRegex.exec(part.text)) !== null) {
+                        currentImages.push({
+                          id: `${Date.now()}-${i}-${index}-${subIndex}-${currentImages.length}`,
+                          url: match[1],
+                          revisedPrompt: null,
+                        });
+                      }
+                    }
+                  });
                 }
               });
             }
-          });
+
+            // 如果成功生成了图片，添加到结果中并立即更新 UI
+            if (currentImages.length > 0) {
+              images.push(...currentImages);
+              
+              // 立即更新 UI，显示已生成的图片
+              setState((prev) => ({
+                ...prev,
+                generatedImages: [...images],
+                generationProgress: {
+                  ...prev.generationProgress,
+                  completed: i + 1,
+                  succeeded: prev.generationProgress.succeeded + 1,
+                },
+              }));
+            } else {
+              // 没有生成图片，算作失败
+              setState((prev) => ({
+                ...prev,
+                generationProgress: {
+                  ...prev.generationProgress,
+                  completed: i + 1,
+                  failed: prev.generationProgress.failed + 1,
+                },
+              }));
+            }
+          } catch (singleError) {
+            console.error(`生成第 ${i + 1} 张图片失败:`, singleError);
+            
+            // 单张失败，更新失败计数
+            setState((prev) => ({
+              ...prev,
+              generationProgress: {
+                ...prev.generationProgress,
+                completed: i + 1,
+                failed: prev.generationProgress.failed + 1,
+              },
+            }));
+          }
         }
       } else {
         // 其他模型使用 Images Generations API
@@ -767,6 +827,17 @@ export const useBananaImage = () => {
             url: item.url || `data:image/png;base64,${item.b64_json}`,
             revisedPrompt: item.revised_prompt,
           }));
+          
+          // 更新进度
+          setState((prev) => ({
+            ...prev,
+            generatedImages: [...images],
+            generationProgress: {
+              ...prev.generationProgress,
+              completed: images.length,
+              succeeded: images.length,
+            },
+          }));
         }
       }
 
@@ -812,6 +883,11 @@ export const useBananaImage = () => {
         // 更新缓存统计
         await loadCacheStats();
 
+        // 获取当前进度信息
+        const currentProgress = state.generationProgress || { total: state.numberOfImages, succeeded: 0, failed: 0 };
+        const finalSucceeded = currentProgress.succeeded || images.length;
+        const finalFailed = currentProgress.failed || 0;
+
         updateFields({
           generationStatus: GENERATION_STATUS.SUCCESS,
           generatedImages: images,
@@ -820,7 +896,12 @@ export const useBananaImage = () => {
           retryMessage: null, // 清空重试消息
         });
 
-        Toast.success('图像生成成功');
+        // 根据成功和失败数量显示不同的提示
+        if (finalFailed > 0) {
+          Toast.warning(`图像生成完成：成功 ${finalSucceeded} 张，失败 ${finalFailed} 张`);
+        } else {
+          Toast.success(`图像生成成功：共 ${finalSucceeded} 张`);
+        }
       } else {
         throw new Error('未返回图像数据');
       }
@@ -938,6 +1019,12 @@ export const useBananaImage = () => {
       generatedImages: [],
       selectedImageIndex: 0,
       generationStartTime: null,
+      generationProgress: {
+        total: 0,
+        completed: 0,
+        succeeded: 0,
+        failed: 0,
+      },
     });
   }, [updateFields]);
 

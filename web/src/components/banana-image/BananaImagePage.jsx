@@ -63,6 +63,7 @@ const BananaImagePage = () => {
     cacheStats,
     generationStartTime,
     retryMessage,
+    generationProgress,
 
     // 更新方法
     updateField,
@@ -202,6 +203,7 @@ const BananaImagePage = () => {
               selectedToken={selectedToken}
               resolution={resolution}
               aspectRatio={aspectRatio}
+              generationProgress={generationProgress}
             />
           </div>
         </div>
