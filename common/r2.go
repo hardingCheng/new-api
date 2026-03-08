@@ -155,7 +155,24 @@ func NewR2Uploader(config R2Config) *R2Uploader {
 func (u *R2Uploader) DownloadAndUpload(ctx context.Context, sourceURL, objectKey string) (string, error) {
 	// 1. 下载文件
 	SysLog(fmt.Sprintf("Downloading video from: %s", sourceURL))
-	resp, err := http.Get(sourceURL)
+	
+	// 创建 HTTP 请求，添加必要的 headers
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	
+	// 添加常见的浏览器 headers 以避免被拦截
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Referer", "https://chatgpt.com/")
+	
+	client := &http.Client{
+		Timeout: 10 * time.Minute,
+	}
+	
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to download file: %w", err)
 	}
