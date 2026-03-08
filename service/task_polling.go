@@ -450,7 +450,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			if common.R2VideoUploadEnabled && originalURL != "" && !strings.HasPrefix(originalURL, "data:") {
 				uploader := common.GetR2Uploader()
 				if uploader != nil {
-					objectKey := common.GenerateR2ObjectKey(task.UpstreamTaskID, originalURL)
+					objectKey := common.GenerateR2ObjectKey(task.GetUpstreamTaskID(), originalURL)
 					common.SysLog(fmt.Sprintf("Starting R2 upload for task %s: objectKey=%s", task.TaskID, objectKey))
 					
 					uploadCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
