@@ -132,6 +132,33 @@ func main() {
 			controller.UpdateTaskBulk()
 		})
 	}
+	
+	// R2 视频文件清理任务（每天凌晨 2 点执行）
+	if common.R2VideoUploadEnabled && common.R2VideoExpiryDays > 0 {
+		gopool.Go(func() {
+			// 计算到下一个凌晨 2 点的时间
+			now := time.Now()
+			next2AM := time.Date(now.Year(), now.Month(), now.Day(), 2, 0, 0, 0, now.Location())
+			if now.After(next2AM) {
+				next2AM = next2AM.Add(24 * time.Hour)
+			}
+			
+			// 等待到凌晨 2 点
+			time.Sleep(time.Until(next2AM))
+			
+			// 执行清理任务
+			for {
+				common.SysLog("Starting R2 video cleanup task")
+				if err := common.CleanupExpiredR2Videos(); err != nil {
+					common.SysError(fmt.Sprintf("R2 cleanup task failed: %v", err))
+				}
+				// 每 24 小时执行一次
+				time.Sleep(24 * time.Hour)
+			}
+		})
+		common.SysLog(fmt.Sprintf("R2 video cleanup task scheduled (expiry: %d days)", common.R2VideoExpiryDays))
+	}
+	
 	if os.Getenv("BATCH_UPDATE_ENABLED") == "true" {
 		common.BatchUpdateEnabled = true
 		common.SysLog("batch update enabled with interval " + strconv.Itoa(common.BatchUpdateInterval) + "s")

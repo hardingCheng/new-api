@@ -2,12 +2,14 @@ package sora
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -308,10 +310,39 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	case "completed":
 		taskResult.Status = model.TaskStatusSuccess
 		// 保存上游返回的视频 URL（优先使用 url 字段）
+		var originalURL string
 		if resTask.URL != "" {
-			taskResult.Url = resTask.URL
+			originalURL = resTask.URL
 		} else if resTask.VideoURL != "" {
-			taskResult.Url = resTask.VideoURL
+			originalURL = resTask.VideoURL
+		}
+		
+		// 如果启用了 R2 上传，则下载视频并上传到 R2
+		if originalURL != "" && common.R2VideoUploadEnabled {
+			uploader := common.GetR2Uploader()
+			if uploader != nil {
+				// 生成 R2 对象键
+				objectKey := common.GenerateR2ObjectKey(resTask.ID, originalURL)
+				
+				// 下载并上传到 R2
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				defer cancel()
+				
+				r2URL, err := uploader.DownloadAndUpload(ctx, originalURL, objectKey)
+				if err != nil {
+					// 上传失败，记录错误但不影响任务状态，继续使用原始 URL
+					common.SysError(fmt.Sprintf("Failed to upload video to R2: %v", err))
+					taskResult.Url = originalURL
+				} else {
+					// 上传成功，使用 R2 URL
+					taskResult.Url = r2URL
+					common.SysLog(fmt.Sprintf("Video uploaded to R2: %s -> %s", originalURL, r2URL))
+				}
+			} else {
+				taskResult.Url = originalURL
+			}
+		} else {
+			taskResult.Url = originalURL
 		}
 		// 如果上游没有返回 URL，调用者会构建代理 URL
 	case "failed", "cancelled":
