@@ -339,46 +339,52 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 		return nil, errors.Wrap(err, "set id failed")
 	}
 	
-	// 如果任务成功，确保 url 和 video_url 字段存在
+	// 如果任务成功，确保 url、video_url 和 result_url 字段存在
 	if task.Status == model.TaskStatusSuccess {
 		var respMap map[string]any
 		if err := common.Unmarshal(data, &respMap); err == nil {
-			// 确定最终的视频 URL
-			var videoURL string
-			
-			// 优先使用上游返回的 url
+			// 确定 result_url 的值：优先级 url > video_url > task.PrivateData.ResultURL
+			var resultURL string
 			if existingURL, ok := respMap["url"].(string); ok && existingURL != "" {
-				videoURL = existingURL
+				resultURL = existingURL
 			} else if existingVideoURL, ok := respMap["video_url"].(string); ok && existingVideoURL != "" {
-				// 其次使用上游返回的 video_url
-				videoURL = existingVideoURL
+				resultURL = existingVideoURL
 			} else if task.PrivateData.ResultURL != "" {
-				// 最后使用系统保存的 ResultURL
-				videoURL = task.PrivateData.ResultURL
+				resultURL = task.PrivateData.ResultURL
 			}
 			
-			// 如果有视频 URL，确保顶层的 url 和 video_url 都存在
-			if videoURL != "" {
+			// 如果有视频 URL，确保顶层的 url、video_url 和 result_url 都存在
+			if resultURL != "" {
 				// 设置顶层 url（如果不存在）
 				if _, hasURL := respMap["url"]; !hasURL {
-					if data, err = sjson.SetBytes(data, "url", videoURL); err != nil {
+					if data, err = sjson.SetBytes(data, "url", resultURL); err != nil {
 						return nil, errors.Wrap(err, "set url failed")
 					}
 				}
 				
 				// 设置顶层 video_url（如果不存在）
 				if _, hasVideoURL := respMap["video_url"]; !hasVideoURL {
-					if data, err = sjson.SetBytes(data, "video_url", videoURL); err != nil {
+					if data, err = sjson.SetBytes(data, "video_url", resultURL); err != nil {
 						return nil, errors.Wrap(err, "set video_url failed")
 					}
 				}
 				
-				// 同时将 url 和 video_url 添加到 metadata 中
-				if data, err = sjson.SetBytes(data, "metadata.url", videoURL); err != nil {
+				// 设置顶层 result_url（如果不存在）
+				if _, hasResultURL := respMap["result_url"]; !hasResultURL {
+					if data, err = sjson.SetBytes(data, "result_url", resultURL); err != nil {
+						return nil, errors.Wrap(err, "set result_url failed")
+					}
+				}
+				
+				// 同时将 url、video_url 和 result_url 添加到 metadata 中
+				if data, err = sjson.SetBytes(data, "metadata.url", resultURL); err != nil {
 					return nil, errors.Wrap(err, "set metadata.url failed")
 				}
-				if data, err = sjson.SetBytes(data, "metadata.video_url", videoURL); err != nil {
+				if data, err = sjson.SetBytes(data, "metadata.video_url", resultURL); err != nil {
 					return nil, errors.Wrap(err, "set metadata.video_url failed")
+				}
+				if data, err = sjson.SetBytes(data, "metadata.result_url", resultURL); err != nil {
+					return nil, errors.Wrap(err, "set metadata.result_url failed")
 				}
 			}
 		}

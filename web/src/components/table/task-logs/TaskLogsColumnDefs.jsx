@@ -33,6 +33,7 @@ import {
   Hash,
   Video,
   Sparkles,
+  Download,
 } from 'lucide-react';
 import {
   TASK_ACTION_FIRST_TAIL_GENERATE,
@@ -433,15 +434,26 @@ export const getTaskLogsColumns = ({
         const hasVideoUrl = typeof videoUrl === 'string' && /^https?:\/\//.test(videoUrl);
         if (isSuccess && isVideoTask && hasVideoUrl) {
           return (
-            <a
-              href='#'
-              onClick={(e) => {
-                e.preventDefault();
-                openVideoModal(videoUrl);
-              }}
-            >
-              {t('点击预览视频')}
-            </a>
+            <Space spacing={8}>
+              <a
+                href='#'
+                onClick={(e) => {
+                  e.preventDefault();
+                  openVideoModal(videoUrl);
+                }}
+              >
+                {t('点击预览视频')}
+              </a>
+              <a
+                href={videoUrl}
+                download
+                target='_blank'
+                rel='noopener noreferrer'
+                title={t('下载视频')}
+              >
+                <Download size={16} />
+              </a>
+            </Space>
           );
         }
         if (!text) {
