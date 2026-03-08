@@ -377,22 +377,30 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	snap := task.Snapshot()
 
 	taskResult := &relaycommon.TaskInfo{}
-	// try parse as New API response format
-	var responseItems dto.TaskResponse[model.Task]
-	if err = common.Unmarshal(responseBody, &responseItems); err == nil && responseItems.IsSuccess() {
-		logger.LogDebug(ctx, fmt.Sprintf("updateVideoSingleTask parsed as new api response format: %+v", responseItems))
-		t := responseItems.Data
-		taskResult.TaskID = t.TaskID
-		taskResult.Status = string(t.Status)
-		taskResult.Url = t.GetResultURL()
-		taskResult.Progress = t.Progress
-		taskResult.Reason = t.FailReason
-		task.Data = t.Data
-	} else if taskResult, err = adaptor.ParseTaskResult(responseBody); err != nil {
-		return fmt.Errorf("parseTaskResult failed for task %s: %w", taskId, err)
+	
+	// 先尝试用 adaptor 解析上游原始响应（获取真实视频 URL）
+	taskResult, err = adaptor.ParseTaskResult(responseBody)
+	if err != nil {
+		// 如果 adaptor 解析失败，尝试解析为 New API 格式
+		var responseItems dto.TaskResponse[model.Task]
+		if err = common.Unmarshal(responseBody, &responseItems); err == nil && responseItems.IsSuccess() {
+			logger.LogDebug(ctx, fmt.Sprintf("updateVideoSingleTask parsed as new api response format: %+v", responseItems))
+			t := responseItems.Data
+			taskResult = &relaycommon.TaskInfo{
+				TaskID:   t.TaskID,
+				Status:   string(t.Status),
+				Url:      t.GetResultURL(),
+				Progress: t.Progress,
+				Reason:   t.FailReason,
+			}
+			task.Data = t.Data
+		} else {
+			return fmt.Errorf("parseTaskResult failed for task %s: %w", taskId, err)
+		}
+	} else {
+		// adaptor 解析成功，保存原始响应体到 task.Data
+		task.Data = redactVideoResponseBody(responseBody)
 	}
-
-	task.Data = redactVideoResponseBody(responseBody)
 
 	logger.LogDebug(ctx, fmt.Sprintf("updateVideoSingleTask taskResult: %+v", taskResult))
 
@@ -445,6 +453,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		} else if taskResult.Url != "" {
 			// Direct upstream URL (e.g. Kling, Ali, Doubao, etc.)
 			originalURL := taskResult.Url
+			finalURL := originalURL
 			
 			// 如果启用了 R2 上传，尝试上传视频到 R2
 			if common.R2VideoUploadEnabled && originalURL != "" && !strings.HasPrefix(originalURL, "data:") {
@@ -459,17 +468,29 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 					r2URL, err := uploader.DownloadAndUpload(uploadCtx, originalURL, objectKey)
 					if err != nil {
 						common.SysError(fmt.Sprintf("Failed to upload video to R2 for task %s: %v", task.TaskID, err))
-						task.PrivateData.ResultURL = originalURL
+						finalURL = originalURL
 					} else {
 						common.SysLog(fmt.Sprintf("Video uploaded to R2 for task %s: %s -> %s", task.TaskID, originalURL, r2URL))
-						task.PrivateData.ResultURL = r2URL
+						finalURL = r2URL
+						
+						// 更新 task.Data 中的 URL 字段
+						var dataMap map[string]interface{}
+						if err := common.Unmarshal(task.Data, &dataMap); err == nil {
+							dataMap["url"] = r2URL
+							dataMap["video_url"] = r2URL
+							dataMap["result_url"] = r2URL
+							if updatedData, err := common.Marshal(dataMap); err == nil {
+								task.Data = updatedData
+							}
+						}
 					}
 				} else {
 					common.SysError("R2 uploader is nil, using original URL")
-					task.PrivateData.ResultURL = originalURL
+					finalURL = originalURL
 				}
-			} else {
-				task.PrivateData.ResultURL = originalURL
+			}
+			
+			task.PrivateData.ResultURL = finalURL
 			}
 		} else {
 			// No URL from adaptor — construct proxy URL using public task ID
