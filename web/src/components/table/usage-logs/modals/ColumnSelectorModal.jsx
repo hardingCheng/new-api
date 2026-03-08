@@ -68,21 +68,23 @@ const ColumnSelectorModal = ({
       }
     >
       <div style={{ marginBottom: 20 }}>
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ marginBottom: 8, fontWeight: 600 }}>{t('计费显示模式')}</div>
-          <RadioGroup
-            type='button'
-            value={billingDisplayMode}
-            onChange={(event) => setBillingDisplayMode(event.target.value)}
-          >
-            <Radio value='price'>
-              {isTokensDisplay ? t('价格模式') : t('价格模式（默认）')}
-            </Radio>
-            <Radio value='ratio'>
-              {isTokensDisplay ? t('倍率模式（默认）') : t('倍率模式')}
-            </Radio>
-          </RadioGroup>
-        </div>
+        {isAdminUser && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 8, fontWeight: 600 }}>{t('计费显示模式')}</div>
+            <RadioGroup
+              type='button'
+              value={billingDisplayMode}
+              onChange={(event) => setBillingDisplayMode(event.target.value)}
+            >
+              <Radio value='price'>
+                {isTokensDisplay ? t('价格模式') : t('价格模式（默认）')}
+              </Radio>
+              <Radio value='ratio'>
+                {isTokensDisplay ? t('倍率模式（默认）') : t('倍率模式')}
+              </Radio>
+            </RadioGroup>
+          </div>
+        )}
         <Checkbox
           checked={Object.values(visibleColumns).every((v) => v === true)}
           indeterminate={
