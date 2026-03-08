@@ -271,9 +271,13 @@ func InitResources() error {
 	// This is a placeholder function for future resource initialization
 	err := godotenv.Load(".env")
 	if err != nil {
-		if common.DebugEnabled {
-			common.SysLog("No .env file found, using default environment variables. If needed, please create a .env file and set the relevant variables.")
-		}
+		log.Println("Warning: No .env file found or failed to load, using system environment variables")
+		log.Printf("Current working directory: %s", func() string {
+			dir, _ := os.Getwd()
+			return dir
+		}())
+	} else {
+		log.Println(".env file loaded successfully")
 	}
 
 	// 加载环境变量

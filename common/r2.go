@@ -40,7 +40,10 @@ func InitR2() {
 	R2VideoUploadEnabled = GetEnvOrDefaultBool("R2_VIDEO_UPLOAD_ENABLED", false)
 	R2VideoExpiryDays = GetEnvOrDefault("R2_VIDEO_EXPIRY_DAYS", 0)
 	
+	SysLog(fmt.Sprintf("R2 initialization: enabled=%v, expiry_days=%d", R2VideoUploadEnabled, R2VideoExpiryDays))
+	
 	if !R2VideoUploadEnabled {
+		SysLog("R2 video upload is disabled")
 		return
 	}
 
