@@ -9,7 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -175,24 +176,19 @@ func (u *R2Uploader) DownloadAndUploadWithAuth(ctx context.Context, sourceURL, o
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 	
-	// 添加 Authorization header（如果提供了 API Key）
-	if apiKey != "" {
+	// 添加 Authorization header（仅对需要认证的 API 端点）
+	// 注意：OpenAI 的视频 URL 是带签名的临时 URL，不需要 Authorization header
+	needsAuth := apiKey != "" && !strings.Contains(sourceURL, "videos.openai.com")
+	if needsAuth {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 		SysLog("Using API Key for authentication")
+	} else if strings.Contains(sourceURL, "videos.openai.com") {
+		SysLog("Using signed URL (no Authorization header needed)")
 	}
 	
-	// 添加完整的浏览器 headers 以模拟真实浏览器请求
+	// 添加 User-Agent header
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
-	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
-	req.Header.Set("Connection", "keep-alive")
-	req.Header.Set("Upgrade-Insecure-Requests", "1")
-	req.Header.Set("Sec-Fetch-Dest", "document")
-	req.Header.Set("Sec-Fetch-Mode", "navigate")
-	req.Header.Set("Sec-Fetch-Site", "none")
-	req.Header.Set("Sec-Fetch-User", "?1")
-	req.Header.Set("Cache-Control", "max-age=0")
+	req.Header.Set("Accept", "*/*")
 	
 	// 使用带代理的 HTTP 客户端
 	var client *http.Client
@@ -293,8 +289,12 @@ func (u *R2Uploader) DownloadAndUploadWithAuth(ctx context.Context, sourceURL, o
 // GenerateObjectKey 生成 R2 对象键
 // 格式：videos/{date}/{taskID}.mp4
 func GenerateR2ObjectKey(taskID, originalURL string) string {
-	// 从原始 URL 中提取文件扩展名
-	ext := filepath.Ext(originalURL)
+	// 先去掉查询参数，再提取扩展名
+	cleanURL := originalURL
+	if idx := strings.IndexByte(cleanURL, '?'); idx != -1 {
+		cleanURL = cleanURL[:idx]
+	}
+	ext := path.Ext(cleanURL)
 	if ext == "" {
 		ext = ".mp4" // 默认为 mp4
 	}
@@ -313,10 +313,8 @@ func CleanupExpiredR2Videos() error {
 		return nil
 	}
 
-	// 如果 R2VideoExpiryDays < 0，表示不启用清理
-	// 如果 R2VideoExpiryDays = 0，表示删除所有文件
-	// 如果 R2VideoExpiryDays > 0，表示删除指定天数之前的文件
-	if R2VideoExpiryDays < 0 {
+	// 如果 R2VideoExpiryDays <= 0，不启用清理（0 表示永不过期）
+	if R2VideoExpiryDays <= 0 {
 		return nil
 	}
 
@@ -328,15 +326,8 @@ func CleanupExpiredR2Videos() error {
 	ctx := context.Background()
 	
 	// 计算过期日期
-	var expiryDate time.Time
-	if R2VideoExpiryDays == 0 {
-		// 删除所有文件：使用未来的日期
-		expiryDate = time.Now().Add(24 * time.Hour)
-		SysLog("Starting cleanup of ALL R2 videos (expiry days = 0)")
-	} else {
-		expiryDate = time.Now().Add(-time.Duration(R2VideoExpiryDays) * 24 * time.Hour)
-		SysLog(fmt.Sprintf("Starting cleanup of R2 videos older than %s", expiryDate.Format("2006-01-02")))
-	}
+	expiryDate := time.Now().Add(-time.Duration(R2VideoExpiryDays) * 24 * time.Hour)
+	SysLog(fmt.Sprintf("Starting cleanup of R2 videos older than %s", expiryDate.Format("2006-01-02")))
 	
 	// 列出 videos/ 前缀下的所有对象
 	listInput := &s3.ListObjectsV2Input{
