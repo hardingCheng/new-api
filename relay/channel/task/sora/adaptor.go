@@ -2,12 +2,14 @@ package sora
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -308,10 +310,39 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	case "completed":
 		taskResult.Status = model.TaskStatusSuccess
 		// 保存上游返回的视频 URL（优先使用 url 字段）
+		var originalURL string
 		if resTask.URL != "" {
-			taskResult.Url = resTask.URL
+			originalURL = resTask.URL
 		} else if resTask.VideoURL != "" {
-			taskResult.Url = resTask.VideoURL
+			originalURL = resTask.VideoURL
+		}
+		
+		// 如果启用了 S3 上传，则下载视频并上传到 S3
+		if originalURL != "" && common.S3VideoUploadEnabled {
+			uploader := common.GetS3Uploader()
+			if uploader != nil {
+				// 生成 S3 对象键
+				objectKey := common.GenerateObjectKey(resTask.ID, originalURL)
+				
+				// 下载并上传到 S3
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				defer cancel()
+				
+				s3URL, err := uploader.DownloadAndUpload(ctx, originalURL, objectKey)
+				if err != nil {
+					// 上传失败，记录错误但不影响任务状态，继续使用原始 URL
+					common.SysError(fmt.Sprintf("Failed to upload video to S3: %v", err))
+					taskResult.Url = originalURL
+				} else {
+					// 上传成功，使用 S3 URL
+					taskResult.Url = s3URL
+					common.SysLog(fmt.Sprintf("Video uploaded to S3: %s -> %s", originalURL, s3URL))
+				}
+			} else {
+				taskResult.Url = originalURL
+			}
+		} else {
+			taskResult.Url = originalURL
 		}
 		// 如果上游没有返回 URL，调用者会构建代理 URL
 	case "failed", "cancelled":
