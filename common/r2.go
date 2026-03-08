@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	utls "github.com/refraction-networking/utls"
 )
 
 // R2Config Cloudflare R2 配置
@@ -187,27 +189,21 @@ func (u *R2Uploader) DownloadAndUploadWithAuth(ctx context.Context, sourceURL, o
 	}
 	
 	// 添加 User-Agent header
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "*/*")
-	
-	// 使用带代理的 HTTP 客户端
-	var client *http.Client
+
+	// 构建 HTTP 客户端，使用 Chrome TLS 指纹以通过 Cloudflare 验证
+	var proxyURLParsed *url.URL
 	if proxyURL != "" {
 		SysLog(fmt.Sprintf("Using proxy: %s", proxyURL))
-		proxyURLParsed, err := url.Parse(proxyURL)
+		proxyURLParsed, err = url.Parse(proxyURL)
 		if err != nil {
 			return "", fmt.Errorf("failed to parse proxy URL: %w", err)
 		}
-		client = &http.Client{
-			Timeout: 10 * time.Minute,
-			Transport: &http.Transport{
-				Proxy: http.ProxyURL(proxyURLParsed),
-			},
-		}
-	} else {
-		client = &http.Client{
-			Timeout: 10 * time.Minute,
-		}
+	}
+	client := &http.Client{
+		Timeout:   10 * time.Minute,
+		Transport: newChromeTLSTransport(proxyURLParsed),
 	}
 	
 	SysLog("Sending HTTP request...")
@@ -217,9 +213,14 @@ func (u *R2Uploader) DownloadAndUploadWithAuth(ctx context.Context, sourceURL, o
 	}
 	defer resp.Body.Close()
 
-	SysLog(fmt.Sprintf("HTTP response: status=%d, content-length=%d", resp.StatusCode, resp.ContentLength))
-	
+	SysLog(fmt.Sprintf("HTTP response: status=%d, content-length=%d, url=%s", resp.StatusCode, resp.ContentLength, resp.Request.URL.String()))
+
 	if resp.StatusCode != http.StatusOK {
+		// 读取错误响应体以便诊断
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		if len(errBody) > 0 {
+			SysError(fmt.Sprintf("Download error response body: %s", string(errBody)))
+		}
 		return "", fmt.Errorf("failed to download file: status code %d", resp.StatusCode)
 	}
 
@@ -428,4 +429,28 @@ type R2VideoInfo struct {
 	Size         int64
 	LastModified time.Time
 	URL          string
+}
+
+// newChromeTLSTransport 创建使用 Chrome TLS 指纹的 http.RoundTripper
+// 用于绕过 Cloudflare 的 TLS 指纹检测
+func newChromeTLSTransport(proxyURL *url.URL) http.RoundTripper {
+	t := &http.Transport{
+		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			rawConn, err := (&net.Dialer{Timeout: 30 * time.Second}).DialContext(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			host, _, _ := net.SplitHostPort(addr)
+			tlsConn := utls.UClient(rawConn, &utls.Config{ServerName: host}, utls.HelloChrome_Auto)
+			if err := tlsConn.HandshakeContext(ctx); err != nil {
+				rawConn.Close()
+				return nil, err
+			}
+			return tlsConn, nil
+		},
+	}
+	if proxyURL != nil {
+		t.Proxy = http.ProxyURL(proxyURL)
+	}
+	return t
 }
