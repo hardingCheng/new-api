@@ -173,4 +173,7 @@ func initConstantEnv() {
 		}
 	}
 	constant.TrustedRedirectDomains = trustedDomains
+
+	// Initialize S3 configuration
+	InitS3()
 }
