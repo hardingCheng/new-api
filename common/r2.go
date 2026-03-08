@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	utls "github.com/refraction-networking/utls"
+	"golang.org/x/net/http2"
 )
 
 // R2Config Cloudflare R2 配置
@@ -451,6 +452,10 @@ func newChromeTLSTransport(proxyURL *url.URL) http.RoundTripper {
 	}
 	if proxyURL != nil {
 		t.Proxy = http.ProxyURL(proxyURL)
+	}
+	// 启用 HTTP/2 支持
+	if err := http2.ConfigureTransport(t); err != nil {
+		SysError(fmt.Sprintf("Failed to configure HTTP/2: %v", err))
 	}
 	return t
 }
