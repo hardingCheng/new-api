@@ -459,13 +459,21 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			if common.R2VideoUploadEnabled && originalURL != "" && !strings.HasPrefix(originalURL, "data:") {
 				uploader := common.GetR2Uploader()
 				if uploader != nil {
+					// 获取渠道信息以使用代理和 API Key
+					channel, err := model.GetChannelById(task.ChannelId, true)
+					var proxy, apiKey string
+					if err == nil && channel != nil {
+						proxy = channel.GetSetting().Proxy
+						apiKey = channel.Key
+					}
+					
 					objectKey := common.GenerateR2ObjectKey(task.GetUpstreamTaskID(), originalURL)
 					common.SysLog(fmt.Sprintf("Starting R2 upload for task %s: objectKey=%s", task.TaskID, objectKey))
 					
-					uploadCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+					uploadCtx, cancel := context.WithTimeout(ctx, 15*time.Minute) // 增加超时到 15 分钟
 					defer cancel()
 					
-					r2URL, err := uploader.DownloadAndUpload(uploadCtx, originalURL, objectKey)
+					r2URL, err := uploader.DownloadAndUploadWithAuth(uploadCtx, originalURL, objectKey, proxy, apiKey)
 					if err != nil {
 						common.SysError(fmt.Sprintf("Failed to upload video to R2 for task %s: %v", task.TaskID, err))
 						finalURL = originalURL
