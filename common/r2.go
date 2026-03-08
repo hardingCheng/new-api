@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"strings"
 	"time"
@@ -172,73 +173,32 @@ func (u *R2Uploader) DownloadAndUploadWithProxy(ctx context.Context, sourceURL, 
 func (u *R2Uploader) DownloadAndUploadWithAuth(ctx context.Context, sourceURL, objectKey, proxyURL, apiKey string) (string, error) {
 	// 1. 下载文件
 	SysLog(fmt.Sprintf("Downloading video from: %s", sourceURL))
-	
-	// 创建 HTTP 请求，添加必要的 headers
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-	
-	// 添加 Authorization header（仅对需要认证的 API 端点）
-	// 注意：OpenAI 的视频 URL 是带签名的临时 URL，不需要 Authorization header
-	needsAuth := apiKey != "" && !strings.Contains(sourceURL, "videos.openai.com")
-	if needsAuth {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-		SysLog("Using API Key for authentication")
-	} else if strings.Contains(sourceURL, "videos.openai.com") {
-		SysLog("Using signed URL (no Authorization header needed)")
-	}
-	
-	// 添加 User-Agent header
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "*/*")
 
-	// 构建 HTTP 客户端，使用 Chrome TLS 指纹以通过 Cloudflare 验证
-	var proxyURLParsed *url.URL
-	if proxyURL != "" {
-		SysLog(fmt.Sprintf("Using proxy: %s", proxyURL))
-		proxyURLParsed, err = url.Parse(proxyURL)
+	var fileData []byte
+	var err error
+
+	// 对 videos.openai.com 使用 curl 下载（绕过 Cloudflare TLS 指纹检测）
+	if strings.Contains(sourceURL, "videos.openai.com") {
+		SysLog("Using curl for Cloudflare-protected URL")
+		fileData, err = downloadWithCurl(ctx, sourceURL, proxyURL)
 		if err != nil {
-			return "", fmt.Errorf("failed to parse proxy URL: %w", err)
+			return "", fmt.Errorf("failed to download with curl: %w", err)
+		}
+	} else {
+		// 其他 URL 使用标准 HTTP 客户端
+		fileData, err = downloadWithHTTP(ctx, sourceURL, proxyURL, apiKey)
+		if err != nil {
+			return "", fmt.Errorf("failed to download with HTTP: %w", err)
 		}
 	}
-	client := &http.Client{
-		Timeout:   10 * time.Minute,
-		Transport: newChromeTLSTransport(proxyURLParsed),
-	}
-	
-	SysLog("Sending HTTP request...")
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to download file: %w", err)
-	}
-	defer resp.Body.Close()
 
-	SysLog(fmt.Sprintf("HTTP response: status=%d, content-length=%d, url=%s", resp.StatusCode, resp.ContentLength, resp.Request.URL.String()))
-
-	if resp.StatusCode != http.StatusOK {
-		// 读取错误响应体以便诊断
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		if len(errBody) > 0 {
-			SysError(fmt.Sprintf("Download error response body: %s", string(errBody)))
-		}
-		return "", fmt.Errorf("failed to download file: status code %d", resp.StatusCode)
-	}
-
-	// 2. 读取文件内容
-	SysLog("Reading video data...")
-	fileData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read file data: %w", err)
-	}
-	
 	fileSize := len(fileData)
 	SysLog(fmt.Sprintf("Downloaded %d bytes (%.2f MB), uploading to R2...", fileSize, float64(fileSize)/(1024*1024)))
 
-	// 3. 检测 Content-Type
-	contentType := resp.Header.Get("Content-Type")
+	// 2. 检测 Content-Type
+	contentType := http.DetectContentType(fileData)
 	if contentType == "" {
-		contentType = http.DetectContentType(fileData)
+		contentType = "application/octet-stream"
 	}
 
 	// 4. 准备上传参数
@@ -458,4 +418,95 @@ func newChromeTLSTransport(proxyURL *url.URL) http.RoundTripper {
 		SysError(fmt.Sprintf("Failed to configure HTTP/2: %v", err))
 	}
 	return t
+}
+
+// downloadWithCurl 使用 curl 命令下载文件（用于绕过 Cloudflare TLS 指纹检测）
+func downloadWithCurl(ctx context.Context, sourceURL, proxyURL string) ([]byte, error) {
+	args := []string{
+		"-L",           // 跟随重定向
+		"-s",           // 静默模式
+		"-S",           // 显示错误
+		"--max-time", "600", // 10 分钟超时
+		"-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+	}
+
+	if proxyURL != "" {
+		args = append(args, "-x", proxyURL)
+	}
+
+	args = append(args, sourceURL)
+
+	cmd := exec.CommandContext(ctx, "curl", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("curl failed: %s", string(exitErr.Stderr))
+		}
+		return nil, err
+	}
+
+	if len(output) == 0 {
+		return nil, fmt.Errorf("curl returned empty response")
+	}
+
+	return output, nil
+}
+
+// downloadWithHTTP 使用标准 HTTP 客户端下载文件
+func downloadWithHTTP(ctx context.Context, sourceURL, proxyURL, apiKey string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		SysLog("Using API Key for authentication")
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "*/*")
+
+	var client *http.Client
+	if proxyURL != "" {
+		SysLog(fmt.Sprintf("Using proxy: %s", proxyURL))
+		proxyURLParsed, err := url.Parse(proxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse proxy URL: %w", err)
+		}
+		client = &http.Client{
+			Timeout: 10 * time.Minute,
+			Transport: &http.Transport{
+				Proxy: http.ProxyURL(proxyURLParsed),
+			},
+		}
+	} else {
+		client = &http.Client{
+			Timeout: 10 * time.Minute,
+		}
+	}
+
+	SysLog("Sending HTTP request...")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	SysLog(fmt.Sprintf("HTTP response: status=%d, content-length=%d", resp.StatusCode, resp.ContentLength))
+
+	if resp.StatusCode != http.StatusOK {
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		if len(errBody) > 0 {
+			SysError(fmt.Sprintf("Download error response body: %s", string(errBody)))
+		}
+		return nil, fmt.Errorf("status code %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	return data, nil
 }
