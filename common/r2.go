@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -153,6 +154,18 @@ func NewR2Uploader(config R2Config) *R2Uploader {
 // DownloadAndUpload 从 URL 下载文件并上传到 R2
 // 返回 R2 中的文件 URL
 func (u *R2Uploader) DownloadAndUpload(ctx context.Context, sourceURL, objectKey string) (string, error) {
+	return u.DownloadAndUploadWithAuth(ctx, sourceURL, objectKey, "", "")
+}
+
+// DownloadAndUploadWithProxy 从 URL 下载文件并上传到 R2（支持代理）
+// 返回 R2 中的文件 URL
+func (u *R2Uploader) DownloadAndUploadWithProxy(ctx context.Context, sourceURL, objectKey, proxyURL string) (string, error) {
+	return u.DownloadAndUploadWithAuth(ctx, sourceURL, objectKey, proxyURL, "")
+}
+
+// DownloadAndUploadWithAuth 从 URL 下载文件并上传到 R2（支持代理和认证）
+// 返回 R2 中的文件 URL
+func (u *R2Uploader) DownloadAndUploadWithAuth(ctx context.Context, sourceURL, objectKey, proxyURL, apiKey string) (string, error) {
 	// 1. 下载文件
 	SysLog(fmt.Sprintf("Downloading video from: %s", sourceURL))
 	
@@ -162,34 +175,67 @@ func (u *R2Uploader) DownloadAndUpload(ctx context.Context, sourceURL, objectKey
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 	
-	// 添加常见的浏览器 headers 以避免被拦截
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "*/*")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	req.Header.Set("Referer", "https://chatgpt.com/")
-	
-	client := &http.Client{
-		Timeout: 10 * time.Minute,
+	// 添加 Authorization header（如果提供了 API Key）
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		SysLog("Using API Key for authentication")
 	}
 	
+	// 添加完整的浏览器 headers 以模拟真实浏览器请求
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Upgrade-Insecure-Requests", "1")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Site", "none")
+	req.Header.Set("Sec-Fetch-User", "?1")
+	req.Header.Set("Cache-Control", "max-age=0")
+	
+	// 使用带代理的 HTTP 客户端
+	var client *http.Client
+	if proxyURL != "" {
+		SysLog(fmt.Sprintf("Using proxy: %s", proxyURL))
+		proxyURLParsed, err := url.Parse(proxyURL)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse proxy URL: %w", err)
+		}
+		client = &http.Client{
+			Timeout: 10 * time.Minute,
+			Transport: &http.Transport{
+				Proxy: http.ProxyURL(proxyURLParsed),
+			},
+		}
+	} else {
+		client = &http.Client{
+			Timeout: 10 * time.Minute,
+		}
+	}
+	
+	SysLog("Sending HTTP request...")
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to download file: %w", err)
 	}
 	defer resp.Body.Close()
 
+	SysLog(fmt.Sprintf("HTTP response: status=%d, content-length=%d", resp.StatusCode, resp.ContentLength))
+	
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("failed to download file: status code %d", resp.StatusCode)
 	}
 
 	// 2. 读取文件内容
+	SysLog("Reading video data...")
 	fileData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read file data: %w", err)
 	}
 	
 	fileSize := len(fileData)
-	SysLog(fmt.Sprintf("Downloaded %d bytes, uploading to R2...", fileSize))
+	SysLog(fmt.Sprintf("Downloaded %d bytes (%.2f MB), uploading to R2...", fileSize, float64(fileSize)/(1024*1024)))
 
 	// 3. 检测 Content-Type
 	contentType := resp.Header.Get("Content-Type")

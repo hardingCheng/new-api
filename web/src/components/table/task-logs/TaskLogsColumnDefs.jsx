@@ -433,6 +433,26 @@ export const getTaskLogsColumns = ({
         
         const hasVideoUrl = typeof videoUrl === 'string' && /^https?:\/\//.test(videoUrl);
         if (isSuccess && isVideoTask && hasVideoUrl) {
+          const handleDownload = async (e) => {
+            e.preventDefault();
+            try {
+              const response = await fetch(videoUrl);
+              const blob = await response.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `video_${record.task_id || Date.now()}.mp4`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              window.URL.revokeObjectURL(url);
+            } catch (error) {
+              console.error('Download failed:', error);
+              // 降级方案：直接打开链接
+              window.open(videoUrl, '_blank');
+            }
+          };
+
           return (
             <Space spacing={8}>
               <a
@@ -445,9 +465,10 @@ export const getTaskLogsColumns = ({
                 {t('点击预览视频')}
               </a>
               <a
-                href={videoUrl}
-                download
+                href='#'
+                onClick={handleDownload}
                 title={t('下载视频')}
+                style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}
               >
                 <Download size={16} />
               </a>
