@@ -317,12 +317,16 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 			originalURL = resTask.VideoURL
 		}
 		
+		common.SysLog(fmt.Sprintf("Task completed: taskID=%s, originalURL=%s, R2Enabled=%v", resTask.ID, originalURL, common.R2VideoUploadEnabled))
+		
 		// 如果启用了 R2 上传，则下载视频并上传到 R2
 		if originalURL != "" && common.R2VideoUploadEnabled {
 			uploader := common.GetR2Uploader()
+			common.SysLog(fmt.Sprintf("R2 uploader status: %v", uploader != nil))
 			if uploader != nil {
 				// 生成 R2 对象键
 				objectKey := common.GenerateR2ObjectKey(resTask.ID, originalURL)
+				common.SysLog(fmt.Sprintf("Starting R2 upload: objectKey=%s", objectKey))
 				
 				// 下载并上传到 R2
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -339,9 +343,16 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 					common.SysLog(fmt.Sprintf("Video uploaded to R2: %s -> %s", originalURL, r2URL))
 				}
 			} else {
+				common.SysError("R2 uploader is nil, using original URL")
 				taskResult.Url = originalURL
 			}
 		} else {
+			if originalURL == "" {
+				common.SysError("Original URL is empty")
+			}
+			if !common.R2VideoUploadEnabled {
+				common.SysLog("R2 upload is disabled")
+			}
 			taskResult.Url = originalURL
 		}
 		// 如果上游没有返回 URL，调用者会构建代理 URL

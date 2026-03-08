@@ -444,7 +444,33 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			task.PrivateData.ResultURL = taskcommon.BuildProxyURL(task.TaskID)
 		} else if taskResult.Url != "" {
 			// Direct upstream URL (e.g. Kling, Ali, Doubao, etc.)
-			task.PrivateData.ResultURL = taskResult.Url
+			originalURL := taskResult.Url
+			
+			// 如果启用了 R2 上传，尝试上传视频到 R2
+			if common.R2VideoUploadEnabled && originalURL != "" && !strings.HasPrefix(originalURL, "data:") {
+				uploader := common.GetR2Uploader()
+				if uploader != nil {
+					objectKey := common.GenerateR2ObjectKey(task.UpstreamTaskID, originalURL)
+					common.SysLog(fmt.Sprintf("Starting R2 upload for task %s: objectKey=%s", task.TaskID, objectKey))
+					
+					uploadCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+					defer cancel()
+					
+					r2URL, err := uploader.DownloadAndUpload(uploadCtx, originalURL, objectKey)
+					if err != nil {
+						common.SysError(fmt.Sprintf("Failed to upload video to R2 for task %s: %v", task.TaskID, err))
+						task.PrivateData.ResultURL = originalURL
+					} else {
+						common.SysLog(fmt.Sprintf("Video uploaded to R2 for task %s: %s -> %s", task.TaskID, originalURL, r2URL))
+						task.PrivateData.ResultURL = r2URL
+					}
+				} else {
+					common.SysError("R2 uploader is nil, using original URL")
+					task.PrivateData.ResultURL = originalURL
+				}
+			} else {
+				task.PrivateData.ResultURL = originalURL
+			}
 		} else {
 			// No URL from adaptor — construct proxy URL using public task ID
 			task.PrivateData.ResultURL = taskcommon.BuildProxyURL(task.TaskID)

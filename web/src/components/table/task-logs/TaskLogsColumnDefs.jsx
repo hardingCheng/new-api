@@ -447,8 +447,6 @@ export const getTaskLogsColumns = ({
               <a
                 href={videoUrl}
                 download
-                target='_blank'
-                rel='noopener noreferrer'
                 title={t('下载视频')}
               >
                 <Download size={16} />
