@@ -420,14 +420,32 @@ func newChromeTLSTransport(proxyURL *url.URL) http.RoundTripper {
 	return t
 }
 
-// downloadWithCurl 使用 curl 命令下载文件（用于绕过 Cloudflare TLS 指纹检测）
+// downloadWithCurl 使用 curl-impersonate 下载文件（完美模拟 Chrome 浏览器）
 func downloadWithCurl(ctx context.Context, sourceURL, proxyURL string) ([]byte, error) {
+	// 优先使用 curl-impersonate-chrome，如果不存在则回退到普通 curl
+	curlCmd := "curl-impersonate-chrome"
+	if _, err := exec.LookPath(curlCmd); err != nil {
+		SysLog("curl-impersonate not found, falling back to regular curl")
+		curlCmd = "curl"
+	} else {
+		SysLog("Using curl-impersonate-chrome for Cloudflare bypass")
+	}
+
 	args := []string{
-		"-L",           // 跟随重定向
-		"-s",           // 静默模式
-		"-S",           // 显示错误
+		"-L",                // 跟随重定向
+		"-s",                // 静默模式
+		"-S",                // 显示错误
+		"--compressed",      // 自动解压
 		"--max-time", "600", // 10 分钟超时
-		"-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+	}
+
+	// curl-impersonate 不需要手动设置 headers，它会自动模拟 Chrome
+	if curlCmd == "curl" {
+		// 普通 curl 需要手动添加 headers
+		args = append(args,
+			"-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+			"-H", "Accept: */*",
+		)
 	}
 
 	if proxyURL != "" {
@@ -436,10 +454,11 @@ func downloadWithCurl(ctx context.Context, sourceURL, proxyURL string) ([]byte, 
 
 	args = append(args, sourceURL)
 
-	cmd := exec.CommandContext(ctx, "curl", args...)
+	cmd := exec.CommandContext(ctx, curlCmd, args...)
 	output, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
+			SysError(fmt.Sprintf("curl stderr: %s", string(exitErr.Stderr)))
 			return nil, fmt.Errorf("curl failed: %s", string(exitErr.Stderr))
 		}
 		return nil, err
@@ -449,7 +468,21 @@ func downloadWithCurl(ctx context.Context, sourceURL, proxyURL string) ([]byte, 
 		return nil, fmt.Errorf("curl returned empty response")
 	}
 
+	// 检查是否下载到 HTML 错误页面
+	if len(output) < 100000 && bytes.Contains(output, []byte("<html")) {
+		SysError(fmt.Sprintf("curl downloaded HTML instead of video (first 500 bytes): %s", string(output[:min(500, len(output))])))
+		return nil, fmt.Errorf("curl downloaded HTML error page instead of video")
+	}
+
+	SysLog(fmt.Sprintf("curl downloaded %d bytes (%.2f MB)", len(output), float64(len(output))/(1024*1024)))
 	return output, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // downloadWithHTTP 使用标准 HTTP 客户端下载文件
