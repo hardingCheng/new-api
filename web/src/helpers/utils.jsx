@@ -765,10 +765,11 @@ export const getModelPriceItems = (
   priceData,
   t,
   quotaDisplayType = 'USD',
+  isAdminUser = true,
 ) => {
   if (priceData.isPerToken) {
     if (quotaDisplayType === 'TOKENS' || priceData.isTokensDisplay) {
-      return [
+      const items = [
         {
           key: 'input-ratio',
           label: t('输入倍率'),
@@ -786,39 +787,47 @@ export const getModelPriceItems = (
           label: t('缓存读取倍率'),
           value: priceData.cacheRatio,
           suffix: 'x',
+          adminOnly: true,
         },
         {
           key: 'create-cache-ratio',
           label: t('缓存创建倍率'),
           value: priceData.createCacheRatio,
           suffix: 'x',
+          adminOnly: true,
         },
         {
           key: 'image-ratio',
           label: t('图片输入倍率'),
           value: priceData.imageRatio,
           suffix: 'x',
+          adminOnly: true,
         },
         {
           key: 'audio-input-ratio',
           label: t('音频输入倍率'),
           value: priceData.audioInputRatio,
           suffix: 'x',
+          adminOnly: true,
         },
         {
           key: 'audio-output-ratio',
           label: t('音频补全倍率'),
           value: priceData.audioOutputRatio,
           suffix: 'x',
+          adminOnly: true,
         },
-      ].filter(
+      ];
+      
+      return items.filter(
         (item) =>
-          item.value !== null && item.value !== undefined && item.value !== '',
+          (item.value !== null && item.value !== undefined && item.value !== '') &&
+          (isAdminUser || !item.adminOnly)
       );
     }
 
     const unitSuffix = ` / 1${priceData.unitLabel} Tokens`;
-    return [
+    const items = [
       {
         key: 'input',
         label: t('输入价格'),
@@ -836,32 +845,43 @@ export const getModelPriceItems = (
         label: t('缓存读取价格'),
         value: priceData.cachePrice,
         suffix: unitSuffix,
+        adminOnly: true,
       },
       {
         key: 'create-cache',
         label: t('缓存创建价格'),
         value: priceData.createCachePrice,
         suffix: unitSuffix,
+        adminOnly: true,
       },
       {
         key: 'image',
         label: t('图片输入价格'),
         value: priceData.imagePrice,
         suffix: unitSuffix,
+        adminOnly: true,
       },
       {
         key: 'audio-input',
         label: t('音频输入价格'),
         value: priceData.audioInputPrice,
         suffix: unitSuffix,
+        adminOnly: true,
       },
       {
         key: 'audio-output',
         label: t('音频补全价格'),
         value: priceData.audioOutputPrice,
         suffix: unitSuffix,
+        adminOnly: true,
       },
-    ].filter((item) => item.value !== null && item.value !== undefined && item.value !== '');
+    ];
+    
+    return items.filter(
+      (item) => 
+        (item.value !== null && item.value !== undefined && item.value !== '') &&
+        (isAdminUser || !item.adminOnly)
+    );
   }
 
   return [
@@ -875,8 +895,8 @@ export const getModelPriceItems = (
 };
 
 // 格式化价格信息（用于卡片视图）
-export const formatPriceInfo = (priceData, t, quotaDisplayType = 'USD') => {
-  const items = getModelPriceItems(priceData, t, quotaDisplayType);
+export const formatPriceInfo = (priceData, t, quotaDisplayType = 'USD', isAdminUser = true) => {
+  const items = getModelPriceItems(priceData, t, quotaDisplayType, isAdminUser);
   return (
     <>
       {items.map((item) => (

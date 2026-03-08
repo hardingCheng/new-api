@@ -26,6 +26,7 @@ import {
   calculateModelPrice,
   getModelPriceItems,
   getLobeHubIcon,
+  isAdmin,
 } from '../../../../../helpers';
 import {
   renderLimitedItems,
@@ -234,7 +235,7 @@ export const getPricingTableColumns = ({
     ...(isMobile ? {} : { fixed: 'right' }),
     render: (text, record, index) => {
       const priceData = getPriceData(record);
-      const priceItems = getModelPriceItems(priceData, t, siteDisplayType);
+      const priceItems = getModelPriceItems(priceData, t, siteDisplayType, isAdmin());
 
       return (
         <div className='space-y-1'>
