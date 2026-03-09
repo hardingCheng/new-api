@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,10 +17,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/chromedp/cdproto/network"
-	"github.com/chromedp/chromedp"
-	utls "github.com/refraction-networking/utls"
-	"golang.org/x/net/http2"
+	fhttp "github.com/bogdanfinn/fhttp"
+	tls_client "github.com/bogdanfinn/tls-client"
+	"github.com/bogdanfinn/tls-client/profiles"
 )
 
 // R2Config Cloudflare R2 配置
@@ -47,9 +45,9 @@ var (
 func InitR2() {
 	R2VideoUploadEnabled = GetEnvOrDefaultBool("R2_VIDEO_UPLOAD_ENABLED", false)
 	R2VideoExpiryDays = GetEnvOrDefault("R2_VIDEO_EXPIRY_DAYS", 0)
-	
+
 	SysLog(fmt.Sprintf("R2 initialization: enabled=%v, expiry_days=%d", R2VideoUploadEnabled, R2VideoExpiryDays))
-	
+
 	if !R2VideoUploadEnabled {
 		SysLog("R2 video upload is disabled")
 		return
@@ -164,6 +162,58 @@ func (u *R2Uploader) DownloadAndUpload(ctx context.Context, sourceURL, objectKey
 	return u.DownloadAndUploadWithAuth(ctx, sourceURL, objectKey, "", "")
 }
 
+// UploadData 直接上传数据到 R2
+func (u *R2Uploader) UploadData(ctx context.Context, data []byte, objectKey string) (string, error) {
+	fileSize := len(data)
+	SysLog(fmt.Sprintf("Uploading %d bytes (%.2f MB) to R2...", fileSize, float64(fileSize)/(1024*1024)))
+
+	// 检测 Content-Type
+	contentType := http.DetectContentType(data)
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	// 准备上传参数
+	putInput := &s3.PutObjectInput{
+		Bucket:        aws.String(u.bucket),
+		Key:           aws.String(objectKey),
+		Body:          bytes.NewReader(data),
+		ContentType:   aws.String(contentType),
+		ContentLength: aws.Int64(int64(fileSize)),
+	}
+
+	// 如果设置了过期时间，添加元数据
+	if R2VideoExpiryDays > 0 {
+		expiryTime := time.Now().Add(time.Duration(R2VideoExpiryDays) * 24 * time.Hour)
+		putInput.Metadata = map[string]string{
+			"expiry-time": expiryTime.Format(time.RFC3339),
+			"expiry-days": fmt.Sprintf("%d", R2VideoExpiryDays),
+		}
+	}
+
+	// 上传到 R2
+	SysLog(fmt.Sprintf("Uploading to R2: bucket=%s, key=%s, size=%d bytes", u.bucket, objectKey, fileSize))
+
+	uploadCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	_, err := u.client.PutObject(uploadCtx, putInput)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload to R2: %w", err)
+	}
+
+	// 构建文件 URL
+	var fileURL string
+	if u.publicDomain != "" {
+		fileURL = fmt.Sprintf("https://%s/%s", u.publicDomain, objectKey)
+	} else {
+		fileURL = fmt.Sprintf("https://%s.%s.r2.cloudflarestorage.com/%s", u.bucket, u.accountID, objectKey)
+	}
+
+	SysLog(fmt.Sprintf("Upload successful: %s", fileURL))
+	return fileURL, nil
+}
+
 // DownloadAndUploadWithProxy 从 URL 下载文件并上传到 R2（支持代理）
 // 返回 R2 中的文件 URL
 func (u *R2Uploader) DownloadAndUploadWithProxy(ctx context.Context, sourceURL, objectKey, proxyURL string) (string, error) {
@@ -179,15 +229,15 @@ func (u *R2Uploader) DownloadAndUploadWithAuth(ctx context.Context, sourceURL, o
 	var fileData []byte
 	var err error
 
-	// 对 videos.openai.com 使用 chromedp 下载（绕过 Cloudflare）
+	// 对 videos.openai.com 使用 tls-client 下载（模拟 Chrome TLS 指纹绕过 Cloudflare）
 	if strings.Contains(sourceURL, "videos.openai.com") {
-		SysLog("Using chromedp (headless browser) for Cloudflare-protected URL")
-		fileData, err = downloadWithChrome(ctx, sourceURL)
+		SysLog("Using tls-client (Chrome TLS fingerprint) for Cloudflare-protected URL")
+		fileData, err = downloadWithTLSClient(ctx, sourceURL, proxyURL)
 		if err != nil {
-			SysLog(fmt.Sprintf("chromedp failed: %v, falling back to curl", err))
+			SysLog(fmt.Sprintf("tls-client failed: %v, falling back to curl", err))
 			fileData, err = downloadWithCurl(ctx, sourceURL, proxyURL)
 			if err != nil {
-				return "", fmt.Errorf("failed to download with both chromedp and curl: %w", err)
+				return "", fmt.Errorf("failed to download with both tls-client and curl: %w", err)
 			}
 		}
 	} else {
@@ -201,7 +251,7 @@ func (u *R2Uploader) DownloadAndUploadWithAuth(ctx context.Context, sourceURL, o
 	fileSize := len(fileData)
 	SysLog(fmt.Sprintf("Downloaded %d bytes (%.2f MB), uploading to R2...", fileSize, float64(fileSize)/(1024*1024)))
 
-	// 2. 检测 Content-Type
+	// 3. 检测 Content-Type
 	contentType := http.DetectContentType(fileData)
 	if contentType == "" {
 		contentType = "application/octet-stream"
@@ -226,13 +276,13 @@ func (u *R2Uploader) DownloadAndUploadWithAuth(ctx context.Context, sourceURL, o
 		}
 	}
 
-	// 6. 上传到 R2（带重试）
+	// 6. 上传到 R2
 	SysLog(fmt.Sprintf("Uploading to R2: bucket=%s, key=%s, size=%d bytes", u.bucket, objectKey, fileSize))
-	
+
 	// 创建带超时的上下文
 	uploadCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	
+
 	_, err = u.client.PutObject(uploadCtx, putInput)
 	if err != nil {
 		return "", fmt.Errorf("failed to upload to R2: %w", err)
@@ -248,7 +298,7 @@ func (u *R2Uploader) DownloadAndUploadWithAuth(ctx context.Context, sourceURL, o
 		// 格式：https://<bucket>.<account_id>.r2.cloudflarestorage.com/<key>
 		fileURL = fmt.Sprintf("https://%s.%s.r2.cloudflarestorage.com/%s", u.bucket, u.accountID, objectKey)
 	}
-	
+
 	SysLog(fmt.Sprintf("Upload successful: %s", fileURL))
 
 	return fileURL, nil
@@ -292,27 +342,27 @@ func CleanupExpiredR2Videos() error {
 	}
 
 	ctx := context.Background()
-	
+
 	// 计算过期日期
 	expiryDate := time.Now().Add(-time.Duration(R2VideoExpiryDays) * 24 * time.Hour)
 	SysLog(fmt.Sprintf("Starting cleanup of R2 videos older than %s", expiryDate.Format("2006-01-02")))
-	
+
 	// 列出 videos/ 前缀下的所有对象
 	listInput := &s3.ListObjectsV2Input{
 		Bucket: aws.String(uploader.bucket),
 		Prefix: aws.String("videos/"),
 	}
-	
+
 	paginator := s3.NewListObjectsV2Paginator(uploader.client, listInput)
 	deletedCount := 0
 	totalCount := 0
-	
+
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to list objects: %w", err)
 		}
-		
+
 		for _, obj := range page.Contents {
 			totalCount++
 			// 检查对象是否过期
@@ -331,13 +381,13 @@ func CleanupExpiredR2Videos() error {
 			}
 		}
 	}
-	
+
 	if deletedCount > 0 {
 		SysLog(fmt.Sprintf("Cleanup completed: deleted %d expired videos (total scanned: %d)", deletedCount, totalCount))
 	} else {
 		SysLog(fmt.Sprintf("Cleanup completed: no expired videos found (total scanned: %d)", totalCount))
 	}
-	
+
 	return nil
 }
 
@@ -353,21 +403,21 @@ func ListR2Videos() ([]R2VideoInfo, error) {
 	}
 
 	ctx := context.Background()
-	
+
 	listInput := &s3.ListObjectsV2Input{
 		Bucket: aws.String(uploader.bucket),
 		Prefix: aws.String("videos/"),
 	}
-	
+
 	var videos []R2VideoInfo
 	paginator := s3.NewListObjectsV2Paginator(uploader.client, listInput)
-	
+
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list objects: %w", err)
 		}
-		
+
 		for _, obj := range page.Contents {
 			if obj.Key != nil && obj.LastModified != nil && obj.Size != nil {
 				var fileURL string
@@ -376,7 +426,7 @@ func ListR2Videos() ([]R2VideoInfo, error) {
 				} else {
 					fileURL = fmt.Sprintf("https://%s.%s.r2.cloudflarestorage.com/%s", uploader.bucket, uploader.accountID, *obj.Key)
 				}
-				
+
 				videos = append(videos, R2VideoInfo{
 					Key:          *obj.Key,
 					Size:         *obj.Size,
@@ -386,7 +436,7 @@ func ListR2Videos() ([]R2VideoInfo, error) {
 			}
 		}
 	}
-	
+
 	return videos, nil
 }
 
@@ -398,32 +448,26 @@ type R2VideoInfo struct {
 	URL          string
 }
 
-// newChromeTLSTransport 创建使用 Chrome TLS 指纹的 http.RoundTripper
-// 用于绕过 Cloudflare 的 TLS 指纹检测
-func newChromeTLSTransport(proxyURL *url.URL) http.RoundTripper {
-	t := &http.Transport{
-		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			rawConn, err := (&net.Dialer{Timeout: 30 * time.Second}).DialContext(ctx, network, addr)
-			if err != nil {
-				return nil, err
-			}
-			host, _, _ := net.SplitHostPort(addr)
-			tlsConn := utls.UClient(rawConn, &utls.Config{ServerName: host}, utls.HelloChrome_Auto)
-			if err := tlsConn.HandshakeContext(ctx); err != nil {
-				rawConn.Close()
-				return nil, err
-			}
-			return tlsConn, nil
-		},
+// newTLSClient 创建使用 Chrome TLS 指纹的 tls-client 客户端
+// 完美模拟 Chrome 浏览器的 TLS 指纹（JA3/JA4）、HTTP/2 指纹、Header 顺序
+func newTLSClient(proxyURL string) (tls_client.HttpClient, error) {
+	options := []tls_client.HttpClientOption{
+		tls_client.WithTimeoutSeconds(600),
+		tls_client.WithClientProfile(profiles.Chrome_131),
+		tls_client.WithNotFollowRedirects(),
+		tls_client.WithInsecureSkipVerify(),
 	}
-	if proxyURL != nil {
-		t.Proxy = http.ProxyURL(proxyURL)
+
+	if proxyURL != "" {
+		options = append(options, tls_client.WithProxyUrl(proxyURL))
 	}
-	// 启用 HTTP/2 支持
-	if err := http2.ConfigureTransport(t); err != nil {
-		SysError(fmt.Sprintf("Failed to configure HTTP/2: %v", err))
+
+	client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tls-client: %w", err)
 	}
-	return t
+
+	return client, nil
 }
 
 // downloadWithCurl 使用 curl-impersonate 下载文件（完美模拟 Chrome 浏览器）
@@ -482,13 +526,6 @@ func downloadWithCurl(ctx context.Context, sourceURL, proxyURL string) ([]byte, 
 
 	SysLog(fmt.Sprintf("curl downloaded %d bytes (%.2f MB)", len(output), float64(len(output))/(1024*1024)))
 	return output, nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // downloadWithHTTP 使用标准 HTTP 客户端下载文件
@@ -550,146 +587,139 @@ func downloadWithHTTP(ctx context.Context, sourceURL, proxyURL, apiKey string) (
 	return data, nil
 }
 
-// downloadWithChrome 使用 chromedp（无头浏览器）下载文件
-// 完美绕过 Cloudflare 的所有检测（TLS 指纹、JavaScript 挑战等）
-func downloadWithChrome(ctx context.Context, sourceURL string) ([]byte, error) {
-	SysLog("=== Starting chromedp download ===")
+// downloadWithTLSClient 使用 tls-client 模拟 Chrome TLS 指纹下载文件
+// 纯 Go 实现，不需要浏览器，Docker 镜像轻量
+// 完美模拟 Chrome 131 的 JA3/JA4 指纹、HTTP/2 指纹、Header 顺序
+func downloadWithTLSClient(ctx context.Context, sourceURL, proxyURL string) ([]byte, error) {
+	SysLog("=== Strategy: tls-client (Chrome TLS fingerprint) ===")
 	SysLog(fmt.Sprintf("Target URL: %s", sourceURL))
 
-	// 配置 Chrome 选项
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.Flag("disable-dev-shm-usage", true),
-		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"),
-	)
-
-	SysLog("Creating Chrome context...")
-	allocCtx, cancel := chromedp.NewExecAllocator(ctx, opts...)
-	defer cancel()
-
-	taskCtx, cancel := chromedp.NewContext(allocCtx)
-	defer cancel()
-
-	// 设置超时
-	timeoutCtx, timeoutCancel := context.WithTimeout(taskCtx, 3*time.Minute)
-	defer timeoutCancel()
-
-	SysLog("Navigating to URL with Chrome...")
-	var pageContent string
-	err := chromedp.Run(timeoutCtx,
-		chromedp.Navigate(sourceURL),
-		chromedp.Sleep(5*time.Second), // 等待 Cloudflare 挑战完成和视频加载
-		chromedp.Evaluate(`document.body.innerText || document.documentElement.outerHTML`, &pageContent),
-	)
-
+	client, err := newTLSClient(proxyURL)
 	if err != nil {
-		SysError(fmt.Sprintf("Chrome navigation failed: %v", err))
-		return nil, fmt.Errorf("chromedp navigation failed: %w", err)
+		return nil, fmt.Errorf("failed to create tls-client: %w", err)
 	}
 
-	SysLog(fmt.Sprintf("Page loaded, content length: %d bytes", len(pageContent)))
-
-	// 检查是否还在 Cloudflare 挑战页面
-	if strings.Contains(pageContent, "Cloudflare") && strings.Contains(pageContent, "Attention Required") {
-		SysError("Still on Cloudflare challenge page after 5 seconds")
-		return nil, fmt.Errorf("cloudflare challenge not bypassed after 5 seconds")
-	}
-
-	// 如果页面很小且包含 HTML，说明不是视频文件
-	if len(pageContent) < 10000 && strings.Contains(pageContent, "<html") {
-		SysError(fmt.Sprintf("Received HTML error page: %s", pageContent[:min(200, len(pageContent))]))
-		return nil, fmt.Errorf("received HTML error page")
-	}
-
-	SysLog("Cloudflare challenge passed, extracting cookies...")
-
-	// Chrome 已经通过了 Cloudflare，现在获取 cookies 并用标准 HTTP 客户端下载
-	var cookies []*http.Cookie
-	err = chromedp.Run(timeoutCtx,
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			// 获取所有 cookies
-			cookiesData, err := network.GetCookies().Do(ctx)
-			if err != nil {
-				return err
-			}
-
-			for _, c := range cookiesData {
-				cookies = append(cookies, &http.Cookie{
-					Name:  c.Name,
-					Value: c.Value,
-				})
-			}
-			return nil
-		}),
-	)
-
+	// 使用 fhttp 构建请求（tls-client 内部使用 bogdanfinn/fhttp）
+	req, err := fhttp.NewRequest("GET", sourceURL, nil)
 	if err != nil {
-		SysError(fmt.Sprintf("Failed to get cookies: %v, trying direct download", err))
-	} else {
-		SysLog(fmt.Sprintf("Extracted %d cookies from Chrome", len(cookies)))
-	}
-
-	SysLog("Downloading video with HTTP client (using Chrome cookies)...")
-
-	// 使用标准 HTTP 客户端下载，带上 Chrome 的 cookies
-	req, err := http.NewRequestWithContext(timeoutCtx, "GET", sourceURL, nil)
-	if err != nil {
-		SysError(fmt.Sprintf("Failed to create HTTP request: %v", err))
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "*/*")
-
-	for _, cookie := range cookies {
-		req.AddCookie(cookie)
+	req.Header = fhttp.Header{
+		"User-Agent":                {"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"},
+		"Accept":                    {"*/*"},
+		"Accept-Language":           {"en-US,en;q=0.9"},
+		"Accept-Encoding":           {"gzip, deflate, br"},
+		"Connection":                {"keep-alive"},
+		"Sec-Ch-Ua":                 {`"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"`},
+		"Sec-Ch-Ua-Mobile":          {"?0"},
+		"Sec-Ch-Ua-Platform":        {`"Windows"`},
+		"Sec-Fetch-Dest":            {"empty"},
+		"Sec-Fetch-Mode":            {"cors"},
+		"Sec-Fetch-Site":            {"cross-site"},
+		"Upgrade-Insecure-Requests": {"1"},
 	}
 
-	client := &http.Client{Timeout: 2 * time.Minute}
+	// tls-client 会自动处理 Header 顺序以匹配 Chrome 指纹
+	req.Header[fhttp.HeaderOrderKey] = []string{
+		"user-agent",
+		"accept",
+		"accept-language",
+		"accept-encoding",
+		"connection",
+		"sec-ch-ua",
+		"sec-ch-ua-mobile",
+		"sec-ch-ua-platform",
+		"sec-fetch-dest",
+		"sec-fetch-mode",
+		"sec-fetch-site",
+		"upgrade-insecure-requests",
+	}
+
+	SysLog("Sending request with Chrome 131 TLS fingerprint...")
+
 	resp, err := client.Do(req)
 	if err != nil {
-		SysError(fmt.Sprintf("HTTP request failed: %v", err))
-		return nil, fmt.Errorf("failed to download with cookies: %w", err)
+		return nil, fmt.Errorf("tls-client request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	SysLog(fmt.Sprintf("HTTP response: status=%d, content-length=%d", resp.StatusCode, resp.ContentLength))
 
-	if resp.StatusCode != http.StatusOK {
-		SysError(fmt.Sprintf("HTTP error: status code %d", resp.StatusCode))
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
+	// 处理重定向（tls-client 设置了 WithNotFollowRedirects，手动跟随保持 TLS 指纹一致）
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		location := resp.Header.Get("Location")
+		if location != "" {
+			SysLog(fmt.Sprintf("Following redirect to: %s", location))
+			resp.Body.Close()
 
-	SysLog("Reading response body...")
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		SysError(fmt.Sprintf("Failed to read response body: %v", err))
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
+			redirectURL, err := url.Parse(location)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse redirect URL: %w", err)
+			}
+			baseURL, _ := url.Parse(sourceURL)
+			finalURL := baseURL.ResolveReference(redirectURL).String()
 
-	SysLog(fmt.Sprintf("Downloaded %d bytes", len(data)))
+			req2, err := fhttp.NewRequest("GET", finalURL, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create redirect request: %w", err)
+			}
+			req2.Header = req.Header
 
-	// 检查是否下载到 HTML 错误页面
-	if len(data) < 100000 && bytes.Contains(data, []byte("<html")) {
-		SysError("Downloaded HTML error page instead of video")
-		return nil, fmt.Errorf("downloaded HTML error page instead of video")
-	}
+			resp, err = client.Do(req2)
+			if err != nil {
+				return nil, fmt.Errorf("redirect request failed: %w", err)
+			}
+			defer resp.Body.Close()
 
-	// 检查文件头是否是视频格式
-	if len(data) > 12 {
-		header := fmt.Sprintf("%x", data[:12])
-		SysLog(fmt.Sprintf("File header (first 12 bytes): %s", header))
-
-		// MP4 文件头通常是 00 00 00 xx 66 74 79 70 (ftyp)
-		if bytes.Contains(data[:20], []byte("ftyp")) {
-			SysLog("✓ Confirmed MP4 video file format")
-		} else {
-			SysLog("⚠ Warning: File header doesn't match expected MP4 format")
+			SysLog(fmt.Sprintf("Redirect response: status=%d, content-length=%d", resp.StatusCode, resp.ContentLength))
 		}
 	}
 
-	SysLog(fmt.Sprintf("=== chromedp download completed: %.2f MB ===", float64(len(data))/(1024*1024)))
+	if resp.StatusCode == 403 {
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		SysError(fmt.Sprintf("403 Forbidden, response body (first 500 bytes): %s", string(errBody[:min(500, len(errBody))])))
+		return nil, fmt.Errorf("HTTP 403 Forbidden (Cloudflare blocked)")
+	}
+
+	if resp.StatusCode != 200 {
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		SysError(fmt.Sprintf("HTTP error: status=%d, body=%s", resp.StatusCode, string(errBody)))
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	SysLog(fmt.Sprintf("Downloaded %d bytes (%.2f MB)", len(data), float64(len(data))/(1024*1024)))
+
+	// 检查是否下载到 HTML 错误页面
+	if len(data) < 100000 && bytes.Contains(data, []byte("<html")) {
+		SysError(fmt.Sprintf("Downloaded HTML instead of video (first 500 bytes): %s", string(data[:min(500, len(data))])))
+		return nil, fmt.Errorf("downloaded HTML error page instead of video")
+	}
+
+	logVideoFileHeader(data)
+	SysLog(fmt.Sprintf("=== tls-client download completed: %.2f MB ===", float64(len(data))/(1024*1024)))
 	return data, nil
+}
+
+// logVideoFileHeader 记录视频文件头信息用于调试
+func logVideoFileHeader(data []byte) {
+	if len(data) > 12 {
+		header := fmt.Sprintf("%x", data[:12])
+		SysLog(fmt.Sprintf("File header (first 12 bytes): %s", header))
+		if bytes.Contains(data[:min(20, len(data))], []byte("ftyp")) {
+			SysLog("Confirmed MP4 video file format")
+		} else {
+			SysLog("Warning: File header doesn't match expected MP4 format")
+		}
+	}
+}
+
+// DownloadVideoWithChromedp 保留兼容性接口，内部使用 tls-client 实现
+func DownloadVideoWithChromedp(sourceURL string) ([]byte, error) {
+	return downloadWithTLSClient(context.Background(), sourceURL, "")
 }

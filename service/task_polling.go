@@ -377,7 +377,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	snap := task.Snapshot()
 
 	taskResult := &relaycommon.TaskInfo{}
-	
+
 	// 先尝试用 adaptor 解析上游原始响应（获取真实视频 URL）
 	taskResult, err = adaptor.ParseTaskResult(responseBody)
 	if err != nil {
@@ -454,7 +454,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			// Direct upstream URL (e.g. Kling, Ali, Doubao, etc.)
 			originalURL := taskResult.Url
 			finalURL := originalURL
-			
+
 			// 如果启用了 R2 上传，尝试上传视频到 R2
 			if common.R2VideoUploadEnabled && originalURL != "" && !strings.HasPrefix(originalURL, "data:") {
 				uploader := common.GetR2Uploader()
@@ -466,21 +466,20 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 						proxy = channel.GetSetting().Proxy
 						apiKey = channel.Key
 					}
-					
+
 					objectKey := common.GenerateR2ObjectKey(task.GetUpstreamTaskID(), originalURL)
 					common.SysLog(fmt.Sprintf("Starting R2 upload for task %s: objectKey=%s", task.TaskID, objectKey))
-					
-					uploadCtx, cancel := context.WithTimeout(ctx, 15*time.Minute) // 增加超时到 15 分钟
-					defer cancel()
-					
+
+					uploadCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 					r2URL, err := uploader.DownloadAndUploadWithAuth(uploadCtx, originalURL, objectKey, proxy, apiKey)
+					cancel()
 					if err != nil {
 						common.SysError(fmt.Sprintf("Failed to upload video to R2 for task %s: %v", task.TaskID, err))
 						finalURL = originalURL
 					} else {
 						common.SysLog(fmt.Sprintf("Video uploaded to R2 for task %s: %s -> %s", task.TaskID, originalURL, r2URL))
 						finalURL = r2URL
-						
+
 						// 更新 task.Data 中的 URL 字段
 						var dataMap map[string]interface{}
 						if err := common.Unmarshal(task.Data, &dataMap); err == nil {
@@ -497,7 +496,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 					finalURL = originalURL
 				}
 			}
-			
+
 			task.PrivateData.ResultURL = finalURL
 		} else {
 			// No URL from adaptor — construct proxy URL using public task ID
