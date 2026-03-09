@@ -493,8 +493,17 @@ func downloadWithCurl(ctx context.Context, sourceURL, proxyURL string) ([]byte, 
 	if curlCmd == "curl" {
 		// 普通 curl 需要手动添加 headers
 		args = append(args,
-			"-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+			"-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
 			"-H", "Accept: */*",
+			"-H", "Accept-Language: zh-CN,zh;q=0.9,en;q=0.8",
+			"-H", fmt.Sprintf("Referer: %s", sourceURL),
+			"-H", `Sec-Ch-Ua: "Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"`,
+			"-H", "Sec-Ch-Ua-Mobile: ?0",
+			"-H", `Sec-Ch-Ua-Platform: "macOS"`,
+			"-H", "Sec-Fetch-Dest: video",
+			"-H", "Sec-Fetch-Mode: no-cors",
+			"-H", "Sec-Fetch-Site: same-origin",
+			"-H", "Priority: i",
 		)
 	}
 
@@ -606,37 +615,39 @@ func downloadWithTLSClient(ctx context.Context, sourceURL, proxyURL string) ([]b
 	}
 
 	req.Header = fhttp.Header{
-		"User-Agent":                {"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"},
-		"Accept":                    {"*/*"},
-		"Accept-Language":           {"en-US,en;q=0.9"},
-		"Accept-Encoding":           {"gzip, deflate, br"},
-		"Connection":                {"keep-alive"},
-		"Sec-Ch-Ua":                 {`"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"`},
-		"Sec-Ch-Ua-Mobile":          {"?0"},
-		"Sec-Ch-Ua-Platform":        {`"Windows"`},
-		"Sec-Fetch-Dest":            {"empty"},
-		"Sec-Fetch-Mode":            {"cors"},
-		"Sec-Fetch-Site":            {"cross-site"},
-		"Upgrade-Insecure-Requests": {"1"},
+		"User-Agent":         {"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"},
+		"Accept":             {"*/*"},
+		"Accept-Language":    {"zh-CN,zh;q=0.9,en;q=0.8"},
+		"Accept-Encoding":    {"gzip, deflate, br"},
+		"Connection":         {"keep-alive"},
+		"Referer":            {sourceURL},
+		"Sec-Ch-Ua":          {`"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"`},
+		"Sec-Ch-Ua-Mobile":   {"?0"},
+		"Sec-Ch-Ua-Platform": {`"macOS"`},
+		"Sec-Fetch-Dest":     {"video"},
+		"Sec-Fetch-Mode":     {"no-cors"},
+		"Sec-Fetch-Site":     {"same-origin"},
+		"Priority":           {"i"},
 	}
 
 	// tls-client 会自动处理 Header 顺序以匹配 Chrome 指纹
 	req.Header[fhttp.HeaderOrderKey] = []string{
-		"user-agent",
 		"accept",
 		"accept-language",
 		"accept-encoding",
 		"connection",
+		"referer",
 		"sec-ch-ua",
 		"sec-ch-ua-mobile",
 		"sec-ch-ua-platform",
 		"sec-fetch-dest",
 		"sec-fetch-mode",
 		"sec-fetch-site",
-		"upgrade-insecure-requests",
+		"priority",
+		"user-agent",
 	}
 
-	SysLog("Sending request with Chrome 131 TLS fingerprint...")
+	SysLog("Sending request with Chrome 145 TLS fingerprint...")
 
 	resp, err := client.Do(req)
 	if err != nil {
