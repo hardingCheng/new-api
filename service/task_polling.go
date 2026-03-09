@@ -466,6 +466,11 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 						proxy = channel.GetSetting().Proxy
 						apiKey = channel.Key
 					}
+					// 渠道未配置代理时，使用全局下载代理
+					if proxy == "" && common.R2DownloadProxy != "" {
+						proxy = common.R2DownloadProxy
+						common.SysLog(fmt.Sprintf("Using global R2 download proxy: %s", proxy))
+					}
 
 					objectKey := common.GenerateR2ObjectKey(task.GetUpstreamTaskID(), originalURL)
 					common.SysLog(fmt.Sprintf("Starting R2 upload for task %s: objectKey=%s", task.TaskID, objectKey))

@@ -37,6 +37,8 @@ var (
 	R2VideoUploadEnabled = false
 	// R2VideoExpiryDays 视频文件过期时间（天），0 表示永不过期
 	R2VideoExpiryDays = 0
+	// R2DownloadProxy 全局下载代理地址（当渠道未配置代理时使用）
+	R2DownloadProxy = ""
 	// globalR2Uploader 全局 R2 上传器
 	globalR2Uploader *R2Uploader
 )
@@ -45,8 +47,9 @@ var (
 func InitR2() {
 	R2VideoUploadEnabled = GetEnvOrDefaultBool("R2_VIDEO_UPLOAD_ENABLED", false)
 	R2VideoExpiryDays = GetEnvOrDefault("R2_VIDEO_EXPIRY_DAYS", 0)
+	R2DownloadProxy = os.Getenv("R2_DOWNLOAD_PROXY")
 
-	SysLog(fmt.Sprintf("R2 initialization: enabled=%v, expiry_days=%d", R2VideoUploadEnabled, R2VideoExpiryDays))
+	SysLog(fmt.Sprintf("R2 initialization: enabled=%v, expiry_days=%d, proxy=%s", R2VideoUploadEnabled, R2VideoExpiryDays, R2DownloadProxy))
 
 	if !R2VideoUploadEnabled {
 		SysLog("R2 video upload is disabled")
