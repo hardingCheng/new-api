@@ -190,6 +190,7 @@ const EditChannelModal = (props) => {
     pass_through_body_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
+    task_request_format: '',
     settings: '',
     // 仅 Vertex: 密钥格式（存入 settings.vertex_key_type）
     vertex_key_type: 'json',
@@ -525,6 +526,7 @@ const EditChannelModal = (props) => {
     proxy: '',
     pass_through_body_enabled: false,
     system_prompt: '',
+    task_request_format: '',
   });
   const showApiConfigCard = true; // 控制是否显示 API 配置卡片
   const getInitValues = () => ({ ...originInputs });
@@ -845,6 +847,7 @@ const EditChannelModal = (props) => {
           data.system_prompt = parsedSettings.system_prompt || '';
           data.system_prompt_override =
             parsedSettings.system_prompt_override || false;
+          data.task_request_format = parsedSettings.task_request_format || '';
         } catch (error) {
           console.error('解析渠道设置失败:', error);
           data.force_format = false;
@@ -853,6 +856,7 @@ const EditChannelModal = (props) => {
           data.pass_through_body_enabled = false;
           data.system_prompt = '';
           data.system_prompt_override = false;
+          data.task_request_format = '';
         }
       } else {
         data.force_format = false;
@@ -861,6 +865,7 @@ const EditChannelModal = (props) => {
         data.pass_through_body_enabled = false;
         data.system_prompt = '';
         data.system_prompt_override = false;
+        data.task_request_format = '';
       }
 
       if (data.settings) {
@@ -966,6 +971,7 @@ const EditChannelModal = (props) => {
         pass_through_body_enabled: data.pass_through_body_enabled,
         system_prompt: data.system_prompt,
         system_prompt_override: data.system_prompt_override || false,
+        task_request_format: data.task_request_format || '',
       });
       initialModelsRef.current = (data.models || [])
         .map((model) => (model || '').trim())
@@ -1690,6 +1696,7 @@ const EditChannelModal = (props) => {
       pass_through_body_enabled: localInputs.pass_through_body_enabled || false,
       system_prompt: localInputs.system_prompt || '',
       system_prompt_override: localInputs.system_prompt_override || false,
+      task_request_format: localInputs.task_request_format || '',
     };
     localInputs.setting = JSON.stringify(channelExtraSettings);
 
@@ -1770,6 +1777,7 @@ const EditChannelModal = (props) => {
     delete localInputs.pass_through_body_enabled;
     delete localInputs.system_prompt;
     delete localInputs.system_prompt_override;
+    delete localInputs.task_request_format;
     delete localInputs.is_enterprise_account;
     // 顶层的 vertex_key_type 不应发送给后端
     delete localInputs.vertex_key_type;
@@ -3893,6 +3901,29 @@ const EditChannelModal = (props) => {
                       showClear
                       extraText={t('用于配置网络代理，支持 socks5 协议')}
                     />
+
+                    <Form.Select
+                      field='task_request_format'
+                      label={t('任务请求格式')}
+                      placeholder={t('跟随客户端')}
+                      onChange={(value) =>
+                        handleChannelSettingsChange(
+                          'task_request_format',
+                          value,
+                        )
+                      }
+                      showClear
+                      extraText={t(
+                        '指定向上游发送视频生成等任务请求时的格式，留空则跟随客户端请求格式',
+                      )}
+                    >
+                      <Form.Select.Option value='json'>
+                        JSON
+                      </Form.Select.Option>
+                      <Form.Select.Option value='form-data'>
+                        Form-Data
+                      </Form.Select.Option>
+                    </Form.Select>
 
                     <Form.TextArea
                       field='system_prompt'
