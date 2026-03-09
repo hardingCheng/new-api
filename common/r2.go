@@ -18,6 +18,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/chromedp"
 	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/http2"
 )
@@ -177,12 +179,16 @@ func (u *R2Uploader) DownloadAndUploadWithAuth(ctx context.Context, sourceURL, o
 	var fileData []byte
 	var err error
 
-	// 对 videos.openai.com 使用 curl 下载（绕过 Cloudflare TLS 指纹检测）
+	// 对 videos.openai.com 使用 chromedp 下载（绕过 Cloudflare）
 	if strings.Contains(sourceURL, "videos.openai.com") {
-		SysLog("Using curl for Cloudflare-protected URL")
-		fileData, err = downloadWithCurl(ctx, sourceURL, proxyURL)
+		SysLog("Using chromedp (headless browser) for Cloudflare-protected URL")
+		fileData, err = downloadWithChrome(ctx, sourceURL)
 		if err != nil {
-			return "", fmt.Errorf("failed to download with curl: %w", err)
+			SysLog(fmt.Sprintf("chromedp failed: %v, falling back to curl", err))
+			fileData, err = downloadWithCurl(ctx, sourceURL, proxyURL)
+			if err != nil {
+				return "", fmt.Errorf("failed to download with both chromedp and curl: %w", err)
+			}
 		}
 	} else {
 		// 其他 URL 使用标准 HTTP 客户端
@@ -541,5 +547,149 @@ func downloadWithHTTP(ctx context.Context, sourceURL, proxyURL, apiKey string) (
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
+	return data, nil
+}
+
+// downloadWithChrome 使用 chromedp（无头浏览器）下载文件
+// 完美绕过 Cloudflare 的所有检测（TLS 指纹、JavaScript 挑战等）
+func downloadWithChrome(ctx context.Context, sourceURL string) ([]byte, error) {
+	SysLog("=== Starting chromedp download ===")
+	SysLog(fmt.Sprintf("Target URL: %s", sourceURL))
+
+	// 配置 Chrome 选项
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("headless", true),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"),
+	)
+
+	SysLog("Creating Chrome context...")
+	allocCtx, cancel := chromedp.NewExecAllocator(ctx, opts...)
+	defer cancel()
+
+	taskCtx, cancel := chromedp.NewContext(allocCtx)
+	defer cancel()
+
+	// 设置超时
+	timeoutCtx, timeoutCancel := context.WithTimeout(taskCtx, 3*time.Minute)
+	defer timeoutCancel()
+
+	SysLog("Navigating to URL with Chrome...")
+	var pageContent string
+	err := chromedp.Run(timeoutCtx,
+		chromedp.Navigate(sourceURL),
+		chromedp.Sleep(5*time.Second), // 等待 Cloudflare 挑战完成和视频加载
+		chromedp.Evaluate(`document.body.innerText || document.documentElement.outerHTML`, &pageContent),
+	)
+
+	if err != nil {
+		SysError(fmt.Sprintf("Chrome navigation failed: %v", err))
+		return nil, fmt.Errorf("chromedp navigation failed: %w", err)
+	}
+
+	SysLog(fmt.Sprintf("Page loaded, content length: %d bytes", len(pageContent)))
+
+	// 检查是否还在 Cloudflare 挑战页面
+	if strings.Contains(pageContent, "Cloudflare") && strings.Contains(pageContent, "Attention Required") {
+		SysError("Still on Cloudflare challenge page after 5 seconds")
+		return nil, fmt.Errorf("cloudflare challenge not bypassed after 5 seconds")
+	}
+
+	// 如果页面很小且包含 HTML，说明不是视频文件
+	if len(pageContent) < 10000 && strings.Contains(pageContent, "<html") {
+		SysError(fmt.Sprintf("Received HTML error page: %s", pageContent[:min(200, len(pageContent))]))
+		return nil, fmt.Errorf("received HTML error page")
+	}
+
+	SysLog("Cloudflare challenge passed, extracting cookies...")
+
+	// Chrome 已经通过了 Cloudflare，现在获取 cookies 并用标准 HTTP 客户端下载
+	var cookies []*http.Cookie
+	err = chromedp.Run(timeoutCtx,
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			// 获取所有 cookies
+			cookiesData, err := network.GetCookies().Do(ctx)
+			if err != nil {
+				return err
+			}
+
+			for _, c := range cookiesData {
+				cookies = append(cookies, &http.Cookie{
+					Name:  c.Name,
+					Value: c.Value,
+				})
+			}
+			return nil
+		}),
+	)
+
+	if err != nil {
+		SysError(fmt.Sprintf("Failed to get cookies: %v, trying direct download", err))
+	} else {
+		SysLog(fmt.Sprintf("Extracted %d cookies from Chrome", len(cookies)))
+	}
+
+	SysLog("Downloading video with HTTP client (using Chrome cookies)...")
+
+	// 使用标准 HTTP 客户端下载，带上 Chrome 的 cookies
+	req, err := http.NewRequestWithContext(timeoutCtx, "GET", sourceURL, nil)
+	if err != nil {
+		SysError(fmt.Sprintf("Failed to create HTTP request: %v", err))
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "*/*")
+
+	for _, cookie := range cookies {
+		req.AddCookie(cookie)
+	}
+
+	client := &http.Client{Timeout: 2 * time.Minute}
+	resp, err := client.Do(req)
+	if err != nil {
+		SysError(fmt.Sprintf("HTTP request failed: %v", err))
+		return nil, fmt.Errorf("failed to download with cookies: %w", err)
+	}
+	defer resp.Body.Close()
+
+	SysLog(fmt.Sprintf("HTTP response: status=%d, content-length=%d", resp.StatusCode, resp.ContentLength))
+
+	if resp.StatusCode != http.StatusOK {
+		SysError(fmt.Sprintf("HTTP error: status code %d", resp.StatusCode))
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	SysLog("Reading response body...")
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		SysError(fmt.Sprintf("Failed to read response body: %v", err))
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	SysLog(fmt.Sprintf("Downloaded %d bytes", len(data)))
+
+	// 检查是否下载到 HTML 错误页面
+	if len(data) < 100000 && bytes.Contains(data, []byte("<html")) {
+		SysError("Downloaded HTML error page instead of video")
+		return nil, fmt.Errorf("downloaded HTML error page instead of video")
+	}
+
+	// 检查文件头是否是视频格式
+	if len(data) > 12 {
+		header := fmt.Sprintf("%x", data[:12])
+		SysLog(fmt.Sprintf("File header (first 12 bytes): %s", header))
+
+		// MP4 文件头通常是 00 00 00 xx 66 74 79 70 (ftyp)
+		if bytes.Contains(data[:20], []byte("ftyp")) {
+			SysLog("✓ Confirmed MP4 video file format")
+		} else {
+			SysLog("⚠ Warning: File header doesn't match expected MP4 format")
+		}
+	}
+
+	SysLog(fmt.Sprintf("=== chromedp download completed: %.2f MB ===", float64(len(data))/(1024*1024)))
 	return data, nil
 }
