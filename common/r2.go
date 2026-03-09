@@ -226,33 +226,55 @@ func (u *R2Uploader) DownloadAndUploadWithProxy(ctx context.Context, sourceURL, 
 // DownloadAndUploadWithAuth 从 URL 下载文件并上传到 R2（支持代理和认证）
 // 返回 R2 中的文件 URL
 func (u *R2Uploader) DownloadAndUploadWithAuth(ctx context.Context, sourceURL, objectKey, proxyURL, apiKey string) (string, error) {
-	// 1. 下载文件
-	SysLog(fmt.Sprintf("Downloading video from: %s", sourceURL))
+	// 1. 全局代理优先，直接覆盖渠道代理
+	if R2DownloadProxy != "" {
+		proxyURL = R2DownloadProxy
+		SysLog(fmt.Sprintf("[R2] Using global download proxy (override): %s", proxyURL))
+	}
 
+	// 2. 下载文件
+	SysLog(fmt.Sprintf("[R2] === Start downloading video ==="))
+	SysLog(fmt.Sprintf("[R2] Source URL: %s", sourceURL))
+	SysLog(fmt.Sprintf("[R2] Object Key: %s", objectKey))
+	SysLog(fmt.Sprintf("[R2] Proxy: %s", proxyURL))
+	SysLog(fmt.Sprintf("[R2] API Key present: %v", apiKey != ""))
+
+	startTime := time.Now()
 	var fileData []byte
 	var err error
 
 	// 对 videos.openai.com 使用 tls-client 下载（模拟 Chrome TLS 指纹绕过 Cloudflare）
 	if strings.Contains(sourceURL, "videos.openai.com") {
-		SysLog("Using tls-client (Chrome TLS fingerprint) for Cloudflare-protected URL")
+		SysLog(fmt.Sprintf("[R2] Detected videos.openai.com, using tls-client (Chrome 145 TLS fingerprint)"))
+		SysLog(fmt.Sprintf("[R2] Strategy 1: tls-client with proxy=%s", proxyURL))
 		fileData, err = downloadWithTLSClient(ctx, sourceURL, proxyURL)
 		if err != nil {
-			SysLog(fmt.Sprintf("tls-client failed: %v, falling back to curl", err))
+			SysLog(fmt.Sprintf("[R2] Strategy 1 (tls-client) FAILED: %v", err))
+			SysLog(fmt.Sprintf("[R2] Strategy 2: falling back to curl with proxy=%s", proxyURL))
 			fileData, err = downloadWithCurl(ctx, sourceURL, proxyURL)
 			if err != nil {
+				SysLog(fmt.Sprintf("[R2] Strategy 2 (curl) FAILED: %v", err))
+				SysLog(fmt.Sprintf("[R2] === Download FAILED after all strategies (elapsed: %s) ===", time.Since(startTime)))
 				return "", fmt.Errorf("failed to download with both tls-client and curl: %w", err)
 			}
+			SysLog(fmt.Sprintf("[R2] Strategy 2 (curl) SUCCESS"))
+		} else {
+			SysLog(fmt.Sprintf("[R2] Strategy 1 (tls-client) SUCCESS"))
 		}
 	} else {
 		// 其他 URL 使用标准 HTTP 客户端
+		SysLog(fmt.Sprintf("[R2] Using standard HTTP client with proxy=%s", proxyURL))
 		fileData, err = downloadWithHTTP(ctx, sourceURL, proxyURL, apiKey)
 		if err != nil {
+			SysLog(fmt.Sprintf("[R2] HTTP download FAILED: %v", err))
+			SysLog(fmt.Sprintf("[R2] === Download FAILED (elapsed: %s) ===", time.Since(startTime)))
 			return "", fmt.Errorf("failed to download with HTTP: %w", err)
 		}
+		SysLog(fmt.Sprintf("[R2] HTTP download SUCCESS"))
 	}
 
 	fileSize := len(fileData)
-	SysLog(fmt.Sprintf("Downloaded %d bytes (%.2f MB), uploading to R2...", fileSize, float64(fileSize)/(1024*1024)))
+	SysLog(fmt.Sprintf("[R2] Download completed: %d bytes (%.2f MB) in %s", fileSize, float64(fileSize)/(1024*1024), time.Since(startTime)))
 
 	// 3. 检测 Content-Type
 	contentType := http.DetectContentType(fileData)
@@ -280,16 +302,21 @@ func (u *R2Uploader) DownloadAndUploadWithAuth(ctx context.Context, sourceURL, o
 	}
 
 	// 6. 上传到 R2
-	SysLog(fmt.Sprintf("Uploading to R2: bucket=%s, key=%s, size=%d bytes", u.bucket, objectKey, fileSize))
+	SysLog(fmt.Sprintf("[R2] === Start uploading to R2 ==="))
+	SysLog(fmt.Sprintf("[R2] Bucket: %s, Key: %s, Size: %d bytes (%.2f MB), ContentType: %s", u.bucket, objectKey, fileSize, float64(fileSize)/(1024*1024), contentType))
 
 	// 创建带超时的上下文
+	uploadStartTime := time.Now()
 	uploadCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
 	_, err = u.client.PutObject(uploadCtx, putInput)
 	if err != nil {
+		SysLog(fmt.Sprintf("[R2] Upload FAILED (elapsed: %s): %v", time.Since(uploadStartTime), err))
 		return "", fmt.Errorf("failed to upload to R2: %w", err)
 	}
+
+	SysLog(fmt.Sprintf("[R2] Upload SUCCESS (elapsed: %s)", time.Since(uploadStartTime)))
 
 	// 7. 构建文件 URL
 	var fileURL string
@@ -302,7 +329,7 @@ func (u *R2Uploader) DownloadAndUploadWithAuth(ctx context.Context, sourceURL, o
 		fileURL = fmt.Sprintf("https://%s.%s.r2.cloudflarestorage.com/%s", u.bucket, u.accountID, objectKey)
 	}
 
-	SysLog(fmt.Sprintf("Upload successful: %s", fileURL))
+	SysLog(fmt.Sprintf("[R2] === Complete: %s (total elapsed: %s) ===", fileURL, time.Since(startTime)))
 
 	return fileURL, nil
 }
