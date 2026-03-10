@@ -142,62 +142,8 @@ func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, erro
 // BuildRequestHeader sets required headers.
 func (a *TaskAdaptor) BuildRequestHeader(c *gin.Context, req *http.Request, info *relaycommon.RelayInfo) error {
 	req.Header.Set("Authorization", "Bearer "+a.apiKey)
-	// Content-Type will be set/overridden by BuildRequestBody when format conversion happens;
-	// here we set the default from the incoming request.
-	if req.Header.Get("Content-Type") == "" {
-		req.Header.Set("Content-Type", c.Request.Header.Get("Content-Type"))
-	}
+	req.Header.Set("Content-Type", c.Request.Header.Get("Content-Type"))
 	return nil
-}
-
-// resolveTargetFormat determines the upstream request format.
-// Returns "json" or "form-data". If the channel has a TaskRequestFormat
-// configured, that takes precedence; otherwise follows the client format.
-func resolveTargetFormat(clientContentType string, info *relaycommon.RelayInfo) string {
-	if tf := info.ChannelSetting.TaskRequestFormat; tf == "json" || tf == "form-data" {
-		return tf
-	}
-	if strings.Contains(clientContentType, "multipart/form-data") {
-		return "form-data"
-	}
-	return "json"
-}
-
-// buildFormDataBody creates a multipart/form-data body from key-value fields
-// and updates the Content-Type header on c.Request accordingly.
-func buildFormDataBody(c *gin.Context, fields map[string]interface{}) (*bytes.Buffer, error) {
-	var buf bytes.Buffer
-	writer := multipart.NewWriter(&buf)
-	for key, val := range fields {
-		writer.WriteField(key, fmt.Sprintf("%v", val))
-	}
-	writer.Close()
-	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
-	return &buf, nil
-}
-
-// buildJSONBodyFromForm reads multipart form values and produces a JSON body,
-// updating Content-Type on c.Request.
-func buildJSONBodyFromForm(c *gin.Context, info *relaycommon.RelayInfo) (io.Reader, error) {
-	formData, err := common.ParseMultipartFormReusable(c)
-	if err != nil {
-		return nil, errors.Wrap(err, "parse_multipart_form_failed")
-	}
-	bodyMap := make(map[string]interface{})
-	for key, values := range formData.Value {
-		if len(values) == 1 {
-			bodyMap[key] = values[0]
-		} else if len(values) > 1 {
-			bodyMap[key] = values
-		}
-	}
-	bodyMap["model"] = info.UpstreamModelName
-	jsonBody, err := common.Marshal(bodyMap)
-	if err != nil {
-		return nil, errors.Wrap(err, "marshal_json_body_failed")
-	}
-	c.Request.Header.Set("Content-Type", "application/json")
-	return bytes.NewReader(jsonBody), nil
 }
 
 func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayInfo) (io.Reader, error) {
@@ -210,37 +156,19 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		return nil, errors.Wrap(err, "read_body_bytes_failed")
 	}
 	contentType := c.GetHeader("Content-Type")
-	targetFormat := resolveTargetFormat(contentType, info)
 
-	clientIsJSON := strings.HasPrefix(contentType, "application/json")
-	clientIsForm := strings.Contains(contentType, "multipart/form-data")
-
-	// ── Client sent JSON ──
-	if clientIsJSON {
+	if strings.HasPrefix(contentType, "application/json") {
 		var bodyMap map[string]interface{}
-		if err := common.Unmarshal(cachedBody, &bodyMap); err != nil {
-			return bytes.NewReader(cachedBody), nil
-		}
-		bodyMap["model"] = info.UpstreamModelName
-
-		if targetFormat == "form-data" {
-			// JSON → form-data conversion
-			return buildFormDataBody(c, bodyMap)
-		}
-		// JSON → JSON (default)
-		if newBody, err := common.Marshal(bodyMap); err == nil {
-			return bytes.NewReader(newBody), nil
+		if err := common.Unmarshal(cachedBody, &bodyMap); err == nil {
+			bodyMap["model"] = info.UpstreamModelName
+			if newBody, err := common.Marshal(bodyMap); err == nil {
+				return bytes.NewReader(newBody), nil
+			}
 		}
 		return bytes.NewReader(cachedBody), nil
 	}
 
-	// ── Client sent form-data ──
-	if clientIsForm {
-		if targetFormat == "json" {
-			// form-data → JSON conversion
-			return buildJSONBodyFromForm(c, info)
-		}
-		// form-data → form-data (default)
+	if strings.Contains(contentType, "multipart/form-data") {
 		formData, err := common.ParseMultipartFormReusable(c)
 		if err != nil {
 			return bytes.NewReader(cachedBody), nil
@@ -267,6 +195,7 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 					buf512 := make([]byte, 512)
 					n, _ := io.ReadFull(f, buf512)
 					ct = http.DetectContentType(buf512[:n])
+					// Re-open after sniffing so the full content is copied below
 					f.Close()
 					f, err = fh.Open()
 					if err != nil {
@@ -379,15 +308,11 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	case "completed":
 		taskResult.Status = model.TaskStatusSuccess
 		// 保存上游返回的视频 URL（优先使用 url 字段）
-		var originalURL string
 		if resTask.URL != "" {
-			originalURL = resTask.URL
+			taskResult.Url = resTask.URL
 		} else if resTask.VideoURL != "" {
-			originalURL = resTask.VideoURL
+			taskResult.Url = resTask.VideoURL
 		}
-
-		// 直接使用原始 URL，R2 上传统一在 task_polling.go 中处理
-		taskResult.Url = originalURL
 		// 如果上游没有返回 URL，调用者会构建代理 URL
 	case "failed", "cancelled":
 		taskResult.Status = model.TaskStatusFailure
@@ -408,62 +333,56 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	data := task.Data
 	var err error
-
+	
 	// 替换为公开的 task ID
 	if data, err = sjson.SetBytes(data, "id", task.TaskID); err != nil {
 		return nil, errors.Wrap(err, "set id failed")
 	}
-
-	// 如果任务成功，确保 url、video_url 和 result_url 字段存在
+	
+	// 如果任务成功，确保 url 和 video_url 字段存在
 	if task.Status == model.TaskStatusSuccess {
 		var respMap map[string]any
 		if err := common.Unmarshal(data, &respMap); err == nil {
-			// 确定 result_url 的值：优先级 url > video_url > task.PrivateData.ResultURL
-			var resultURL string
+			// 确定最终的视频 URL
+			var videoURL string
+			
+			// 优先使用上游返回的 url
 			if existingURL, ok := respMap["url"].(string); ok && existingURL != "" {
-				resultURL = existingURL
+				videoURL = existingURL
 			} else if existingVideoURL, ok := respMap["video_url"].(string); ok && existingVideoURL != "" {
-				resultURL = existingVideoURL
+				// 其次使用上游返回的 video_url
+				videoURL = existingVideoURL
 			} else if task.PrivateData.ResultURL != "" {
-				resultURL = task.PrivateData.ResultURL
+				// 最后使用系统保存的 ResultURL
+				videoURL = task.PrivateData.ResultURL
 			}
-
-			// 如果有视频 URL，确保顶层的 url、video_url 和 result_url 都存在
-			if resultURL != "" {
+			
+			// 如果有视频 URL，确保顶层的 url 和 video_url 都存在
+			if videoURL != "" {
 				// 设置顶层 url（如果不存在）
 				if _, hasURL := respMap["url"]; !hasURL {
-					if data, err = sjson.SetBytes(data, "url", resultURL); err != nil {
+					if data, err = sjson.SetBytes(data, "url", videoURL); err != nil {
 						return nil, errors.Wrap(err, "set url failed")
 					}
 				}
-
+				
 				// 设置顶层 video_url（如果不存在）
 				if _, hasVideoURL := respMap["video_url"]; !hasVideoURL {
-					if data, err = sjson.SetBytes(data, "video_url", resultURL); err != nil {
+					if data, err = sjson.SetBytes(data, "video_url", videoURL); err != nil {
 						return nil, errors.Wrap(err, "set video_url failed")
 					}
 				}
-
-				// 设置顶层 result_url（如果不存在）
-				if _, hasResultURL := respMap["result_url"]; !hasResultURL {
-					if data, err = sjson.SetBytes(data, "result_url", resultURL); err != nil {
-						return nil, errors.Wrap(err, "set result_url failed")
-					}
-				}
-
-				// 同时将 url、video_url 和 result_url 添加到 metadata 中
-				if data, err = sjson.SetBytes(data, "metadata.url", resultURL); err != nil {
+				
+				// 同时将 url 和 video_url 添加到 metadata 中
+				if data, err = sjson.SetBytes(data, "metadata.url", videoURL); err != nil {
 					return nil, errors.Wrap(err, "set metadata.url failed")
 				}
-				if data, err = sjson.SetBytes(data, "metadata.video_url", resultURL); err != nil {
+				if data, err = sjson.SetBytes(data, "metadata.video_url", videoURL); err != nil {
 					return nil, errors.Wrap(err, "set metadata.video_url failed")
-				}
-				if data, err = sjson.SetBytes(data, "metadata.result_url", resultURL); err != nil {
-					return nil, errors.Wrap(err, "set metadata.result_url failed")
 				}
 			}
 		}
 	}
-
+	
 	return data, nil
 }

@@ -20,7 +20,7 @@ For commercial licensing, please contact support@quantumnous.com
 import React from 'react';
 import { Card, Avatar, Typography, Table, Tag } from '@douyinfe/semi-ui';
 import { IconCoinMoneyStroked } from '@douyinfe/semi-icons';
-import { calculateModelPrice, getModelPriceItems, isAdmin } from '../../../../../helpers';
+import { calculateModelPrice, getModelPriceItems } from '../../../../../helpers';
 
 const { Text } = Typography;
 
@@ -76,7 +76,7 @@ const ModelPricingTable = ({
             : modelData?.quota_type === 1
               ? t('按次计费')
               : '-',
-        priceItems: getModelPriceItems(priceData, t, siteDisplayType, isAdmin()),
+        priceItems: getModelPriceItems(priceData, t, siteDisplayType),
       };
     });
 

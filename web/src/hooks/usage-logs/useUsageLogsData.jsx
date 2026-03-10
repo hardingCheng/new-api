@@ -151,18 +151,13 @@ export const useLogsData = () => {
   };
 
   const getInitialBillingDisplayMode = () => {
-    // Only admin users can customize billing display mode
-    if (isAdminUser) {
-      const savedMode = localStorage.getItem(BILLING_DISPLAY_MODE_STORAGE_KEY);
-      if (savedMode === 'price' || savedMode === 'ratio') {
-        return savedMode;
-      }
-      return localStorage.getItem('quota_display_type') === 'TOKENS'
-        ? 'ratio'
-        : 'price';
+    const savedMode = localStorage.getItem(BILLING_DISPLAY_MODE_STORAGE_KEY);
+    if (savedMode === 'price' || savedMode === 'ratio') {
+      return savedMode;
     }
-    // Non-admin users always use ratio mode
-    return 'ratio';
+    return localStorage.getItem('quota_display_type') === 'TOKENS'
+      ? 'ratio'
+      : 'price';
   };
 
   // Column visibility state
@@ -229,11 +224,8 @@ export const useLogsData = () => {
   }, [visibleColumns]);
 
   useEffect(() => {
-    // Only save billing display mode for admin users
-    if (isAdminUser) {
-      localStorage.setItem(BILLING_DISPLAY_MODE_STORAGE_KEY, billingDisplayMode);
-    }
-  }, [BILLING_DISPLAY_MODE_STORAGE_KEY, billingDisplayMode, isAdminUser]);
+    localStorage.setItem(BILLING_DISPLAY_MODE_STORAGE_KEY, billingDisplayMode);
+  }, [BILLING_DISPLAY_MODE_STORAGE_KEY, billingDisplayMode]);
 
   // 获取表单值的辅助函数，确保所有值都是字符串
   const getFormValues = () => {

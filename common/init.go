@@ -173,7 +173,4 @@ func initConstantEnv() {
 		}
 	}
 	constant.TrustedRedirectDomains = trustedDomains
-
-	// Initialize R2 configuration
-	InitR2()
 }

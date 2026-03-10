@@ -112,7 +112,7 @@ const renderTokenKey = (text, record, showKeys, setShowKeys, copyText) => {
   const fullKey = 'sk-' + record.key;
   const maskedKey =
     'sk-' + record.key.slice(0, 4) + '**********' + record.key.slice(-4);
-  const revealed = !!showKeys[record.key];
+  const revealed = !!showKeys[record.id];
 
   return (
     <div className='w-[200px]'>
@@ -130,7 +130,7 @@ const renderTokenKey = (text, record, showKeys, setShowKeys, copyText) => {
               aria-label='toggle token visibility'
               onClick={(e) => {
                 e.stopPropagation();
-                setShowKeys((prev) => ({ ...prev, [record.key]: !revealed }));
+                setShowKeys((prev) => ({ ...prev, [record.id]: !revealed }));
               }}
             />
             <Button
@@ -341,32 +341,32 @@ const renderOperations = (
 
   return (
     <Space wrap>
-      {/*<SplitButtonGroup*/}
-      {/*  className='overflow-hidden'*/}
-      {/*  aria-label={t('项目操作按钮组')}*/}
-      {/*>*/}
-      {/*  <Button*/}
-      {/*    size='small'*/}
-      {/*    type='tertiary'*/}
-      {/*    onClick={() => {*/}
-      {/*      if (chatsArray.length === 0) {*/}
-      {/*        showError(t('请联系管理员配置聊天链接'));*/}
-      {/*      } else {*/}
-      {/*        const first = chatsArray[0];*/}
-      {/*        onOpenLink(first.name, first.value, record);*/}
-      {/*      }*/}
-      {/*    }}*/}
-      {/*  >*/}
-      {/*    {t('聊天')}*/}
-      {/*  </Button>*/}
-      {/*  <Dropdown trigger='click' position='bottomRight' menu={chatsArray}>*/}
-      {/*    <Button*/}
-      {/*      type='tertiary'*/}
-      {/*      icon={<IconTreeTriangleDown />}*/}
-      {/*      size='small'*/}
-      {/*    ></Button>*/}
-      {/*  </Dropdown>*/}
-      {/*</SplitButtonGroup>*/}
+      <SplitButtonGroup
+        className='overflow-hidden'
+        aria-label={t('项目操作按钮组')}
+      >
+        <Button
+          size='small'
+          type='tertiary'
+          onClick={() => {
+            if (chatsArray.length === 0) {
+              showError(t('请联系管理员配置聊天链接'));
+            } else {
+              const first = chatsArray[0];
+              onOpenLink(first.name, first.value, record);
+            }
+          }}
+        >
+          {t('聊天')}
+        </Button>
+        <Dropdown trigger='click' position='bottomRight' menu={chatsArray}>
+          <Button
+            type='tertiary'
+            icon={<IconTreeTriangleDown />}
+            size='small'
+          ></Button>
+        </Dropdown>
+      </SplitButtonGroup>
 
       {record.status === 1 ? (
         <Button

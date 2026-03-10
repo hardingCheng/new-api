@@ -130,8 +130,8 @@ func getDefaultVendorIcon(vendorName string) string {
 
 // EnsureDefaultVendors 确保默认供应商存在于数据库中
 func EnsureDefaultVendors() error {
-	// 获取所有已存在的供应商（使用大的limit获取全部）
-	existingVendors, err := GetAllVendors(0, 10000)
+	// 获取所有已存在的供应商
+	existingVendors, err := GetAllVendors()
 	if err != nil {
 		return err
 	}

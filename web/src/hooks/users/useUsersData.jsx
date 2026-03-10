@@ -136,21 +136,17 @@ export const useUsersData = () => {
       const user = res.data.data;
 
       // Create a new array and new object to ensure React detects changes
-      if (action === 'pin' || action === 'unpin') {
-        await refresh();
-      } else {
-        const newUsers = users.map((u) => {
-          if (u.id === userId) {
-            if (action === 'delete') {
-              return { ...u, DeletedAt: new Date() };
-            }
-            return { ...u, status: user.status, role: user.role };
+      const newUsers = users.map((u) => {
+        if (u.id === userId) {
+          if (action === 'delete') {
+            return { ...u, DeletedAt: new Date() };
           }
-          return u;
-        });
+          return { ...u, status: user.status, role: user.role };
+        }
+        return u;
+      });
 
-        setUsers(newUsers);
-      }
+      setUsers(newUsers);
     } else {
       showError(message);
     }
