@@ -66,28 +66,39 @@ const renderRole = (role, t) => {
 /**
  * Render username with remark
  */
-const renderUsername = (text, record) => {
+const renderUsername = (text, record, t) => {
   const remark = record.remark;
-  if (!remark) {
+  const pinned = record.pinned;
+  if (!remark && !pinned) {
     return <span>{text}</span>;
   }
   const maxLen = 10;
-  const displayRemark =
-    remark.length > maxLen ? remark.slice(0, maxLen) + '…' : remark;
+  const displayRemark = remark
+    ? remark.length > maxLen ? remark.slice(0, maxLen) + '…' : remark
+    : null;
   return (
     <Space spacing={2}>
+      {pinned && (
+        <Tooltip content={t('已置顶')} position='top' showArrow>
+          <Tag color='orange' shape='circle' className='!text-xs'>
+            📌
+          </Tag>
+        </Tooltip>
+      )}
       <span>{text}</span>
-      <Tooltip content={remark} position='top' showArrow>
-        <Tag color='white' shape='circle' className='!text-xs'>
-          <div className='flex items-center gap-1'>
-            <div
-              className='w-2 h-2 flex-shrink-0 rounded-full'
-              style={{ backgroundColor: '#10b981' }}
-            />
-            {displayRemark}
-          </div>
-        </Tag>
-      </Tooltip>
+      {remark && (
+        <Tooltip content={remark} position='top' showArrow>
+          <Tag color='white' shape='circle' className='!text-xs'>
+            <div className='flex items-center gap-1'>
+              <div
+                className='w-2 h-2 flex-shrink-0 rounded-full'
+                style={{ backgroundColor: '#10b981' }}
+              />
+              {displayRemark}
+            </div>
+          </Tag>
+        </Tooltip>
+      )}
     </Space>
   );
 };
@@ -209,6 +220,7 @@ const renderOperations = (
     showResetPasskeyModal,
     showResetTwoFAModal,
     showUserSubscriptionsModal,
+    manageUser,
     t,
   },
 ) => {
@@ -217,6 +229,14 @@ const renderOperations = (
   }
 
   const moreMenu = [
+    {
+      node: 'item',
+      name: record.pinned ? t('取消置顶') : t('置顶'),
+      onClick: () => manageUser(record.id, record.pinned ? 'unpin' : 'pin', record),
+    },
+    {
+      node: 'divider',
+    },
     {
       node: 'item',
       name: t('订阅管理'),
@@ -309,6 +329,7 @@ export const getUsersColumns = ({
   showResetPasskeyModal,
   showResetTwoFAModal,
   showUserSubscriptionsModal,
+  manageUser,
 }) => {
   return [
     {
@@ -318,7 +339,7 @@ export const getUsersColumns = ({
     {
       title: t('用户名'),
       dataIndex: 'username',
-      render: (text, record) => renderUsername(text, record),
+      render: (text, record) => renderUsername(text, record, t),
     },
     {
       title: t('状态'),
@@ -366,6 +387,7 @@ export const getUsersColumns = ({
           showResetPasskeyModal,
           showResetTwoFAModal,
           showUserSubscriptionsModal,
+          manageUser,
           t,
         }),
     },
