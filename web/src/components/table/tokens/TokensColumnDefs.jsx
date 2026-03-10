@@ -341,32 +341,32 @@ const renderOperations = (
 
   return (
     <Space wrap>
-      <SplitButtonGroup
-        className='overflow-hidden'
-        aria-label={t('项目操作按钮组')}
-      >
-        <Button
-          size='small'
-          type='tertiary'
-          onClick={() => {
-            if (chatsArray.length === 0) {
-              showError(t('请联系管理员配置聊天链接'));
-            } else {
-              const first = chatsArray[0];
-              onOpenLink(first.name, first.value, record);
-            }
-          }}
-        >
-          {t('聊天')}
-        </Button>
-        <Dropdown trigger='click' position='bottomRight' menu={chatsArray}>
-          <Button
-            type='tertiary'
-            icon={<IconTreeTriangleDown />}
-            size='small'
-          ></Button>
-        </Dropdown>
-      </SplitButtonGroup>
+      {/*<SplitButtonGroup*/}
+      {/*  className='overflow-hidden'*/}
+      {/*  aria-label={t('项目操作按钮组')}*/}
+      {/*>*/}
+      {/*  <Button*/}
+      {/*    size='small'*/}
+      {/*    type='tertiary'*/}
+      {/*    onClick={() => {*/}
+      {/*      if (chatsArray.length === 0) {*/}
+      {/*        showError(t('请联系管理员配置聊天链接'));*/}
+      {/*      } else {*/}
+      {/*        const first = chatsArray[0];*/}
+      {/*        onOpenLink(first.name, first.value, record);*/}
+      {/*      }*/}
+      {/*    }}*/}
+      {/*  >*/}
+      {/*    {t('聊天')}*/}
+      {/*  </Button>*/}
+      {/*  <Dropdown trigger='click' position='bottomRight' menu={chatsArray}>*/}
+      {/*    <Button*/}
+      {/*      type='tertiary'*/}
+      {/*      icon={<IconTreeTriangleDown />}*/}
+      {/*      size='small'*/}
+      {/*    ></Button>*/}
+      {/*  </Dropdown>*/}
+      {/*</SplitButtonGroup>*/}
 
       {record.status === 1 ? (
         <Button
