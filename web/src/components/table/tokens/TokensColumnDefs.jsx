@@ -112,7 +112,7 @@ const renderTokenKey = (text, record, showKeys, setShowKeys, copyText) => {
   const fullKey = 'sk-' + record.key;
   const maskedKey =
     'sk-' + record.key.slice(0, 4) + '**********' + record.key.slice(-4);
-  const revealed = !!showKeys[record.id];
+  const revealed = !!showKeys[record.key];
 
   return (
     <div className='w-[200px]'>
@@ -130,7 +130,7 @@ const renderTokenKey = (text, record, showKeys, setShowKeys, copyText) => {
               aria-label='toggle token visibility'
               onClick={(e) => {
                 e.stopPropagation();
-                setShowKeys((prev) => ({ ...prev, [record.id]: !revealed }));
+                setShowKeys((prev) => ({ ...prev, [record.key]: !revealed }));
               }}
             />
             <Button
