@@ -455,7 +455,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			originalURL := taskResult.Url
 			finalURL := originalURL
 
-			// 如果启用了 R2 上传，尝试上传视频到 R2
+			// 如果启用了 R2 上传，尝试上传视频到 R2（带重试机制）
 			if common.R2VideoUploadEnabled && originalURL != "" && !strings.HasPrefix(originalURL, "data:") {
 				uploader := common.GetR2Uploader()
 				if uploader != nil {
@@ -475,26 +475,38 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 					objectKey := common.GenerateR2ObjectKey(task.GetUpstreamTaskID(), originalURL)
 					common.SysLog(fmt.Sprintf("Starting R2 upload for task %s: objectKey=%s", task.TaskID, objectKey))
 
-					uploadCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
-					r2URL, err := uploader.DownloadAndUploadWithAuth(uploadCtx, originalURL, objectKey, proxy, apiKey)
-					cancel()
-					if err != nil {
-						common.SysError(fmt.Sprintf("Failed to upload video to R2 for task %s: %v", task.TaskID, err))
-						finalURL = originalURL
-					} else {
-						common.SysLog(fmt.Sprintf("Video uploaded to R2 for task %s: %s -> %s", task.TaskID, originalURL, r2URL))
-						finalURL = r2URL
-
-						// 更新 task.Data 中的 URL 字段
-						var dataMap map[string]interface{}
-						if err := common.Unmarshal(task.Data, &dataMap); err == nil {
-							dataMap["url"] = r2URL
-							dataMap["video_url"] = r2URL
-							dataMap["result_url"] = r2URL
-							if updatedData, err := common.Marshal(dataMap); err == nil {
-								task.Data = updatedData
-							}
+					// 重试机制：最多尝试 5 次
+					const maxRetries = 5
+					var r2URL string
+					var lastErr error
+					
+					for attempt := 1; attempt <= maxRetries; attempt++ {
+						uploadCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+						r2URL, lastErr = uploader.DownloadAndUploadWithAuth(uploadCtx, originalURL, objectKey, proxy, apiKey)
+						cancel()
+						
+						if lastErr == nil {
+							// 上传成功
+							common.SysLog(fmt.Sprintf("Video uploaded to R2 for task %s (attempt %d/%d): %s -> %s", task.TaskID, attempt, maxRetries, originalURL, r2URL))
+							finalURL = r2URL
+							break
 						}
+						
+						// 上传失败，记录日志
+						common.SysError(fmt.Sprintf("R2 upload attempt %d/%d failed for task %s: %v", attempt, maxRetries, task.TaskID, lastErr))
+						
+						// 如果不是最后一次尝试，等待后重试
+						if attempt < maxRetries {
+							retryDelay := time.Duration(attempt*2) * time.Second // 递增延迟：2s, 4s
+							common.SysLog(fmt.Sprintf("Retrying R2 upload for task %s after %v...", task.TaskID, retryDelay))
+							time.Sleep(retryDelay)
+						}
+					}
+					
+					// 所有重试都失败
+					if lastErr != nil {
+						common.SysError(fmt.Sprintf("Failed to upload video to R2 for task %s after %d attempts: %v", task.TaskID, maxRetries, lastErr))
+						finalURL = originalURL
 					}
 				} else {
 					common.SysError("R2 uploader is nil, using original URL")
@@ -502,12 +514,47 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 				}
 			}
 
+			// 无论 R2 上传是否成功，都需要更新 task.Data 中的 URL 字段为最终 URL
+			// 这样可以确保返回给客户端的 data 字段中的 URL 是正确的
+			var dataMap map[string]interface{}
+			if err := common.Unmarshal(task.Data, &dataMap); err == nil {
+				dataMap["url"] = finalURL
+				dataMap["video_url"] = finalURL
+				dataMap["result_url"] = finalURL
+				if updatedData, err := common.Marshal(dataMap); err == nil {
+					task.Data = updatedData
+				} else {
+					common.SysError(fmt.Sprintf("Failed to marshal updated task.Data for task %s: %v", task.TaskID, err))
+				}
+			} else {
+				common.SysError(fmt.Sprintf("Failed to unmarshal task.Data for task %s: %v", task.TaskID, err))
+			}
+
 			task.PrivateData.ResultURL = finalURL
 		} else {
-			// No URL from adaptor — construct proxy URL using public task ID
-			task.PrivateData.ResultURL = taskcommon.BuildProxyURL(task.TaskID)
+			// No URL from adaptor but status is SUCCESS — this might be a timing issue
+			// where the upstream API returns success before the URL is ready.
+			// Don't mark as settled yet, keep polling until URL is available or timeout.
+			logger.LogWarn(ctx, fmt.Sprintf("Task %s marked as SUCCESS but no URL available yet, will retry in next poll", task.TaskID))
+			
+			// 检查是否已经等待太久（超过 3 分钟没有 URL）
+			if task.FinishTime > 0 && now-task.FinishTime > 180 {
+				// 超过 3 分钟仍然没有 URL，使用代理 URL 作为降级方案
+				logger.LogError(ctx, fmt.Sprintf("Task %s has been SUCCESS for >3min without URL, using proxy URL as fallback", task.TaskID))
+				task.PrivateData.ResultURL = taskcommon.BuildProxyURL(task.TaskID)
+				shouldSettle = true
+			} else {
+				// 保持 InProgress 状态，继续轮询
+				task.Status = model.TaskStatusInProgress
+				task.Progress = taskcommon.ProgressInProgress
+				// 保留 FinishTime 用于超时判断，不清除
+				// 不设置 shouldSettle，让任务继续轮询
+			}
 		}
-		shouldSettle = true
+		// 只有在有 URL 或者超时降级时才结算
+		if task.Status == model.TaskStatusSuccess {
+			shouldSettle = true
+		}
 	case model.TaskStatusFailure:
 		logger.LogJson(ctx, fmt.Sprintf("Task %s failed", taskId), task)
 		task.Status = model.TaskStatusFailure
