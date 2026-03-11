@@ -187,8 +187,10 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	var httpResp *http.Response
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
+		logger.LogError(c, fmt.Sprintf("请求上游失败 - 模型: %s, 渠道: %d, 错误: %v", info.OriginModelName, info.ChannelId, err))
 		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
 	}
+	logger.LogInfo(c, fmt.Sprintf("请求上游成功 - 模型: %s, 渠道: %d", info.OriginModelName, info.ChannelId))
 
 	statusCodeMappingStr := c.GetString("status_code_mapping")
 
@@ -205,10 +207,12 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 	usage, newApiErr := adaptor.DoResponse(c, httpResp, info)
 	if newApiErr != nil {
+		logger.LogError(c, fmt.Sprintf("处理上游响应失败 - 模型: %s, 渠道: %d, 错误: %v", info.OriginModelName, info.ChannelId, newApiErr))
 		// reset status code 重置状态码
 		service.ResetStatusCode(newApiErr, statusCodeMappingStr)
 		return newApiErr
 	}
+	logger.LogInfo(c, fmt.Sprintf("处理上游响应成功 - 模型: %s, 渠道: %d, usage: %+v", info.OriginModelName, info.ChannelId, usage))
 
 	var containAudioTokens = usage.(*dto.Usage).CompletionTokenDetails.AudioTokens > 0 || usage.(*dto.Usage).PromptTokensDetails.AudioTokens > 0
 	var containsAudioRatios = ratio_setting.ContainsAudioRatio(info.OriginModelName) || ratio_setting.ContainsAudioCompletionRatio(info.OriginModelName)
@@ -218,6 +222,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	} else {
 		postConsumeQuota(c, info, usage.(*dto.Usage))
 	}
+	logger.LogInfo(c, fmt.Sprintf("响应已返回给用户 - 模型: %s, 渠道: %d, 最终 usage: %+v", info.OriginModelName, info.ChannelId, usage))
 	return nil
 }
 
@@ -234,6 +239,23 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 
 	if originUsage != nil {
 		service.ObserveChannelAffinityUsageCacheByRelayFormat(ctx, usage, relayInfo.GetFinalRequestRelayFormat())
+	}
+
+	// 上游没有返回 usage 时（本地计费），展示的 token 数乘以 1.4 倍（原始 + 额外 0.4 倍）
+	if originUsage == nil {
+		userRole := ctx.GetInt("role")
+		if userRole >= common.RoleAdminUser {
+			logger.LogInfo(ctx, fmt.Sprintf("本地计费模式 - 模型: %s, 渠道: %d, 原始估算 PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d",
+				relayInfo.OriginModelName, relayInfo.ChannelId, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens))
+		}
+		usage.PromptTokens = int(float64(usage.PromptTokens) * 1.4)
+		usage.CompletionTokens = int(float64(usage.CompletionTokens) * 1.4)
+		usage.TotalTokens = int(float64(usage.TotalTokens) * 1.4)
+		if userRole >= common.RoleAdminUser {
+			logger.LogInfo(ctx, fmt.Sprintf("本地计费模式 - 调整后 PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d, 倍率: 1.4",
+				usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens))
+		}
+		extraContent = append(extraContent, "本地计费")
 	}
 
 	adminRejectReason := common.GetContextKeyString(ctx, constant.ContextKeyAdminRejectReason)
@@ -396,6 +418,11 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	quotaCalculateDecimal = quotaCalculateDecimal.Add(audioInputQuota)
 	// 添加 image generation call 计费
 	quotaCalculateDecimal = quotaCalculateDecimal.Add(dImageGenerationCallQuota)
+
+	// 上游没有返回 usage 时（本地计费），计费乘以 1.4 倍（原始 + 额外 0.4 倍）
+	if originUsage == nil {
+		quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(1.4))
+	}
 
 	if len(relayInfo.PriceData.OtherRatios) > 0 {
 		for key, otherRatio := range relayInfo.PriceData.OtherRatios {
