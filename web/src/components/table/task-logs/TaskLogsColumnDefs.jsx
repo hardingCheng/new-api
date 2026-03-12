@@ -243,6 +243,8 @@ export const getTaskLogsColumns = ({
   openVideoModal,
   openAudioModal,
 }) => {
+  const [downloadingTasks, setDownloadingTasks] = React.useState(new Set());
+
   return [
     {
       key: COLUMN_KEYS.SUBMIT_TIME,
@@ -433,8 +435,14 @@ export const getTaskLogsColumns = ({
         
         const hasVideoUrl = typeof videoUrl === 'string' && /^https?:\/\//.test(videoUrl);
         if (isSuccess && isVideoTask && hasVideoUrl) {
+          const taskKey = record.task_id || record.id || index;
+          const isDownloading = downloadingTasks.has(taskKey);
+
           const handleDownload = async (e) => {
             e.preventDefault();
+            if (isDownloading) return;
+
+            setDownloadingTasks(prev => new Set(prev).add(taskKey));
             try {
               const response = await fetch(videoUrl);
               const blob = await response.blob();
@@ -450,6 +458,12 @@ export const getTaskLogsColumns = ({
               console.error('Download failed:', error);
               // 降级方案：直接打开链接
               window.open(videoUrl, '_blank');
+            } finally {
+              setDownloadingTasks(prev => {
+                const next = new Set(prev);
+                next.delete(taskKey);
+                return next;
+              });
             }
           };
 
@@ -467,10 +481,17 @@ export const getTaskLogsColumns = ({
               <a
                 href='#'
                 onClick={handleDownload}
-                title={t('下载视频')}
-                style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}
+                title={isDownloading ? t('下载中...') : t('下载视频')}
+                style={{ 
+                  cursor: isDownloading ? 'not-allowed' : 'pointer', 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  gap: '4px',
+                  opacity: isDownloading ? 0.6 : 1
+                }}
               >
-                <Download size={16} />
+                {isDownloading ? <Loader size={16} className="animate-spin" /> : <Download size={16} />}
+                {isDownloading ? t('下载中...') : t('下载')}
               </a>
             </Space>
           );
