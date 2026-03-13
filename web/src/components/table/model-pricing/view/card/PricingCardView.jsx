@@ -264,9 +264,12 @@ const PricingCardView = ({
                       <h3 className='text-lg font-bold text-gray-900 truncate'>
                         {model.model_name}
                       </h3>
-                      <div className='flex items-center gap-3 text-xs mt-1'>
-                        {formatPriceInfo(priceData, t)}
-                      </div>
+                      {/* 全部分组时不显示价格信息 */}
+                      {selectedGroup !== 'all' && (
+                        <div className='flex items-center gap-3 text-xs mt-1'>
+                          {formatPriceInfo(priceData, t)}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -311,8 +314,8 @@ const PricingCardView = ({
                   {/* 标签区域 */}
                   {renderTags(model)}
 
-                  {/* 倍率信息（可选） */}
-                  {showRatio && (
+                  {/* 倍率信息（可选）- 全部分组时不显示 */}
+                  {showRatio && selectedGroup !== 'all' && (
                     <div className='pt-3'>
                       <div className='flex items-center space-x-1 mb-2'>
                         <span className='text-xs font-medium text-gray-700'>

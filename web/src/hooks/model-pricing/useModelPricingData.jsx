@@ -96,6 +96,16 @@ export const useModelPricingData = () => {
       result = result.filter((model) =>
         model.enable_groups.includes(filterGroup),
       );
+    } else {
+      // 全部分组时，只显示用户可见分组中的模型
+      const userVisibleGroups = Object.keys(usableGroup).filter((key) => key !== '');
+      result = result.filter((model) => {
+        if (!Array.isArray(model.enable_groups) || model.enable_groups.length === 0) {
+          return false;
+        }
+        // 模型的 enable_groups 中至少有一个在用户可见分组中
+        return model.enable_groups.some((g) => userVisibleGroups.includes(g));
+      });
     }
 
     // 计费类型筛选
@@ -285,7 +295,7 @@ export const useModelPricingData = () => {
     setSelectedGroup(group);
     setFilterGroup(group);
     if (group === 'all') {
-      showInfo(t('已切换至最优倍率视图，每个模型使用其最低倍率分组'));
+      showInfo(t('展示全部模型'));
     } else {
       showInfo(
         t('当前查看的分组为：{{group}}，倍率为：{{ratio}}', {

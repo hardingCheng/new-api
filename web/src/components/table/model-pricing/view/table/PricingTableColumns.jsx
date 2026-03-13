@@ -256,9 +256,12 @@ export const getPricingTableColumns = ({
 
   const columns = [...baseColumns];
   columns.push(endpointColumn);
-  if (showRatio) {
-    columns.push(ratioColumn);
+  // 全部分组时隐藏倍率和价格列
+  if (selectedGroup !== 'all') {
+    if (showRatio) {
+      columns.push(ratioColumn);
+    }
+    columns.push(priceColumn);
   }
-  columns.push(priceColumn);
   return columns;
 };
