@@ -64,30 +64,39 @@ const renderRole = (role, t) => {
 };
 
 /**
- * Render username with remark
+ * Render username with remark and pin indicator
  */
-const renderUsername = (text, record) => {
+const renderUsername = (text, record, t) => {
   const remark = record.remark;
-  if (!remark) {
-    return <span>{text}</span>;
-  }
+  const isPinned = record.pinned;
+  
   const maxLen = 10;
   const displayRemark =
-    remark.length > maxLen ? remark.slice(0, maxLen) + '…' : remark;
+    remark && remark.length > maxLen ? remark.slice(0, maxLen) + '…' : remark;
+  
   return (
     <Space spacing={2}>
+      {isPinned && (
+        <Tooltip content={t('已置顶')} position='top'>
+          <Tag color='amber' shape='circle' size='small'>
+            📌
+          </Tag>
+        </Tooltip>
+      )}
       <span>{text}</span>
-      <Tooltip content={remark} position='top' showArrow>
-        <Tag color='white' shape='circle' className='!text-xs'>
-          <div className='flex items-center gap-1'>
-            <div
-              className='w-2 h-2 flex-shrink-0 rounded-full'
-              style={{ backgroundColor: '#10b981' }}
-            />
-            {displayRemark}
-          </div>
-        </Tag>
-      </Tooltip>
+      {remark && (
+        <Tooltip content={remark} position='top' showArrow>
+          <Tag color='white' shape='circle' className='!text-xs'>
+            <div className='flex items-center gap-1'>
+              <div
+                className='w-2 h-2 flex-shrink-0 rounded-full'
+                style={{ backgroundColor: '#10b981' }}
+              />
+              {displayRemark}
+            </div>
+          </Tag>
+        </Tooltip>
+      )}
     </Space>
   );
 };
@@ -209,6 +218,7 @@ const renderOperations = (
     showResetPasskeyModal,
     showResetTwoFAModal,
     showUserSubscriptionsModal,
+    showPinModal,
     t,
   },
 ) => {
@@ -248,6 +258,23 @@ const renderOperations = (
 
   return (
     <Space>
+      {record.pinned ? (
+        <Button
+          type='tertiary'
+          size='small'
+          onClick={() => showPinModal(record, 'unpin')}
+        >
+          {t('取消置顶')}
+        </Button>
+      ) : (
+        <Button
+          type='tertiary'
+          size='small'
+          onClick={() => showPinModal(record, 'pin')}
+        >
+          {t('置顶')}
+        </Button>
+      )}
       {record.status === 1 ? (
         <Button
           type='danger'
@@ -309,6 +336,7 @@ export const getUsersColumns = ({
   showResetPasskeyModal,
   showResetTwoFAModal,
   showUserSubscriptionsModal,
+  showPinModal,
 }) => {
   return [
     {
@@ -318,7 +346,7 @@ export const getUsersColumns = ({
     {
       title: t('用户名'),
       dataIndex: 'username',
-      render: (text, record) => renderUsername(text, record),
+      render: (text, record) => renderUsername(text, record, t),
     },
     {
       title: t('状态'),
@@ -366,6 +394,7 @@ export const getUsersColumns = ({
           showResetPasskeyModal,
           showResetTwoFAModal,
           showUserSubscriptionsModal,
+          showPinModal,
           t,
         }),
     },

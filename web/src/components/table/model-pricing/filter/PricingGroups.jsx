@@ -44,63 +44,18 @@ const PricingGroups = ({
     return Object.keys(usableGroup).filter((key) => key !== '');
   }, [usableGroup]);
 
-  // 计算每个分组中所有模型的最高价格
-  const calculateGroupMaxPrice = useMemo(() => {
-    const groupMaxPrices = {};
-
-    userVisibleGroups.forEach((group) => {
-      let maxPrice = 0;
-      const ratio = groupRatio[group] || 1;
-
-      // 遍历所有模型，找出该分组中的最高价格
-      models.forEach((model) => {
-        // 只计算该模型在当前分组中可用的情况
-        if (
-          !model.enable_groups ||
-          !model.enable_groups.includes(group)
-        ) {
-          return;
-        }
-
-        let modelPrice = 0;
-        if (model.quota_type === 0) {
-          // 按量计费：使用 completion_ratio 计算输出价格（通常更高）
-          const completionPrice =
-            model.model_ratio * (model.completion_ratio || 1) * 2 * ratio;
-          modelPrice = completionPrice;
-        } else if (model.quota_type === 1) {
-          // 按次计费
-          modelPrice = parseFloat(model.model_price || 0) * ratio;
-        }
-
-        if (modelPrice > maxPrice) {
-          maxPrice = modelPrice;
-        }
-      });
-
-      groupMaxPrices[group] = maxPrice;
-    });
-
-    return groupMaxPrices;
-  }, [models, userVisibleGroups, groupRatio]);
-
   const items = useMemo(() => {
     const groups = ['all', ...userVisibleGroups];
 
     return groups.map((g) => {
       let ratioDisplay = '';
       if (g === 'all') {
-        // 全部分组显示所有模型数量
+        // 全部分组不显示倍率
         ratioDisplay = '';
       } else {
-        // 显示该分组的最高价格
-        const maxPrice = calculateGroupMaxPrice[g] || 0;
-        if (maxPrice > 0) {
-          ratioDisplay = `$${maxPrice.toFixed(3)}`;
-        } else {
-          const ratio = groupRatio[g];
-          ratioDisplay = ratio !== undefined && ratio !== null ? `${ratio}x` : '1x';
-        }
+        // 显示该分组的倍率
+        const ratio = groupRatio[g];
+        ratioDisplay = ratio !== undefined && ratio !== null ? `${ratio}x` : '1x';
       }
       return {
         value: g,
@@ -108,7 +63,7 @@ const PricingGroups = ({
         tagCount: ratioDisplay,
       };
     });
-  }, [userVisibleGroups, calculateGroupMaxPrice, groupRatio, t]);
+  }, [userVisibleGroups, groupRatio, t]);
 
   return (
     <SelectableButtonGroup

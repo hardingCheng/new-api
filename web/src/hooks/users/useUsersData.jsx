@@ -120,7 +120,7 @@ export const useUsersData = () => {
     setSearching(false);
   };
 
-  // Manage user operations (promote, demote, enable, disable, delete)
+  // Manage user operations (promote, demote, enable, disable, delete, pin, unpin)
   const manageUser = async (userId, action, record) => {
     // Trigger loading state to force table re-render
     setLoading(true);
@@ -141,7 +141,12 @@ export const useUsersData = () => {
           if (action === 'delete') {
             return { ...u, DeletedAt: new Date() };
           }
-          return { ...u, status: user.status, role: user.role };
+          return { 
+            ...u, 
+            status: user.status, 
+            role: user.role,
+            pinned: user.pinned !== undefined ? user.pinned : u.pinned
+          };
         }
         return u;
       });

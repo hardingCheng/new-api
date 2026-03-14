@@ -32,6 +32,7 @@ import DeleteUserModal from './modals/DeleteUserModal';
 import ResetPasskeyModal from './modals/ResetPasskeyModal';
 import ResetTwoFAModal from './modals/ResetTwoFAModal';
 import UserSubscriptionsModal from './modals/UserSubscriptionsModal';
+import PinUserModal from './modals/PinUserModal';
 
 const UsersTable = (usersData) => {
   const {
@@ -64,6 +65,8 @@ const UsersTable = (usersData) => {
   const [showResetTwoFAModal, setShowResetTwoFAModal] = useState(false);
   const [showUserSubscriptionsModal, setShowUserSubscriptionsModal] =
     useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinAction, setPinAction] = useState('');
 
   // Modal handlers
   const showPromoteUserModal = (user) => {
@@ -102,6 +105,12 @@ const UsersTable = (usersData) => {
     setShowUserSubscriptionsModal(true);
   };
 
+  const showPinUserModal = (user, action) => {
+    setModalUser(user);
+    setPinAction(action);
+    setShowPinModal(true);
+  };
+
   // Modal confirm handlers
   const handlePromoteConfirm = () => {
     manageUser(modalUser.id, 'promote', modalUser);
@@ -128,6 +137,11 @@ const UsersTable = (usersData) => {
     setShowResetTwoFAModal(false);
   };
 
+  const handlePinConfirm = () => {
+    manageUser(modalUser.id, pinAction, modalUser);
+    setShowPinModal(false);
+  };
+
   // Get all columns
   const columns = useMemo(() => {
     return getUsersColumns({
@@ -141,6 +155,7 @@ const UsersTable = (usersData) => {
       showResetPasskeyModal: showResetPasskeyUserModal,
       showResetTwoFAModal: showResetTwoFAUserModal,
       showUserSubscriptionsModal: showUserSubscriptionsUserModal,
+      showPinModal: showPinUserModal,
     });
   }, [
     t,
@@ -153,6 +168,7 @@ const UsersTable = (usersData) => {
     showResetPasskeyUserModal,
     showResetTwoFAUserModal,
     showUserSubscriptionsUserModal,
+    showPinUserModal,
   ]);
 
   // Handle compact mode by removing fixed positioning
@@ -259,6 +275,15 @@ const UsersTable = (usersData) => {
         user={modalUser}
         t={t}
         onSuccess={() => refresh?.()}
+      />
+
+      <PinUserModal
+        visible={showPinModal}
+        onCancel={() => setShowPinModal(false)}
+        onConfirm={handlePinConfirm}
+        user={modalUser}
+        action={pinAction}
+        t={t}
       />
     </>
   );
