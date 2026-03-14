@@ -123,6 +123,10 @@ func ListModels(c *gin.Context, modelType int) {
 		}
 	}
 
+	// Check if user is admin (role >= 10)
+	userRole := c.GetInt("role")
+	isAdmin := userRole >= common.RoleAdminUser
+
 	modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
 	if modelLimitEnable {
 		s, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
@@ -202,6 +206,11 @@ func ListModels(c *gin.Context, modelType int) {
 		}
 	}
 
+	// Filter out source models from model_mapping for non-admin users
+	if !isAdmin {
+		userOpenAiModels = filterModelMappingSources(userOpenAiModels)
+	}
+
 	switch modelType {
 	case constant.ChannelTypeAnthropic:
 		useranthropicModels := make([]dto.AnthropicModel, len(userOpenAiModels))
@@ -255,10 +264,57 @@ func DashboardListModels(c *gin.Context) {
 }
 
 func EnabledListModels(c *gin.Context) {
+	enabledModels := model.GetEnabledModels()
+	
+	// Filter out source models from model_mapping
+	filteredModels := filterModelMappingSourcesFromStringSlice(enabledModels)
+	
 	c.JSON(200, gin.H{
 		"success": true,
-		"data":    model.GetEnabledModels(),
+		"data":    filteredModels,
 	})
+}
+
+// filterModelMappingSourcesFromStringSlice removes source models from model_mapping
+func filterModelMappingSourcesFromStringSlice(models []string) []string {
+	// Get all enabled channels with model_mapping
+	channels, err := model.GetAllChannels(0, 0, true, false)
+	if err != nil {
+		return models
+	}
+
+	// Collect all source model names from model_mapping
+	sourceModels := make(map[string]bool)
+	for _, channel := range channels {
+		if channel.Status != common.ChannelStatusEnabled {
+			continue
+		}
+		modelMapping := channel.GetModelMapping()
+		if modelMapping == "" || modelMapping == "{}" {
+			continue
+		}
+		var modelMap map[string]string
+		if err := common.Unmarshal([]byte(modelMapping), &modelMap); err != nil {
+			continue
+		}
+		// Add source models (keys) to the set
+		for sourceModel := range modelMap {
+			sourceModels[sourceModel] = true
+		}
+	}
+
+	// Filter out source models
+	if len(sourceModels) == 0 {
+		return models
+	}
+
+	filtered := make([]string, 0, len(models))
+	for _, modelName := range models {
+		if !sourceModels[modelName] {
+			filtered = append(filtered, modelName)
+		}
+	}
+	return filtered
 }
 
 func RetrieveModel(c *gin.Context, modelType int) {
@@ -286,4 +342,47 @@ func RetrieveModel(c *gin.Context, modelType int) {
 			"error": openAIError,
 		})
 	}
+}
+
+// filterModelMappingSources removes source models from model_mapping
+// For non-admin users, only show the mapped (target) models
+func filterModelMappingSources(models []dto.OpenAIModels) []dto.OpenAIModels {
+	// Get all enabled channels with model_mapping
+	channels, err := model.GetAllChannels(0, 0, true, false)
+	if err != nil {
+		return models
+	}
+
+	// Collect all source model names from model_mapping
+	sourceModels := make(map[string]bool)
+	for _, channel := range channels {
+		if channel.Status != common.ChannelStatusEnabled {
+			continue
+		}
+		modelMapping := channel.GetModelMapping()
+		if modelMapping == "" || modelMapping == "{}" {
+			continue
+		}
+		var modelMap map[string]string
+		if err := common.Unmarshal([]byte(modelMapping), &modelMap); err != nil {
+			continue
+		}
+		// Add source models (keys) to the set
+		for sourceModel := range modelMap {
+			sourceModels[sourceModel] = true
+		}
+	}
+
+	// Filter out source models
+	if len(sourceModels) == 0 {
+		return models
+	}
+
+	filtered := make([]dto.OpenAIModels, 0, len(models))
+	for _, model := range models {
+		if !sourceModels[model.Id] {
+			filtered = append(filtered, model)
+		}
+	}
+	return filtered
 }

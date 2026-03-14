@@ -25,6 +25,7 @@ import {
   showInfo,
   showSuccess,
   verifyJSON,
+  isAdmin,
 } from '../../../../helpers';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
 import { CHANNEL_OPTIONS, MODEL_FETCHABLE_CHANNEL_TYPES } from '../../../../constants';
@@ -3355,9 +3356,13 @@ const EditChannelModal = (props) => {
                           </Tooltip>
                         );
                       }}
-                      extraText={t(
-                        '键为请求中的模型名称，值为要替换的模型名称',
-                      )}
+                      extraText={
+                        isAdmin()
+                          ? t(
+                              '键为请求中的模型名称，值为要替换的模型名称。注意：普通用户只能看到重定向后的模型，下游同步时也不会包含重定向前的模型',
+                            )
+                          : t('键为请求中的模型名称，值为要替换的模型名称')
+                      }
                     />
                   </Card>
                 </div>
