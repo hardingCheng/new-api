@@ -909,8 +909,30 @@ func ManageUser(c *gin.Context) {
 		user.Role = common.RoleCommonUser
 	case "pin":
 		user.Pinned = true
+		if err := user.UpdatePinned(true); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	case "unpin":
 		user.Pinned = false
+		if err := user.UpdatePinned(false); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
+
+	if req.Action == "pin" || req.Action == "unpin" {
+		clearUser := model.User{
+			Role:   user.Role,
+			Status: user.Status,
+			Pinned: user.Pinned,
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"data":    clearUser,
+		})
+		return
 	}
 
 	if err := user.Update(false); err != nil {

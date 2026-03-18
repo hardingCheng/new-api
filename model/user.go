@@ -510,6 +510,14 @@ func (user *User) Update(updatePassword bool) error {
 	return updateUserCache(*user)
 }
 
+func (user *User) UpdatePinned(pinned bool) error {
+	if err := DB.Model(user).Update("pinned", pinned).Error; err != nil {
+		return err
+	}
+	user.Pinned = pinned
+	return updateUserCache(*user)
+}
+
 func (user *User) Edit(updatePassword bool) error {
 	var err error
 	if updatePassword {
