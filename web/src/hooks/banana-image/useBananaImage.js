@@ -620,9 +620,9 @@ export const useBananaImage = () => {
           '9:16': '9:16',
           '4:3': '4:3',
           '3:4': '3:4',
-          '3:2': '3:2',
-          '2:3': '2:3',
-          '21:9': '21:9',
+          // '3:2': '3:2',
+          // '2:3': '2:3',
+          // '21:9': '21:9',
         };
 
         // 根据分辨率转换为 Gemini 支持的格式
@@ -719,12 +719,32 @@ export const useBananaImage = () => {
                     // 处理 text 格式（markdown 图像）
                     else if (part.text && typeof part.text === 'string') {
                       // 匹配 markdown 格式: ![image](data:image/jpeg;base64,...)
-                      const markdownImageRegex = /!\[.*?\]\((data:image\/[^;]+;base64,[^)]+)\)/g;
+                      const markdownBase64Regex = /!\[.*?\]\((data:image\/[^;]+;base64,[^)]+)\)/g;
                       let match;
-                      while ((match = markdownImageRegex.exec(part.text)) !== null) {
+                      while ((match = markdownBase64Regex.exec(part.text)) !== null) {
                         currentImages.push({
                           id: `${Date.now()}-${i}-${index}-${subIndex}-${currentImages.length}`,
                           url: match[1],
+                          revisedPrompt: null,
+                        });
+                      }
+
+                      // 兜底：匹配 markdown 格式的 http(s) URL: ![image](https://...png)
+                      const markdownUrlRegex = /!\[.*?\]\((https?:\/\/[^)]+)\)/g;
+                      while ((match = markdownUrlRegex.exec(part.text)) !== null) {
+                        currentImages.push({
+                          id: `${Date.now()}-${i}-${index}-${subIndex}-${currentImages.length}`,
+                          url: match[1],
+                          revisedPrompt: null,
+                        });
+                      }
+
+                      // 兜底：匹配裸 http(s) 图片 URL（不在 markdown 语法内的）
+                      const bareUrlRegex = /(?<!\]\()https?:\/\/[^\s"'<>]+\.(?:png|jpe?g|gif|webp|bmp|svg|ico|tiff)(?:\?[^\s"'<>]*)?/gi;
+                      while ((match = bareUrlRegex.exec(part.text)) !== null) {
+                        currentImages.push({
+                          id: `${Date.now()}-${i}-${index}-${subIndex}-${currentImages.length}`,
+                          url: match[0],
                           revisedPrompt: null,
                         });
                       }
