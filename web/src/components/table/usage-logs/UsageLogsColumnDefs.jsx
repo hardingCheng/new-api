@@ -229,67 +229,73 @@ function renderBillingTag(record, t) {
   return null;
 }
 
-function renderModelName(record, copyText, t) {
-  let other = getLogOther(record.other);
-  let modelMapped =
+function renderModelName(record, copyText, t, isAdminUser) {
+  const other = getLogOther(record.other);
+  const modelMapped =
     other?.is_model_mapped &&
     other?.upstream_model_name &&
     other?.upstream_model_name !== '';
+
   if (!modelMapped) {
     return renderModelTag(record.model_name, {
       onClick: (event) => {
         copyText(event, record.model_name).then((r) => {});
       },
     });
-  } else {
-    return (
-      <>
-        <Space vertical align={'start'}>
-          <Popover
-            content={
-              <div style={{ padding: 10 }}>
-                <Space vertical align={'start'}>
-                  <div className='flex items-center'>
-                    <Typography.Text strong style={{ marginRight: 8 }}>
-                      {t('请求并计费模型')}:
-                    </Typography.Text>
-                    {renderModelTag(record.model_name, {
-                      onClick: (event) => {
-                        copyText(event, record.model_name).then((r) => {});
-                      },
-                    })}
-                  </div>
-                  <div className='flex items-center'>
-                    <Typography.Text strong style={{ marginRight: 8 }}>
-                      {t('实际模型')}:
-                    </Typography.Text>
-                    {renderModelTag(other.upstream_model_name, {
-                      onClick: (event) => {
-                        copyText(event, other.upstream_model_name).then(
-                          (r) => {},
-                        );
-                      },
-                    })}
-                  </div>
-                </Space>
-              </div>
-            }
-          >
-            {renderModelTag(record.model_name, {
-              onClick: (event) => {
-                copyText(event, record.model_name).then((r) => {});
-              },
-              suffixIcon: (
-                <Route
-                  style={{ width: '0.9em', height: '0.9em', opacity: 0.75 }}
-                />
-              ),
-            })}
-          </Popover>
-        </Space>
-      </>
-    );
   }
+
+  // 普通用户仅展示请求并计费模型，不展示实际上游模型。
+  if (!isAdminUser) {
+    return renderModelTag(record.model_name, {
+      onClick: (event) => {
+        copyText(event, record.model_name).then((r) => {});
+      },
+    });
+  }
+
+  return (
+    <>
+      <Space vertical align={'start'}>
+        <Popover
+          content={
+            <div style={{ padding: 10 }}>
+              <Space vertical align={'start'}>
+                <div className='flex items-center'>
+                  <Typography.Text strong style={{ marginRight: 8 }}>
+                    {t('请求并计费模型')}:
+                  </Typography.Text>
+                  {renderModelTag(record.model_name, {
+                    onClick: (event) => {
+                      copyText(event, record.model_name).then((r) => {});
+                    },
+                  })}
+                </div>
+                <div className='flex items-center'>
+                  <Typography.Text strong style={{ marginRight: 8 }}>
+                    {t('实际模型')}:
+                  </Typography.Text>
+                  {renderModelTag(other.upstream_model_name, {
+                    onClick: (event) => {
+                      copyText(event, other.upstream_model_name).then((r) => {});
+                    },
+                  })}
+                </div>
+              </Space>
+            </div>
+          }
+        >
+          {renderModelTag(record.model_name, {
+            onClick: (event) => {
+              copyText(event, record.model_name).then((r) => {});
+            },
+            suffixIcon: (
+              <Route style={{ width: '0.9em', height: '0.9em', opacity: 0.75 }} />
+            ),
+          })}
+        </Popover>
+      </Space>
+    </>
+  );
 }
 
 function toTokenNumber(value) {
@@ -529,7 +535,7 @@ export const getLogsColumns = ({
       dataIndex: 'model_name',
       render: (text, record, index) => {
         return record.type === 0 || record.type === 2 || record.type === 5 || record.type === 6 ? (
-          <>{renderModelName(record, copyText, t)}</>
+          <>{renderModelName(record, copyText, t, isAdminUser)}</>
         ) : (
           <></>
         );
