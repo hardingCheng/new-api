@@ -456,7 +456,8 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			finalURL := originalURL
 
 			// 如果启用了 R2 上传，尝试上传视频到 R2（带重试机制）
-			if common.R2VideoUploadEnabled && originalURL != "" && !strings.HasPrefix(originalURL, "data:") {
+			// veo 相关模型直接跳过 R2 上传，走原始 URL 逻辑
+			if common.R2VideoUploadEnabled && originalURL != "" && !strings.HasPrefix(originalURL, "data:") && !isVeoRelatedTask(task) {
 				uploader := common.GetR2Uploader()
 				if uploader != nil {
 					// 获取渠道信息以使用代理和 API Key
@@ -604,6 +605,17 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	}
 
 	return nil
+}
+
+func isVeoRelatedTask(task *model.Task) bool {
+	if task == nil {
+		return false
+	}
+	modelName := strings.ToLower(strings.TrimSpace(task.Properties.UpstreamModelName))
+	if modelName == "" {
+		modelName = strings.ToLower(strings.TrimSpace(task.Properties.OriginModelName))
+	}
+	return strings.Contains(modelName, "veo")
 }
 
 func redactVideoResponseBody(body []byte) []byte {
