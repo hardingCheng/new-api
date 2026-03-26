@@ -79,6 +79,7 @@ export const useTaskLogsData = () => {
   // User info modal state
   const [showUserInfo, setShowUserInfoModal] = useState(false);
   const [userInfoData, setUserInfoData] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   // Form state
   const [formApi, setFormApi] = useState(null);
@@ -260,6 +261,48 @@ export const useTaskLogsData = () => {
     await loadLogs(1, pageSize);
   };
 
+  // Export logs as xlsx (admin only)
+  const exportLogs = async () => {
+    if (!isAdminUser || exporting) {
+      return;
+    }
+    setExporting(true);
+    try {
+      const { channel_id, task_id, start_timestamp, end_timestamp } =
+        getFormValues();
+      const localStartTimestamp = parseInt(Date.parse(start_timestamp) / 1000);
+      const localEndTimestamp = parseInt(Date.parse(end_timestamp) / 1000);
+      const url = `/api/task/export?channel_id=${channel_id}&task_id=${task_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
+
+      const res = await API.get(url, { responseType: 'blob' });
+      const blob = new Blob([
+        res.data,
+      ], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+
+      const disposition = res.headers?.['content-disposition'] || '';
+      const filenameMatch = disposition.match(/filename=([^;]+)/i);
+      const filename = filenameMatch
+        ? filenameMatch[1].replace(/"/g, '')
+        : `task_export_all_${Date.now()}.xlsx`;
+
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+      showSuccess(t('导出成功'));
+    } catch (error) {
+      showError(error);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // Copy text function
   const copyText = async (text) => {
     if (await copy(text)) {
@@ -363,12 +406,16 @@ export const useTaskLogsData = () => {
     handlePageChange,
     handlePageSizeChange,
     refresh,
+    exportLogs,
     copyText,
     openContentModal,
     openVideoModal,
     openAudioModal,
     enrichLogs,
     syncPageData,
+
+    // Export state
+    exporting,
 
     // Translation
     t,
