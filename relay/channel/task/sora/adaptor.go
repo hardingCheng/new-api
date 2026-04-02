@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -108,14 +109,19 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		return nil
 	}
 
-	// 屏蔽秒数计费
-	//seconds, _ := strconv.Atoi(req.Seconds)
-	//if seconds == 0 {
-	//	seconds = req.Duration
-	//}
-	//if seconds <= 0 {
-	//	seconds = 4
-	//}
+	seconds, _ := strconv.Atoi(strings.TrimSpace(req.Seconds))
+	if seconds == 0 {
+		seconds = req.Duration
+	}
+
+	if isSeedanceModel(info.UpstreamModelName) || isSeedanceModel(info.OriginModelName) || isSeedanceModel(req.Model) {
+		if seconds <= 0 {
+			return nil
+		}
+		return map[string]float64{
+			"seconds": float64(seconds),
+		}
+	}
 
 	size := req.Size
 	if size == "" {
@@ -123,13 +129,58 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	}
 
 	ratios := map[string]float64{
-		//"seconds": float64(seconds), // 屏蔽秒数计费
 		"size": 1,
 	}
 	if size == "1792x1024" || size == "1024x1792" {
 		ratios["size"] = 1.666667
 	}
 	return ratios
+}
+
+func isSeedanceModel(modelName string) bool {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	return strings.HasPrefix(modelName, "seedance-") || strings.HasPrefix(modelName, "doubao-seedance-")
+}
+
+func parsePositiveIntValue(v interface{}) int {
+	switch value := v.(type) {
+	case int:
+		if value > 0 {
+			return value
+		}
+	case int32:
+		if value > 0 {
+			return int(value)
+		}
+	case int64:
+		if value > 0 {
+			return int(value)
+		}
+	case float64:
+		if value > 0 {
+			return int(value)
+		}
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(value))
+		if err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
+func normalizeSeedanceDuration(bodyMap map[string]interface{}) {
+	if bodyMap == nil {
+		return
+	}
+	if parsePositiveIntValue(bodyMap["duration"]) > 0 {
+		delete(bodyMap, "seconds")
+		return
+	}
+	if seconds := parsePositiveIntValue(bodyMap["seconds"]); seconds > 0 {
+		bodyMap["duration"] = seconds
+	}
+	delete(bodyMap, "seconds")
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
@@ -161,6 +212,9 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		var bodyMap map[string]interface{}
 		if err := common.Unmarshal(cachedBody, &bodyMap); err == nil {
 			bodyMap["model"] = info.UpstreamModelName
+			if isSeedanceModel(info.UpstreamModelName) || isSeedanceModel(info.OriginModelName) {
+				normalizeSeedanceDuration(bodyMap)
+			}
 			if newBody, err := common.Marshal(bodyMap); err == nil {
 				return bytes.NewReader(newBody), nil
 			}
@@ -176,13 +230,27 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		var buf bytes.Buffer
 		writer := multipart.NewWriter(&buf)
 		writer.WriteField("model", info.UpstreamModelName)
+		seedanceDuration := ""
+		if isSeedanceModel(info.UpstreamModelName) || isSeedanceModel(info.OriginModelName) {
+			if values := formData.Value["duration"]; len(values) > 0 && strings.TrimSpace(values[0]) != "" {
+				seedanceDuration = strings.TrimSpace(values[0])
+			} else if values := formData.Value["seconds"]; len(values) > 0 && strings.TrimSpace(values[0]) != "" {
+				seedanceDuration = strings.TrimSpace(values[0])
+			}
+		}
 		for key, values := range formData.Value {
 			if key == "model" {
+				continue
+			}
+			if seedanceDuration != "" && key == "seconds" {
 				continue
 			}
 			for _, v := range values {
 				writer.WriteField(key, v)
 			}
+		}
+		if seedanceDuration != "" && len(formData.Value["duration"]) == 0 {
+			writer.WriteField("duration", seedanceDuration)
 		}
 		for fieldName, fileHeaders := range formData.File {
 			for _, fh := range fileHeaders {
