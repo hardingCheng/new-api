@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -218,6 +220,10 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 		Content: []ContentItem{},
 	}
 
+	if duration := resolveRequestDuration(req); duration > 0 {
+		r.Duration = dto.IntValue(duration)
+	}
+
 	// Add text prompt
 	if req.Prompt != "" {
 		r.Content = append(r.Content, ContentItem{
@@ -244,6 +250,49 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 	}
 
 	return &r, nil
+}
+
+func resolveRequestDuration(req *relaycommon.TaskSubmitReq) int {
+	if req == nil {
+		return 0
+	}
+	if req.Duration > 0 {
+		return req.Duration
+	}
+	seconds, err := strconv.Atoi(strings.TrimSpace(req.Seconds))
+	if err != nil || seconds <= 0 {
+		return 0
+	}
+	return seconds
+}
+
+func isSeedanceModel(modelName string) bool {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	return strings.HasPrefix(modelName, "seedance-") || strings.HasPrefix(modelName, "doubao-seedance-")
+}
+
+func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
+	if !isSeedanceModel(info.UpstreamModelName) && !isSeedanceModel(info.OriginModelName) {
+		return nil
+	}
+
+	req, err := relaycommon.GetTaskRequest(c)
+	if err != nil {
+		return nil
+	}
+
+	body, err := a.convertToRequestPayload(&req)
+	if err != nil {
+		return nil
+	}
+
+	if body.Duration <= 0 {
+		return nil
+	}
+
+	return map[string]float64{
+		"seconds": float64(body.Duration),
+	}
 }
 
 func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {
