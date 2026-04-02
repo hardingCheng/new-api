@@ -456,8 +456,8 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			finalURL := originalURL
 
 			// 如果启用了 R2 上传，尝试上传视频到 R2（带重试机制）
-			// veo 相关模型直接跳过 R2 上传，走原始 URL 逻辑
-			if common.R2VideoUploadEnabled && originalURL != "" && !strings.HasPrefix(originalURL, "data:") && !isVeoRelatedTask(task) {
+			// veo / seedance 相关模型直接跳过 R2 上传，走原始 URL 逻辑
+			if common.R2VideoUploadEnabled && originalURL != "" && !strings.HasPrefix(originalURL, "data:") && !shouldBypassR2ForVideoTask(task) {
 				uploader := common.GetR2Uploader()
 				if uploader != nil {
 					// 获取渠道信息以使用代理和 API Key
@@ -607,7 +607,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	return nil
 }
 
-func isVeoRelatedTask(task *model.Task) bool {
+func shouldBypassR2ForVideoTask(task *model.Task) bool {
 	if task == nil {
 		return false
 	}
@@ -615,7 +615,9 @@ func isVeoRelatedTask(task *model.Task) bool {
 	if modelName == "" {
 		modelName = strings.ToLower(strings.TrimSpace(task.Properties.OriginModelName))
 	}
-	return strings.Contains(modelName, "veo")
+	return strings.Contains(modelName, "veo") ||
+		strings.HasPrefix(modelName, "seedance-") ||
+		strings.HasPrefix(modelName, "doubao-seedance-")
 }
 
 func redactVideoResponseBody(body []byte) []byte {
