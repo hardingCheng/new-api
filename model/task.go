@@ -235,8 +235,8 @@ func TaskGetAllUserTask(userId int, startIdx int, num int, queryParams SyncTaskQ
 		query = query.Where("submit_time <= ?", queryParams.EndTimestamp)
 	}
 
-	// 获取数据
-	err = query.Omit("channel_id").Order("id desc").Limit(num).Offset(startIdx).Find(&tasks).Error
+	// 获取数据，排除大字段以加速列表查询
+	err = query.Omit("channel_id", "data", "properties").Order("id desc").Limit(num).Offset(startIdx).Find(&tasks).Error
 	if err != nil {
 		return nil
 	}
@@ -280,8 +280,8 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 		query = query.Where("submit_time <= ?", queryParams.EndTimestamp)
 	}
 
-	// 获取数据
-	err = query.Order("id desc").Limit(num).Offset(startIdx).Find(&tasks).Error
+	// 获取数据，排除大字段以加速列表查询
+	err = query.Omit("data", "properties").Order("id desc").Limit(num).Offset(startIdx).Find(&tasks).Error
 	if err != nil {
 		return nil
 	}

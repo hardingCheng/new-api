@@ -22,6 +22,43 @@ func UpdateTaskBulk() {
 	service.TaskPollingLoop()
 }
 
+func GetTaskDetail(c *gin.Context) {
+	taskId := c.Query("task_id")
+	if taskId == "" {
+		common.ApiErrorMsg(c, "task_id is required")
+		return
+	}
+	task, exist, err := model.GetByOnlyTaskId(taskId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !exist {
+		common.ApiErrorMsg(c, "task not found")
+		return
+	}
+	common.ApiSuccess(c, relay.TaskModel2Dto(task))
+}
+
+func GetUserTaskDetail(c *gin.Context) {
+	taskId := c.Query("task_id")
+	if taskId == "" {
+		common.ApiErrorMsg(c, "task_id is required")
+		return
+	}
+	userId := c.GetInt("id")
+	task, exist, err := model.GetByTaskId(userId, taskId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !exist {
+		common.ApiErrorMsg(c, "task not found")
+		return
+	}
+	common.ApiSuccess(c, relay.TaskModel2Dto(task))
+}
+
 func GetAllTask(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 
