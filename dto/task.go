@@ -47,9 +47,12 @@ type TaskDto struct {
 	StartTime  int64           `json:"start_time"`
 	FinishTime int64           `json:"finish_time"`
 	Progress   string          `json:"progress"`
-	Properties any             `json:"properties"`
-	Username   string          `json:"username,omitempty"`
-	Data       json.RawMessage `json:"data"`
+	Properties    any             `json:"properties"`
+	Username      string          `json:"username,omitempty"`
+	ModelName     string          `json:"model_name,omitempty"`
+	VideoDuration float64         `json:"video_duration,omitempty"`
+	RefundQuota   int             `json:"refund_quota,omitempty"`
+	Data          json.RawMessage `json:"data"`
 }
 
 type FetchReq struct {

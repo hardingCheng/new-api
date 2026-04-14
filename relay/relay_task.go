@@ -583,7 +583,7 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		}
 	}
 	
-	return &dto.TaskDto{
+	d := &dto.TaskDto{
 		ID:         task.ID,
 		CreatedAt:  task.CreatedAt,
 		UpdatedAt:  task.UpdatedAt,
@@ -605,4 +605,22 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		Username:   task.Username,
 		Data:       data,
 	}
+
+	// Populate admin-visible fields from PrivateData
+	if bc := task.PrivateData.BillingContext; bc != nil {
+		if bc.OriginModelName != "" {
+			d.ModelName = bc.OriginModelName
+		}
+		if seconds, ok := bc.OtherRatios["seconds"]; ok {
+			d.VideoDuration = seconds
+		}
+	}
+	if d.ModelName == "" {
+		d.ModelName = task.Properties.OriginModelName
+	}
+	if task.Status == model.TaskStatusFailure {
+		d.RefundQuota = task.Quota
+	}
+
+	return d
 }

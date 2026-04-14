@@ -43,7 +43,7 @@ import {
   TASK_ACTION_REMIX_GENERATE,
 } from '../../../constants/common.constant';
 import { CHANNEL_OPTIONS } from '../../../constants/channel.constants';
-import { stringToColor } from '../../../helpers/render';
+import { stringToColor, renderQuota } from '../../../helpers/render';
 import { Avatar, Space } from '@douyinfe/semi-ui';
 
 const colors = [
@@ -380,6 +380,58 @@ export const getTaskLogsColumns = ({
                 style={{ minWidth: '160px' }}
               />
             )}
+          </div>
+        );
+      },
+    },
+    {
+      key: COLUMN_KEYS.MODEL_NAME,
+      title: t('模型'),
+      dataIndex: 'model_name',
+      render: (text) => {
+        if (!isAdminUser || !text) return <></>;
+        return (
+          <Tag
+            color={colors[Math.abs([...text].reduce((a, c) => a + c.charCodeAt(0), 0)) % colors.length]}
+            shape='circle'
+          >
+            {text}
+          </Tag>
+        );
+      },
+    },
+    {
+      key: COLUMN_KEYS.QUOTA,
+      title: t('消耗额度'),
+      dataIndex: 'quota',
+      render: (text) => {
+        if (!isAdminUser) return <></>;
+        return <div>{renderQuota(text, 6)}</div>;
+      },
+    },
+    {
+      key: COLUMN_KEYS.VIDEO_DURATION,
+      title: t('视频时长'),
+      dataIndex: 'video_duration',
+      render: (text) => {
+        if (!isAdminUser || !text) return <></>;
+        return (
+          <Tag color='blue' shape='circle'>
+            {text}s
+          </Tag>
+        );
+      },
+    },
+    {
+      key: COLUMN_KEYS.REFUND,
+      title: t('退款额度'),
+      dataIndex: 'refund_quota',
+      render: (text) => {
+        if (!isAdminUser) return <></>;
+        if (!text || text <= 0) return <div>-</div>;
+        return (
+          <div style={{ color: 'var(--semi-color-danger)' }}>
+            {renderQuota(text, 6)}
           </div>
         );
       },

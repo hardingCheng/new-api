@@ -167,6 +167,8 @@ type SyncTaskQueryParams struct {
 	StartTimestamp int64
 	EndTimestamp   int64
 	UserIDs        []int
+	Username       string
+	ModelName      string
 }
 
 func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) *Task {
@@ -278,6 +280,9 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 	}
 	if queryParams.EndTimestamp != 0 {
 		query = query.Where("submit_time <= ?", queryParams.EndTimestamp)
+	}
+	if queryParams.ModelName != "" {
+		query = query.Where("private_data LIKE ?", "%"+queryParams.ModelName+"%")
 	}
 
 	// 获取数据，排除大字段以加速列表查询
@@ -465,6 +470,9 @@ func TaskCountAllTasks(queryParams SyncTaskQueryParams) int64 {
 	}
 	if queryParams.EndTimestamp != 0 {
 		query = query.Where("submit_time <= ?", queryParams.EndTimestamp)
+	}
+	if queryParams.ModelName != "" {
+		query = query.Where("private_data LIKE ?", "%"+queryParams.ModelName+"%")
 	}
 	_ = query.Count(&total).Error
 	return total

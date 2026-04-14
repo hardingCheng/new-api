@@ -144,7 +144,7 @@ func tasksToDto(tasks []*model.Task, fillUser bool) []*dto.TaskDto {
 func parseTaskQueryParams(c *gin.Context) model.SyncTaskQueryParams {
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
-	return model.SyncTaskQueryParams{
+	params := model.SyncTaskQueryParams{
 		Platform:       constant.TaskPlatform(c.Query("platform")),
 		TaskID:         c.Query("task_id"),
 		Status:         c.Query("status"),
@@ -152,7 +152,21 @@ func parseTaskQueryParams(c *gin.Context) model.SyncTaskQueryParams {
 		StartTimestamp: startTimestamp,
 		EndTimestamp:   endTimestamp,
 		ChannelID:      c.Query("channel_id"),
+		ModelName:      c.Query("model_name"),
 	}
+	// Resolve username to user IDs
+	if username := c.Query("username"); username != "" {
+		params.Username = username
+		var userIDs []int
+		model.DB.Model(&model.User{}).Where("username LIKE ?", "%"+username+"%").Pluck("id", &userIDs)
+		if len(userIDs) > 0 {
+			params.UserIDs = userIDs
+		} else {
+			// No matching users — use impossible ID to ensure empty result
+			params.UserIDs = []int{-1}
+		}
+	}
+	return params
 }
 
 func exportTaskAsXlsx(c *gin.Context, items []*dto.TaskDto, scope string) error {

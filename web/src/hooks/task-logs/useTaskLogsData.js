@@ -48,6 +48,10 @@ export const useTaskLogsData = () => {
     PROGRESS: 'progress',
     FAIL_REASON: 'fail_reason',
     RESULT_URL: 'result_url',
+    MODEL_NAME: 'model_name',
+    QUOTA: 'quota',
+    VIDEO_DURATION: 'video_duration',
+    REFUND: 'refund_quota',
   };
 
   // Basic state
@@ -115,6 +119,10 @@ export const useTaskLogsData = () => {
         if (!isAdminUser) {
           merged[COLUMN_KEYS.CHANNEL] = false;
           merged[COLUMN_KEYS.USERNAME] = false;
+          merged[COLUMN_KEYS.MODEL_NAME] = false;
+          merged[COLUMN_KEYS.QUOTA] = false;
+          merged[COLUMN_KEYS.VIDEO_DURATION] = false;
+          merged[COLUMN_KEYS.REFUND] = false;
         }
         setVisibleColumns(merged);
       } catch (e) {
@@ -141,6 +149,10 @@ export const useTaskLogsData = () => {
       [COLUMN_KEYS.PROGRESS]: true,
       [COLUMN_KEYS.FAIL_REASON]: true,
       [COLUMN_KEYS.RESULT_URL]: true,
+      [COLUMN_KEYS.MODEL_NAME]: isAdminUser,
+      [COLUMN_KEYS.QUOTA]: isAdminUser,
+      [COLUMN_KEYS.VIDEO_DURATION]: isAdminUser,
+      [COLUMN_KEYS.REFUND]: isAdminUser,
     };
   };
 
@@ -164,7 +176,9 @@ export const useTaskLogsData = () => {
 
     allKeys.forEach((key) => {
       if (
-        (key === COLUMN_KEYS.CHANNEL || key === COLUMN_KEYS.USERNAME) &&
+        (key === COLUMN_KEYS.CHANNEL || key === COLUMN_KEYS.USERNAME ||
+         key === COLUMN_KEYS.MODEL_NAME || key === COLUMN_KEYS.QUOTA ||
+         key === COLUMN_KEYS.VIDEO_DURATION || key === COLUMN_KEYS.REFUND) &&
         !isAdminUser
       ) {
         updatedColumns[key] = false;
@@ -203,6 +217,8 @@ export const useTaskLogsData = () => {
     return {
       channel_id: formValues.channel_id || '',
       task_id: formValues.task_id || '',
+      username: formValues.username || '',
+      model_name: formValues.model_name || '',
       start_timestamp,
       end_timestamp,
     };
@@ -229,12 +245,12 @@ export const useTaskLogsData = () => {
   // Load logs function
   const loadLogs = async (page = 1, size = pageSize) => {
     setLoading(true);
-    const { channel_id, task_id, start_timestamp, end_timestamp } =
+    const { channel_id, task_id, username, model_name, start_timestamp, end_timestamp } =
       getFormValues();
     let localStartTimestamp = parseInt(Date.parse(start_timestamp) / 1000);
     let localEndTimestamp = parseInt(Date.parse(end_timestamp) / 1000);
     let url = isAdminUser
-      ? `/api/task/?p=${page}&page_size=${size}&channel_id=${channel_id}&task_id=${task_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`
+      ? `/api/task/?p=${page}&page_size=${size}&channel_id=${channel_id}&task_id=${task_id}&username=${username}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`
       : `/api/task/self?p=${page}&page_size=${size}&task_id=${task_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
     const res = await API.get(url);
     const { success, message, data } = res.data;
