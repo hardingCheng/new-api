@@ -293,6 +293,11 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			logRoute.GET("/token", middleware.TokenAuthReadOnly(), controller.GetLogByKey)
 		}
+		monitorRoute := apiRouter.Group("/monitor")
+		monitorRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
+		{
+			monitorRoute.GET("/logs", middleware.TokenAuthReadOnly(), controller.GetMonitorLogs)
+		}
 		groupRoute := apiRouter.Group("/group")
 		groupRoute.Use(middleware.AdminAuth())
 		{
