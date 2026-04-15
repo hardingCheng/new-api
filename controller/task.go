@@ -175,9 +175,9 @@ func exportTaskAsXlsx(c *gin.Context, items []*dto.TaskDto, scope string) error 
 	f.SetSheetName("Sheet1", sheetName)
 
 	headers := []string{
-		"id", "task_id", "platform", "user_id", "username", "group", "channel_id", "quota",
-		"action", "status", "fail_reason", "result_url", "progress", "submit_time", "start_time", "finish_time",
-		"created_at", "updated_at",
+		"ID", "任务ID", "平台", "用户ID", "用户名", "分组", "渠道ID", "消耗额度",
+		"类型", "状态", "失败原因", "结果URL", "进度", "模型名称", "视频时长(秒)", "退款额度",
+		"提交时间", "开始时间", "结束时间", "创建时间", "更新时间",
 	}
 
 	for i, header := range headers {
@@ -203,6 +203,9 @@ func exportTaskAsXlsx(c *gin.Context, items []*dto.TaskDto, scope string) error 
 			item.FailReason,
 			item.ResultURL,
 			item.Progress,
+			item.ModelName,
+			item.VideoDuration,
+			item.RefundQuota,
 			formatUnix(item.SubmitTime),
 			formatUnix(item.StartTime),
 			formatUnix(item.FinishTime),
