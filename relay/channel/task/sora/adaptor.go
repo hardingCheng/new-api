@@ -118,9 +118,15 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		if seconds <= 0 {
 			return nil
 		}
-		return map[string]float64{
+		ratios := map[string]float64{
 			"seconds": float64(seconds),
 		}
+		if taskcommon.IsSeedance2Model(info.UpstreamModelName) || taskcommon.IsSeedance2Model(info.OriginModelName) || taskcommon.IsSeedance2Model(req.Model) {
+			if taskcommon.HasVideoURLContent(c) {
+				ratios["reference_video"] = 2.0
+			}
+		}
+		return ratios
 	}
 
 	size := req.Size
