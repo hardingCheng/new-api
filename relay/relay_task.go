@@ -601,9 +601,10 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		StartTime:  task.StartTime,
 		FinishTime: task.FinishTime,
 		Progress:   task.Progress,
-		Properties: task.Properties,
-		Username:   task.Username,
-		Data:       data,
+		Properties:        task.Properties,
+		HasVideoReference: task.HasVideoReference,
+		Username:          task.Username,
+		Data:              data,
 	}
 
 	// Populate admin-visible fields from PrivateData
@@ -613,6 +614,11 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		}
 		if seconds, ok := bc.OtherRatios["seconds"]; ok {
 			d.VideoDuration = seconds
+		}
+		if !d.HasVideoReference {
+			if _, ok := bc.OtherRatios["reference_video"]; ok {
+				d.HasVideoReference = true
+			}
 		}
 	}
 	if d.ModelName == "" {

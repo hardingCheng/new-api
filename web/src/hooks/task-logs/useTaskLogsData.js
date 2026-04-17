@@ -51,6 +51,7 @@ export const useTaskLogsData = () => {
     MODEL_NAME: 'model_name',
     QUOTA: 'quota',
     VIDEO_DURATION: 'video_duration',
+    HAS_VIDEO_REFERENCE: 'has_video_reference',
     REFUND: 'refund_quota',
   };
 
@@ -152,6 +153,7 @@ export const useTaskLogsData = () => {
       [COLUMN_KEYS.MODEL_NAME]: isAdminUser,
       [COLUMN_KEYS.QUOTA]: isAdminUser,
       [COLUMN_KEYS.VIDEO_DURATION]: isAdminUser,
+      [COLUMN_KEYS.HAS_VIDEO_REFERENCE]: true,
       [COLUMN_KEYS.REFUND]: isAdminUser,
     };
   };
@@ -219,6 +221,7 @@ export const useTaskLogsData = () => {
       task_id: formValues.task_id || '',
       username: formValues.username || '',
       model_name: formValues.model_name || '',
+      has_video_reference: formValues.has_video_reference || '',
       start_timestamp,
       end_timestamp,
     };
@@ -245,13 +248,13 @@ export const useTaskLogsData = () => {
   // Load logs function
   const loadLogs = async (page = 1, size = pageSize) => {
     setLoading(true);
-    const { channel_id, task_id, username, model_name, start_timestamp, end_timestamp } =
+    const { channel_id, task_id, username, model_name, has_video_reference, start_timestamp, end_timestamp } =
       getFormValues();
     let localStartTimestamp = parseInt(Date.parse(start_timestamp) / 1000);
     let localEndTimestamp = parseInt(Date.parse(end_timestamp) / 1000);
     let url = isAdminUser
-      ? `/api/task/?p=${page}&page_size=${size}&channel_id=${channel_id}&task_id=${task_id}&username=${username}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`
-      : `/api/task/self?p=${page}&page_size=${size}&task_id=${task_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
+      ? `/api/task/?p=${page}&page_size=${size}&channel_id=${channel_id}&task_id=${task_id}&username=${username}&model_name=${model_name}&has_video_reference=${has_video_reference}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`
+      : `/api/task/self?p=${page}&page_size=${size}&task_id=${task_id}&has_video_reference=${has_video_reference}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
     const res = await API.get(url);
     const { success, message, data } = res.data;
     if (success) {

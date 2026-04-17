@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	commonRelay "github.com/QuantumNous/new-api/relay/common"
+	"gorm.io/gorm"
 )
 
 type TaskStatus string
@@ -57,8 +58,9 @@ type Task struct {
 	SubmitTime int64                 `json:"submit_time" gorm:"index"`
 	StartTime  int64                 `json:"start_time" gorm:"index"`
 	FinishTime int64                 `json:"finish_time" gorm:"index"`
-	Progress   string                `json:"progress" gorm:"type:varchar(20);index"`
-	Properties Properties            `json:"properties" gorm:"type:json"`
+	Progress          string                `json:"progress" gorm:"type:varchar(20);index"`
+	HasVideoReference bool                  `json:"has_video_reference" gorm:"index;default:false"`
+	Properties        Properties            `json:"properties" gorm:"type:json"`
 	Username   string                `json:"username,omitempty" gorm:"-"`
 	// 禁止返回给用户，内部可能包含key等隐私信息
 	PrivateData TaskPrivateData `json:"-" gorm:"column:private_data;type:json"`
@@ -166,9 +168,10 @@ type SyncTaskQueryParams struct {
 	Status         string
 	StartTimestamp int64
 	EndTimestamp   int64
-	UserIDs        []int
-	Username       string
-	ModelName      string
+	UserIDs           []int
+	Username          string
+	ModelName         string
+	HasVideoReference string // "true" / "false" / "" (empty = no filter)
 }
 
 func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) *Task {
@@ -236,6 +239,7 @@ func TaskGetAllUserTask(userId int, startIdx int, num int, queryParams SyncTaskQ
 	if queryParams.EndTimestamp != 0 {
 		query = query.Where("submit_time <= ?", queryParams.EndTimestamp)
 	}
+	query = applyVideoReferenceFilter(query, queryParams.HasVideoReference)
 
 	// 获取数据，排除大字段以加速列表查询
 	err = query.Omit("channel_id", "data", "properties").Order("id desc").Limit(num).Offset(startIdx).Find(&tasks).Error
@@ -284,6 +288,7 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 	if queryParams.ModelName != "" {
 		query = query.Where("private_data LIKE ?", "%"+queryParams.ModelName+"%")
 	}
+	query = applyVideoReferenceFilter(query, queryParams.HasVideoReference)
 
 	// 获取数据，排除大字段以加速列表查询
 	err = query.Omit("data", "properties").Order("id desc").Limit(num).Offset(startIdx).Find(&tasks).Error
@@ -474,6 +479,7 @@ func TaskCountAllTasks(queryParams SyncTaskQueryParams) int64 {
 	if queryParams.ModelName != "" {
 		query = query.Where("private_data LIKE ?", "%"+queryParams.ModelName+"%")
 	}
+	query = applyVideoReferenceFilter(query, queryParams.HasVideoReference)
 	_ = query.Count(&total).Error
 	return total
 }
@@ -500,9 +506,23 @@ func TaskCountAllUserTask(userId int, queryParams SyncTaskQueryParams) int64 {
 	if queryParams.EndTimestamp != 0 {
 		query = query.Where("submit_time <= ?", queryParams.EndTimestamp)
 	}
+	query = applyVideoReferenceFilter(query, queryParams.HasVideoReference)
 	_ = query.Count(&total).Error
 	return total
 }
+
+// applyVideoReferenceFilter filters tasks by has_video_reference indexed column.
+func applyVideoReferenceFilter(query *gorm.DB, hasVideoReference string) *gorm.DB {
+	switch hasVideoReference {
+	case "true":
+		return query.Where("has_video_reference = ?", true)
+	case "false":
+		return query.Where("has_video_reference = ? OR has_video_reference IS NULL", false)
+	default:
+		return query
+	}
+}
+
 func (t *Task) ToOpenAIVideo() *dto.OpenAIVideo {
 	openAIVideo := dto.NewOpenAIVideo()
 	openAIVideo.ID = t.TaskID

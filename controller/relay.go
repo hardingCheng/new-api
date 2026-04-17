@@ -583,6 +583,9 @@ func RelayTask(c *gin.Context) {
 		task.Quota = result.Quota
 		task.Data = result.TaskData
 		task.Action = relayInfo.Action
+		if _, ok := relayInfo.PriceData.OtherRatios["reference_video"]; ok {
+			task.HasVideoReference = true
+		}
 		if insertErr := task.Insert(); insertErr != nil {
 			common.SysError("insert task error: " + insertErr.Error())
 		}

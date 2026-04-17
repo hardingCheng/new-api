@@ -152,7 +152,8 @@ func parseTaskQueryParams(c *gin.Context) model.SyncTaskQueryParams {
 		StartTimestamp: startTimestamp,
 		EndTimestamp:   endTimestamp,
 		ChannelID:      c.Query("channel_id"),
-		ModelName:      c.Query("model_name"),
+		ModelName:         c.Query("model_name"),
+		HasVideoReference: c.Query("has_video_reference"),
 	}
 	// Resolve username to user IDs
 	if username := c.Query("username"); username != "" {

@@ -74,6 +74,18 @@ const TaskLogsFilters = ({
             size='small'
           />
 
+          {/* 视频参考筛选 */}
+          <Form.Select
+            field='has_video_reference'
+            placeholder={t('视频参考')}
+            showClear
+            pure
+            size='small'
+          >
+            <Form.Select.Option value='true'>{t('有视频参考')}</Form.Select.Option>
+            <Form.Select.Option value='false'>{t('无视频参考')}</Form.Select.Option>
+          </Form.Select>
+
           {/* 渠道 ID - 仅管理员可见 */}
           {isAdminUser && (
             <Form.Input

@@ -423,6 +423,19 @@ export const getTaskLogsColumns = ({
       },
     },
     {
+      key: COLUMN_KEYS.HAS_VIDEO_REFERENCE,
+      title: t('视频参考'),
+      dataIndex: 'has_video_reference',
+      render: (text) => {
+        if (!text) return <></>;
+        return (
+          <Tag color='orange' shape='circle' prefixIcon={<Video size={14} />}>
+            {t('视频参考')}
+          </Tag>
+        );
+      },
+    },
+    {
       key: COLUMN_KEYS.REFUND,
       title: t('退款额度'),
       dataIndex: 'refund_quota',

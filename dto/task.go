@@ -50,9 +50,10 @@ type TaskDto struct {
 	Properties    any             `json:"properties"`
 	Username      string          `json:"username,omitempty"`
 	ModelName     string          `json:"model_name,omitempty"`
-	VideoDuration float64         `json:"video_duration,omitempty"`
-	RefundQuota   int             `json:"refund_quota,omitempty"`
-	Data          json.RawMessage `json:"data"`
+	VideoDuration     float64         `json:"video_duration,omitempty"`
+	HasVideoReference bool            `json:"has_video_reference,omitempty"`
+	RefundQuota       int             `json:"refund_quota,omitempty"`
+	Data              json.RawMessage `json:"data"`
 }
 
 type FetchReq struct {
