@@ -266,6 +266,7 @@ export const useLogsData = () => {
       optionMap.set(user.username, {
         label,
         value: user.username,
+        pinned: Boolean(user.pinned),
       });
     });
 
@@ -276,10 +277,19 @@ export const useLogsData = () => {
       optionMap.set(username, {
         label: username,
         value: username,
+        pinned: false,
       });
     });
 
-    return Array.from(optionMap.values());
+    return Array.from(optionMap.values()).sort((a, b) => {
+      if (Boolean(a.pinned) !== Boolean(b.pinned)) {
+        return a.pinned ? -1 : 1;
+      }
+      return String(a.label || a.value).localeCompare(
+        String(b.label || b.value),
+        'zh-Hans-CN',
+      );
+    });
   };
 
   const fetchUserOptions = async (keyword = '') => {
@@ -293,8 +303,8 @@ export const useLogsData = () => {
 
     const trimmedKeyword = keyword.trim();
     const url = trimmedKeyword
-      ? `/api/user/search?keyword=${encodeURIComponent(trimmedKeyword)}&group=&p=1&page_size=20`
-      : '/api/user/?p=1&page_size=20';
+      ? `/api/user/search?keyword=${encodeURIComponent(trimmedKeyword)}&group=&p=1&page_size=100`
+      : '/api/user/?p=1&page_size=100';
 
     try {
       const res = await API.get(url, { disableDuplicate: true });
