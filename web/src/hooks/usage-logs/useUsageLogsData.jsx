@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@douyinfe/semi-ui';
 import {
@@ -89,7 +89,7 @@ export const useLogsData = () => {
   const [formApi, setFormApi] = useState(null);
   let now = new Date();
   const formInitValues = {
-    username: '',
+    usernames: [],
     token_name: '',
     model_name: '',
     channel: '',
@@ -112,6 +112,10 @@ export const useLogsData = () => {
   // User info modal state
   const [showUserInfo, setShowUserInfoModal] = useState(false);
   const [userInfoData, setUserInfoData] = useState(null);
+  const [userOptions, setUserOptions] = useState([]);
+  const [userOptionsLoading, setUserOptionsLoading] = useState(false);
+  const userSearchTimeoutRef = useRef(null);
+  const latestUserSearchRef = useRef(0);
 
   // Channel affinity usage cache stats modal state (admin only)
   const [
@@ -224,7 +228,9 @@ export const useLogsData = () => {
     }
 
     return {
-      username: formValues.username || '',
+      usernames: Array.isArray(formValues.usernames)
+        ? formValues.usernames.filter(Boolean)
+        : [],
       token_name: formValues.token_name || '',
       model_name: formValues.model_name || '',
       start_timestamp,
@@ -234,6 +240,113 @@ export const useLogsData = () => {
       request_id: formValues.request_id || '',
       logType: formValues.logType ? parseInt(formValues.logType) : 0,
     };
+  };
+
+  const mergeUserOptions = (
+    currentOptions = [],
+    fetchedUsers = [],
+    selectedUsernames = [],
+  ) => {
+    const optionMap = new Map();
+
+    currentOptions.forEach((option) => {
+      if (option?.value) {
+        optionMap.set(option.value, option);
+      }
+    });
+
+    fetchedUsers.forEach((user) => {
+      if (!user?.username) {
+        return;
+      }
+      const label =
+        user.display_name && user.display_name !== user.username
+          ? `${user.username} (${user.display_name})`
+          : user.username;
+      optionMap.set(user.username, {
+        label,
+        value: user.username,
+      });
+    });
+
+    selectedUsernames.forEach((username) => {
+      if (!username || optionMap.has(username)) {
+        return;
+      }
+      optionMap.set(username, {
+        label: username,
+        value: username,
+      });
+    });
+
+    return Array.from(optionMap.values());
+  };
+
+  const fetchUserOptions = async (keyword = '') => {
+    if (!isAdminUser) {
+      return;
+    }
+
+    const requestId = latestUserSearchRef.current + 1;
+    latestUserSearchRef.current = requestId;
+    setUserOptionsLoading(true);
+
+    const trimmedKeyword = keyword.trim();
+    const url = trimmedKeyword
+      ? `/api/user/search?keyword=${encodeURIComponent(trimmedKeyword)}&group=&p=1&page_size=20`
+      : '/api/user/?p=1&page_size=20';
+
+    try {
+      const res = await API.get(url, { disableDuplicate: true });
+      const { success, message, data } = res.data;
+      if (!success) {
+        if (latestUserSearchRef.current === requestId) {
+          showError(message);
+        }
+        return;
+      }
+
+      if (latestUserSearchRef.current !== requestId) {
+        return;
+      }
+
+      const selectedUsernames = formApi?.getValues()?.usernames || [];
+      setUserOptions((prev) =>
+        mergeUserOptions(prev, data?.items || [], selectedUsernames),
+      );
+    } catch {
+      // Global API interceptor already handles user-facing errors.
+    } finally {
+      if (latestUserSearchRef.current === requestId) {
+        setUserOptionsLoading(false);
+      }
+    }
+  };
+
+  const handleUserSearch = (keyword) => {
+    if (!isAdminUser) {
+      return;
+    }
+
+    if (userSearchTimeoutRef.current) {
+      clearTimeout(userSearchTimeoutRef.current);
+    }
+
+    userSearchTimeoutRef.current = setTimeout(() => {
+      fetchUserOptions(keyword);
+    }, 250);
+  };
+
+  const handleUserSelectionChange = (selectedUsernames) => {
+    setUserOptions((prev) =>
+      mergeUserOptions(prev, [], selectedUsernames || []),
+    );
+  };
+
+  const handleUserDropdownVisibleChange = (visible) => {
+    if (visible && userOptions.length === 0) {
+      fetchUserOptions('');
+    }
   };
 
   // Statistics functions
@@ -262,7 +375,7 @@ export const useLogsData = () => {
 
   const getLogStat = async () => {
     const {
-      username,
+      usernames,
       token_name,
       model_name,
       start_timestamp,
@@ -274,9 +387,17 @@ export const useLogsData = () => {
     const currentLogType = formLogType !== undefined ? formLogType : logType;
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
-    let url = `/api/log/stat?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
-    url = encodeURI(url);
-    let res = await API.get(url);
+    const params = new URLSearchParams({
+      type: `${currentLogType}`,
+      token_name,
+      model_name,
+      start_timestamp: `${localStartTimestamp}`,
+      end_timestamp: `${localEndTimestamp}`,
+      channel: `${channel || ''}`,
+      group,
+    });
+    usernames.forEach((username) => params.append('usernames', username));
+    let res = await API.get(`/api/log/stat?${params.toString()}`);
     const { success, message, data } = res.data;
     if (success) {
       setStat(data);
@@ -637,9 +758,8 @@ export const useLogsData = () => {
   const loadLogs = async (startIdx, pageSize, customLogType = null) => {
     setLoading(true);
 
-    let url = '';
     const {
-      username,
+      usernames,
       token_name,
       model_name,
       start_timestamp,
@@ -659,12 +779,36 @@ export const useLogsData = () => {
 
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
+    let url = '';
     if (isAdminUser) {
-      url = `/api/log/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}&request_id=${request_id}`;
+      const params = new URLSearchParams({
+        p: `${startIdx}`,
+        page_size: `${pageSize}`,
+        type: `${currentLogType}`,
+        token_name,
+        model_name,
+        start_timestamp: `${localStartTimestamp}`,
+        end_timestamp: `${localEndTimestamp}`,
+        channel: `${channel || ''}`,
+        group,
+        request_id,
+      });
+      usernames.forEach((username) => params.append('usernames', username));
+      url = `/api/log/?${params.toString()}`;
     } else {
-      url = `/api/log/self/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}&request_id=${request_id}`;
+      const params = new URLSearchParams({
+        p: `${startIdx}`,
+        page_size: `${pageSize}`,
+        type: `${currentLogType}`,
+        token_name,
+        model_name,
+        start_timestamp: `${localStartTimestamp}`,
+        end_timestamp: `${localEndTimestamp}`,
+        group,
+        request_id,
+      });
+      url = `/api/log/self/?${params.toString()}`;
     }
-    url = encodeURI(url);
     const res = await API.get(url);
     const { success, message, data } = res.data;
     if (success) {
@@ -733,6 +877,14 @@ export const useLogsData = () => {
     }
   }, [formApi]);
 
+  useEffect(() => {
+    return () => {
+      if (userSearchTimeoutRef.current) {
+        clearTimeout(userSearchTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Check if any record has expandable content
   const hasExpandableRows = () => {
     return logs.some(
@@ -778,6 +930,11 @@ export const useLogsData = () => {
     setShowUserInfoModal,
     userInfoData,
     showUserInfoFunc,
+    userOptions,
+    userOptionsLoading,
+    handleUserSearch,
+    handleUserSelectionChange,
+    handleUserDropdownVisibleChange,
 
     // Channel affinity usage cache stats modal
     showChannelAffinityUsageCacheModal,

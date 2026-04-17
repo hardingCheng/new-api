@@ -177,7 +177,7 @@ func exportTaskAsXlsx(c *gin.Context, items []*dto.TaskDto, scope string) error 
 
 	headers := []string{
 		"ID", "任务ID", "平台", "用户ID", "用户名", "分组", "渠道ID", "消耗金额",
-		"类型", "状态", "失败原因", "结果URL", "进度", "模型名称", "视频时长(秒)", "退款金额",
+		"类型", "状态", "失败原因", "结果URL", "进度", "模型名称", "视频时长(秒)", "视频参考", "退款金额",
 		"提交时间", "开始时间", "结束时间", "创建时间", "更新时间",
 	}
 
@@ -206,6 +206,7 @@ func exportTaskAsXlsx(c *gin.Context, items []*dto.TaskDto, scope string) error 
 			item.Progress,
 			item.ModelName,
 			item.VideoDuration,
+			item.HasVideoReference,
 			float64(item.RefundQuota) / common.QuotaPerUnit,
 			formatUnix(item.SubmitTime),
 			formatUnix(item.StartTime),

@@ -32,6 +32,11 @@ const LogsFilters = ({
   setLogType,
   loading,
   isAdminUser,
+  userOptions,
+  userOptionsLoading,
+  handleUserSearch,
+  handleUserSelectionChange,
+  handleUserDropdownVisibleChange,
   t,
 }) => {
   return (
@@ -112,13 +117,22 @@ const LogsFilters = ({
                 pure
                 size='small'
               />
-              <Form.Input
-                field='username'
-                prefix={<IconSearch />}
-                placeholder={t('用户名称')}
+              <Form.Select
+                field='usernames'
+                optionList={userOptions}
+                placeholder={t('选择用户（可多选）')}
+                multiple
+                filter
+                searchPosition='dropdown'
+                autoClearSearchValue={false}
                 showClear
                 pure
                 size='small'
+                loading={userOptionsLoading}
+                onSearch={handleUserSearch}
+                onChange={handleUserSelectionChange}
+                onDropdownVisibleChange={handleUserDropdownVisibleChange}
+                emptyContent={t('输入用户名搜索')}
               />
             </>
           )}
