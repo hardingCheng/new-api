@@ -27,9 +27,8 @@ const LogsFilters = ({
   formInitValues,
   setFormApi,
   refresh,
+  resetFilters,
   setShowColumnSelector,
-  formApi,
-  setLogType,
   loading,
   isAdminUser,
   userOptions,
@@ -37,6 +36,8 @@ const LogsFilters = ({
   handleUserSearch,
   handleUserSelectionChange,
   handleUserDropdownVisibleChange,
+  clearPersistentUsernames,
+  persistentUsernames,
   t,
 }) => {
   return (
@@ -117,23 +118,49 @@ const LogsFilters = ({
                 pure
                 size='small'
               />
-              <Form.Select
-                field='usernames'
-                optionList={userOptions}
-                placeholder={t('选择用户（可多选）')}
-                multiple
-                filter
-                searchPosition='dropdown'
-                autoClearSearchValue={false}
+              <Form.Input
+                field='username'
+                prefix={<IconSearch />}
+                placeholder={t('用户名')}
                 showClear
                 pure
                 size='small'
-                loading={userOptionsLoading}
-                onSearch={handleUserSearch}
-                onChange={handleUserSelectionChange}
-                onDropdownVisibleChange={handleUserDropdownVisibleChange}
-                emptyContent={t('输入用户名搜索')}
               />
+              <div className='col-span-1 md:col-span-2'>
+                <div className='flex items-center justify-between gap-2 mb-1 text-xs text-[var(--semi-color-text-2)]'>
+                  <span>{t('选择用户（可多选）')}</span>
+                  {persistentUsernames.length > 0 && (
+                    <Button
+                      type='tertiary'
+                      size='small'
+                      htmlType='button'
+                      onClick={clearPersistentUsernames}
+                    >
+                      {t('清空')}
+                    </Button>
+                  )}
+                </div>
+                <Form.Select
+                  field='usernames'
+                  optionList={userOptions}
+                  placeholder={t('输入用户名搜索')}
+                  multiple
+                  filter
+                  searchPosition='dropdown'
+                  autoClearSearchValue={false}
+                  showClear
+                  pure
+                  size='small'
+                  loading={userOptionsLoading}
+                  onSearch={handleUserSearch}
+                  onChange={handleUserSelectionChange}
+                  onDropdownVisibleChange={handleUserDropdownVisibleChange}
+                  emptyContent={t('输入用户名搜索')}
+                />
+                <div className='mt-1 text-xs text-[var(--semi-color-text-2)]'>
+                  {t('多选用户会保留在本地，刷新后继续生效')}
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -177,15 +204,8 @@ const LogsFilters = ({
             </Button>
             <Button
               type='tertiary'
-              onClick={() => {
-                if (formApi) {
-                  formApi.reset();
-                  setLogType(0);
-                  setTimeout(() => {
-                    refresh();
-                  }, 100);
-                }
-              }}
+              onClick={resetFilters}
+              htmlType='button'
               size='small'
             >
               {t('重置')}
@@ -193,6 +213,7 @@ const LogsFilters = ({
             <Button
               type='tertiary'
               onClick={() => setShowColumnSelector(true)}
+              htmlType='button'
               size='small'
             >
               {t('列设置')}

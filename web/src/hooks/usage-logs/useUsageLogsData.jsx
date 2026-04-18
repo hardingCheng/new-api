@@ -78,6 +78,7 @@ export const useLogsData = () => {
   const STORAGE_KEY = isAdminUser
     ? 'logs-table-columns-admin'
     : 'logs-table-columns-user';
+  const ADMIN_USER_FILTER_STORAGE_KEY = 'logs-filter-admin-selected-usernames';
 
   // Statistics state
   const [stat, setStat] = useState({
@@ -85,11 +86,47 @@ export const useLogsData = () => {
     token: 0,
   });
 
+  const normalizeUsernames = (values) => {
+    if (!Array.isArray(values)) {
+      return [];
+    }
+
+    const deduped = new Set();
+    values.forEach((value) => {
+      const username = `${value || ''}`.trim();
+      if (username) {
+        deduped.add(username);
+      }
+    });
+
+    return Array.from(deduped);
+  };
+
+  const loadPersistentUsernames = () => {
+    if (!isAdminUser) {
+      return [];
+    }
+    try {
+      const saved = localStorage.getItem(ADMIN_USER_FILTER_STORAGE_KEY);
+      if (!saved) {
+        return [];
+      }
+      return normalizeUsernames(JSON.parse(saved));
+    } catch (error) {
+      console.error('Failed to parse saved admin log usernames', error);
+      return [];
+    }
+  };
+
   // Form state
   const [formApi, setFormApi] = useState(null);
+  const [persistentUsernames, setPersistentUsernames] = useState(
+    loadPersistentUsernames,
+  );
   let now = new Date();
   const formInitValues = {
-    usernames: [],
+    username: '',
+    usernames: persistentUsernames,
     token_name: '',
     model_name: '',
     channel: '',
@@ -149,6 +186,14 @@ export const useLogsData = () => {
       initDefaultColumns();
     }
   }, []);
+
+  useEffect(() => {
+    if (!isAdminUser) {
+      return;
+    }
+
+    setUserOptions((prev) => mergeUserOptions(prev, [], persistentUsernames));
+  }, [isAdminUser, persistentUsernames]);
 
   // Get default column visibility based on user role
   const getDefaultColumnVisibility = () => {
@@ -214,6 +259,11 @@ export const useLogsData = () => {
   // 获取表单值的辅助函数，确保所有值都是字符串
   const getFormValues = () => {
     const formValues = formApi ? formApi.getValues() : {};
+    const username = `${formValues.username || ''}`.trim();
+    const usernames = normalizeUsernames([
+      ...(Array.isArray(formValues.usernames) ? formValues.usernames : []),
+      username,
+    ]);
 
     let start_timestamp = timestamp2string(getTodayStartTimestamp());
     let end_timestamp = timestamp2string(now.getTime() / 1000 + 3600);
@@ -228,9 +278,8 @@ export const useLogsData = () => {
     }
 
     return {
-      usernames: Array.isArray(formValues.usernames)
-        ? formValues.usernames.filter(Boolean)
-        : [],
+      username,
+      usernames,
       token_name: formValues.token_name || '',
       model_name: formValues.model_name || '',
       start_timestamp,
@@ -320,7 +369,8 @@ export const useLogsData = () => {
         return;
       }
 
-      const selectedUsernames = formApi?.getValues()?.usernames || [];
+      const selectedUsernames =
+        formApi?.getValues()?.usernames || persistentUsernames;
       setUserOptions((prev) =>
         mergeUserOptions(prev, data?.items || [], selectedUsernames),
       );
@@ -348,15 +398,32 @@ export const useLogsData = () => {
   };
 
   const handleUserSelectionChange = (selectedUsernames) => {
-    setUserOptions((prev) =>
-      mergeUserOptions(prev, [], selectedUsernames || []),
+    const normalizedUsernames = normalizeUsernames(selectedUsernames || []);
+    setPersistentUsernames(normalizedUsernames);
+    localStorage.setItem(
+      ADMIN_USER_FILTER_STORAGE_KEY,
+      JSON.stringify(normalizedUsernames),
     );
+    setUserOptions((prev) => mergeUserOptions(prev, [], normalizedUsernames));
   };
 
   const handleUserDropdownVisibleChange = (visible) => {
     if (visible && userOptions.length === 0) {
       fetchUserOptions('');
     }
+  };
+
+  const clearPersistentUsernames = () => {
+    if (!isAdminUser) {
+      return;
+    }
+
+    setPersistentUsernames([]);
+    localStorage.removeItem(ADMIN_USER_FILTER_STORAGE_KEY);
+    if (formApi) {
+      formApi.setValue('usernames', []);
+    }
+    setUserOptions((prev) => mergeUserOptions(prev, [], []));
   };
 
   // Statistics functions
@@ -475,7 +542,10 @@ export const useLogsData = () => {
       let other = getLogOther(logs[i].other);
       let expandDataLocal = [];
 
-      if (isAdminUser && (logs[i].type === 0 || logs[i].type === 2 || logs[i].type === 6)) {
+      if (
+        isAdminUser &&
+        (logs[i].type === 0 || logs[i].type === 2 || logs[i].type === 6)
+      ) {
         expandDataLocal.push({
           key: t('渠道信息'),
           value: `${logs[i].channel} - ${logs[i].channel_name || '[未知]'}`,
@@ -677,7 +747,14 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('失败原因'),
             value: (
-              <div style={{ maxWidth: 600, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.6 }}>
+              <div
+                style={{
+                  maxWidth: 600,
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-word',
+                  lineHeight: 1.6,
+                }}
+              >
                 {other.reason}
               </div>
             ),
@@ -858,6 +935,22 @@ export const useLogsData = () => {
     await loadLogs(1, pageSize);
   };
 
+  const resetFilters = () => {
+    if (!formApi) {
+      return;
+    }
+
+    formApi.setValues({
+      ...formInitValues,
+      usernames: persistentUsernames,
+    });
+    setLogType(0);
+    setActivePage(1);
+    setTimeout(() => {
+      refresh();
+    }, 0);
+  };
+
   // Copy text function
   const copyText = async (e, text) => {
     e.stopPropagation();
@@ -945,6 +1038,8 @@ export const useLogsData = () => {
     handleUserSearch,
     handleUserSelectionChange,
     handleUserDropdownVisibleChange,
+    clearPersistentUsernames,
+    persistentUsernames,
 
     // Channel affinity usage cache stats modal
     showChannelAffinityUsageCacheModal,
@@ -957,6 +1052,7 @@ export const useLogsData = () => {
     handlePageChange,
     handlePageSizeChange,
     refresh,
+    resetFilters,
     copyText,
     handleEyeClick,
     setLogsFormat,
