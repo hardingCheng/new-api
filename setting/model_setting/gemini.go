@@ -9,6 +9,7 @@ type GeminiSettings struct {
 	SafetySettings                        map[string]string `json:"safety_settings"`
 	VersionSettings                       map[string]string `json:"version_settings"`
 	SupportedImagineModels                []string          `json:"supported_imagine_models"`
+	ImageResponseInlineDataEnabled        bool              `json:"image_response_inline_data_enabled"`
 	ThinkingAdapterEnabled                bool              `json:"thinking_adapter_enabled"`
 	ThinkingAdapterBudgetTokensPercentage float64           `json:"thinking_adapter_budget_tokens_percentage"`
 	FunctionCallThoughtSignatureEnabled   bool              `json:"function_call_thought_signature_enabled"`
@@ -31,6 +32,7 @@ var defaultGeminiSettings = GeminiSettings{
 		"gemini-2.5-flash-image",
 		"gemini-3.1-flash-image-preview",
 	},
+	ImageResponseInlineDataEnabled:        true,
 	ThinkingAdapterEnabled:                false,
 	ThinkingAdapterBudgetTokensPercentage: 0.6,
 	FunctionCallThoughtSignatureEnabled:   true,

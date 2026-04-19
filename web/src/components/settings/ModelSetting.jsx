@@ -34,6 +34,7 @@ const ModelSetting = () => {
     'gemini.safety_settings': '',
     'gemini.version_settings': '',
     'gemini.supported_imagine_models': '',
+    'gemini.image_response_inline_data_enabled': true,
     'gemini.remove_function_response_id_enabled': true,
     'claude.model_headers_settings': '',
     'claude.thinking_adapter_enabled': true,

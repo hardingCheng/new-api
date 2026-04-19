@@ -340,6 +340,7 @@ type GeminiChatGenerationConfig struct {
 	EnableEnhancedCivicAnswers *bool                 `json:"enableEnhancedCivicAnswers,omitempty"`
 	MediaResolution            MediaResolution       `json:"mediaResolution,omitempty"`
 	Seed                       *int64                `json:"seed,omitempty"`
+	ResponseMode               string                `json:"responseMode,omitempty"`
 	ResponseModalities         []string              `json:"responseModalities,omitempty"`
 	ThinkingConfig             *GeminiThinkingConfig `json:"thinkingConfig,omitempty"`
 	SpeechConfig               json.RawMessage       `json:"speechConfig,omitempty"` // RawMessage to allow flexible speech config
@@ -364,6 +365,7 @@ func (c *GeminiChatGenerationConfig) UnmarshalJSON(data []byte) error {
 		ResponseLogprobsSnake           *bool                 `json:"response_logprobs,omitempty"`
 		EnableEnhancedCivicAnswersSnake *bool                 `json:"enable_enhanced_civic_answers,omitempty"`
 		MediaResolutionSnake            MediaResolution       `json:"media_resolution,omitempty"`
+		ResponseModeSnake               string                `json:"response_mode,omitempty"`
 		ResponseModalitiesSnake         []string              `json:"response_modalities,omitempty"`
 		ThinkingConfigSnake             *GeminiThinkingConfig `json:"thinking_config,omitempty"`
 		SpeechConfigSnake               json.RawMessage       `json:"speech_config,omitempty"`
@@ -415,6 +417,9 @@ func (c *GeminiChatGenerationConfig) UnmarshalJSON(data []byte) error {
 	}
 	if aux.MediaResolutionSnake != "" {
 		c.MediaResolution = aux.MediaResolutionSnake
+	}
+	if aux.ResponseModeSnake != "" {
+		c.ResponseMode = aux.ResponseModeSnake
 	}
 	if len(aux.ResponseModalitiesSnake) > 0 {
 		c.ResponseModalities = aux.ResponseModalitiesSnake

@@ -87,3 +87,26 @@ func TestGeminiChatGenerationConfigPreservesExplicitZeroValuesSnakeCase(t *testi
 	assert.Equal(t, float64(0), generationConfig["seed"])
 	assert.Equal(t, false, generationConfig["responseLogprobs"])
 }
+
+func TestGeminiChatGenerationConfigSupportsResponseModeSnakeCase(t *testing.T) {
+	raw := []byte(`{
+		"contents":[{"role":"user","parts":[{"text":"hello"}]}],
+		"generationConfig":{
+			"response_mode":"inlineData"
+		}
+	}`)
+
+	var req GeminiChatRequest
+	require.NoError(t, common.Unmarshal(raw, &req))
+	require.Equal(t, "inlineData", req.GenerationConfig.ResponseMode)
+
+	encoded, err := common.Marshal(req)
+	require.NoError(t, err)
+
+	var out map[string]any
+	require.NoError(t, common.Unmarshal(encoded, &out))
+
+	generationConfig, ok := out["generationConfig"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "inlineData", generationConfig["responseMode"])
+}

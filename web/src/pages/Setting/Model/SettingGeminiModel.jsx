@@ -43,6 +43,7 @@ const DEFAULT_GEMINI_INPUTS = {
   'gemini.safety_settings': '',
   'gemini.version_settings': '',
   'gemini.supported_imagine_models': '',
+  'gemini.image_response_inline_data_enabled': true,
   'gemini.thinking_adapter_enabled': false,
   'gemini.thinking_adapter_budget_tokens_percentage': 0.6,
   'gemini.function_call_thought_signature_enabled': true,
@@ -166,6 +167,23 @@ export default function SettingGeminiModel(props) {
                   ]}
                   onChange={(value) =>
                     setInputs({ ...inputs, 'gemini.version_settings': value })
+                  }
+                />
+              </Col>
+            </Row>
+            <Row>
+              <Col span={16}>
+                <Form.Switch
+                  label={t('启用图片模型 inlineData 响应模式')}
+                  field={'gemini.image_response_inline_data_enabled'}
+                  extraText={t(
+                    '开启后，模型名包含 image 的 Gemini generateContent 请求会自动补上 generationConfig.responseMode=inlineData；关闭后不自动传该参数',
+                  )}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'gemini.image_response_inline_data_enabled': value,
+                    })
                   }
                 />
               </Col>

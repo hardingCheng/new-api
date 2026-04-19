@@ -228,6 +228,9 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 			"IMAGE",
 		}
 	}
+	if shouldUseInlineDataResponseMode(info.UpstreamModelName) {
+		geminiRequest.GenerationConfig.ResponseMode = "inlineData"
+	}
 	if stopSequences := parseStopSequences(textRequest.Stop); len(stopSequences) > 0 {
 		// Gemini supports up to 5 stop sequences
 		if len(stopSequences) > 5 {

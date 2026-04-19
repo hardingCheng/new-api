@@ -40,6 +40,9 @@ func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayIn
 			}
 		}
 	}
+	if shouldUseInlineDataResponseMode(info.UpstreamModelName) && request.GenerationConfig.ResponseMode == "" {
+		request.GenerationConfig.ResponseMode = "inlineData"
+	}
 	return request, nil
 }
 
