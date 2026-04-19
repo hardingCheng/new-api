@@ -123,21 +123,24 @@ export const useLogsData = () => {
   const [persistentUsernames, setPersistentUsernames] = useState(
     loadPersistentUsernames,
   );
-  let now = new Date();
-  const formInitValues = {
+  const initialDateRangeRef = useRef([
+    timestamp2string(getTodayStartTimestamp()),
+    timestamp2string(Date.now() / 1000 + 3600),
+  ]);
+
+  const getDefaultFormInitValues = (savedUsernames = persistentUsernames) => ({
     username: '',
-    usernames: persistentUsernames,
+    usernames: normalizeUsernames(savedUsernames),
     token_name: '',
     model_name: '',
     channel: '',
     group: '',
     request_id: '',
-    dateRange: [
-      timestamp2string(getTodayStartTimestamp()),
-      timestamp2string(now.getTime() / 1000 + 3600),
-    ],
+    dateRange: [...initialDateRangeRef.current],
     logType: '0',
-  };
+  });
+
+  const formInitValues = getDefaultFormInitValues();
 
   // Column visibility state
   const [visibleColumns, setVisibleColumns] = useState({});
@@ -258,15 +261,17 @@ export const useLogsData = () => {
 
   // 获取表单值的辅助函数，确保所有值都是字符串
   const getFormValues = () => {
-    const formValues = formApi ? formApi.getValues() : {};
+    const fallbackValues = getDefaultFormInitValues();
+    const formValues = formApi ? formApi.getValues() : fallbackValues;
     const username = `${formValues.username || ''}`.trim();
     const usernames = normalizeUsernames([
-      ...(Array.isArray(formValues.usernames) ? formValues.usernames : []),
+      ...(Array.isArray(formValues.usernames)
+        ? formValues.usernames
+        : fallbackValues.usernames),
       username,
     ]);
 
-    let start_timestamp = timestamp2string(getTodayStartTimestamp());
-    let end_timestamp = timestamp2string(now.getTime() / 1000 + 3600);
+    let [start_timestamp, end_timestamp] = fallbackValues.dateRange;
 
     if (
       formValues.dateRange &&
@@ -940,10 +945,7 @@ export const useLogsData = () => {
       return;
     }
 
-    formApi.setValues({
-      ...formInitValues,
-      usernames: persistentUsernames,
-    });
+    formApi.setValues(getDefaultFormInitValues());
     setLogType(0);
     setActivePage(1);
     setTimeout(() => {

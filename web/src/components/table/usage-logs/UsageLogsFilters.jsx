@@ -51,10 +51,9 @@ const LogsFilters = ({
       trigger='change'
       stopValidateWithError={false}
     >
-      <div className='flex flex-col gap-2'>
-        <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2'>
-          {/* 时间选择器 */}
-          <div className='col-span-1 lg:col-span-2'>
+      <div className='rounded-xl border border-[var(--semi-color-border)] bg-[var(--semi-color-fill-0)] p-3'>
+        <div className='grid grid-cols-1 md:grid-cols-6 xl:grid-cols-12 gap-3'>
+          <div className='md:col-span-3 xl:col-span-4'>
             <Form.DatePicker
               field='dateRange'
               className='w-full'
@@ -71,112 +70,14 @@ const LogsFilters = ({
             />
           </div>
 
-          {/* 其他搜索字段 */}
-          <Form.Input
-            field='token_name'
-            prefix={<IconSearch />}
-            placeholder={t('令牌名称')}
-            showClear
-            pure
-            size='small'
-          />
-
-          <Form.Input
-            field='model_name'
-            prefix={<IconSearch />}
-            placeholder={t('模型名称')}
-            showClear
-            pure
-            size='small'
-          />
-
-          <Form.Input
-            field='group'
-            prefix={<IconSearch />}
-            placeholder={t('分组')}
-            showClear
-            pure
-            size='small'
-          />
-
-          <Form.Input
-            field='request_id'
-            prefix={<IconSearch />}
-            placeholder={t('Request ID')}
-            showClear
-            pure
-            size='small'
-          />
-
-          {isAdminUser && (
-            <>
-              <Form.Input
-                field='channel'
-                prefix={<IconSearch />}
-                placeholder={t('渠道 ID')}
-                showClear
-                pure
-                size='small'
-              />
-              <Form.Input
-                field='username'
-                prefix={<IconSearch />}
-                placeholder={t('用户名')}
-                showClear
-                pure
-                size='small'
-              />
-              <div className='col-span-1 md:col-span-2'>
-                <div className='flex items-center justify-between gap-2 mb-1 text-xs text-[var(--semi-color-text-2)]'>
-                  <span>{t('选择用户（可多选）')}</span>
-                  {persistentUsernames.length > 0 && (
-                    <Button
-                      type='tertiary'
-                      size='small'
-                      htmlType='button'
-                      onClick={clearPersistentUsernames}
-                    >
-                      {t('清空')}
-                    </Button>
-                  )}
-                </div>
-                <Form.Select
-                  field='usernames'
-                  optionList={userOptions}
-                  placeholder={t('输入用户名搜索')}
-                  multiple
-                  filter
-                  searchPosition='dropdown'
-                  autoClearSearchValue={false}
-                  showClear
-                  pure
-                  size='small'
-                  loading={userOptionsLoading}
-                  onSearch={handleUserSearch}
-                  onChange={handleUserSelectionChange}
-                  onDropdownVisibleChange={handleUserDropdownVisibleChange}
-                  emptyContent={t('输入用户名搜索')}
-                />
-                <div className='mt-1 text-xs text-[var(--semi-color-text-2)]'>
-                  {t('多选用户会保留在本地，刷新后继续生效')}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* 操作按钮区域 */}
-        <div className='flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3'>
-          {/* 日志类型选择器 */}
-          <div className='w-full sm:w-auto'>
+          <div className='md:col-span-3 xl:col-span-2'>
             <Form.Select
               field='logType'
               placeholder={t('日志类型')}
-              className='w-full sm:w-auto min-w-[120px]'
+              className='w-full'
               showClear
               pure
               onChange={() => {
-                // 延迟执行搜索，让表单值先更新
                 setTimeout(() => {
                   refresh();
                 }, 0);
@@ -193,32 +94,139 @@ const LogsFilters = ({
             </Form.Select>
           </div>
 
-          <div className='flex gap-2 w-full sm:w-auto justify-end'>
-            <Button
-              type='tertiary'
-              htmlType='submit'
-              loading={loading}
+          <div className='md:col-span-3 xl:col-span-2'>
+            <Form.Input
+              field='token_name'
+              prefix={<IconSearch />}
+              placeholder={t('令牌名称')}
+              showClear
+              pure
               size='small'
-            >
-              {t('查询')}
-            </Button>
-            <Button
-              type='tertiary'
-              onClick={resetFilters}
-              htmlType='button'
-              size='small'
-            >
-              {t('重置')}
-            </Button>
-            <Button
-              type='tertiary'
-              onClick={() => setShowColumnSelector(true)}
-              htmlType='button'
-              size='small'
-            >
-              {t('列设置')}
-            </Button>
+            />
           </div>
+
+          <div className='md:col-span-3 xl:col-span-2'>
+            <Form.Input
+              field='model_name'
+              prefix={<IconSearch />}
+              placeholder={t('模型名称')}
+              showClear
+              pure
+              size='small'
+            />
+          </div>
+
+          <div className='md:col-span-3 xl:col-span-2'>
+            <Form.Input
+              field='group'
+              prefix={<IconSearch />}
+              placeholder={t('分组')}
+              showClear
+              pure
+              size='small'
+            />
+          </div>
+
+          <div className='md:col-span-3 xl:col-span-3'>
+            <Form.Input
+              field='request_id'
+              prefix={<IconSearch />}
+              placeholder={t('Request ID')}
+              showClear
+              pure
+              size='small'
+            />
+          </div>
+
+          {isAdminUser && (
+            <>
+              <div className='md:col-span-3 xl:col-span-2'>
+                <Form.Input
+                  field='channel'
+                  prefix={<IconSearch />}
+                  placeholder={t('渠道 ID')}
+                  showClear
+                  pure
+                  size='small'
+                />
+              </div>
+
+              <div className='md:col-span-3 xl:col-span-2'>
+                <Form.Input
+                  field='username'
+                  prefix={<IconSearch />}
+                  placeholder={t('用户名')}
+                  showClear
+                  pure
+                  size='small'
+                />
+              </div>
+
+              <div className='md:col-span-6 xl:col-span-7 rounded-lg border border-[var(--semi-color-border)] bg-[var(--semi-color-bg-1)] p-3'>
+                <div className='flex items-center justify-between gap-2 mb-2 text-xs text-[var(--semi-color-text-2)]'>
+                  <span>{t('选择用户（可多选）')}</span>
+                  {persistentUsernames.length > 0 && (
+                    <Button
+                      type='tertiary'
+                      size='small'
+                      htmlType='button'
+                      onClick={clearPersistentUsernames}
+                    >
+                      {t('清空')}
+                    </Button>
+                  )}
+                </div>
+                <Form.Select
+                  field='usernames'
+                  optionList={userOptions}
+                  placeholder={t('输入用户名搜索')}
+                  className='w-full'
+                  multiple
+                  filter
+                  searchPosition='dropdown'
+                  autoClearSearchValue={false}
+                  showClear
+                  pure
+                  size='small'
+                  loading={userOptionsLoading}
+                  onSearch={handleUserSearch}
+                  onChange={handleUserSelectionChange}
+                  onDropdownVisibleChange={handleUserDropdownVisibleChange}
+                  emptyContent={t('输入用户名搜索')}
+                />
+                <div className='mt-2 text-xs text-[var(--semi-color-text-2)] leading-5'>
+                  {t('多选用户会保留在本地，刷新后继续生效')}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className='mt-3 flex flex-wrap justify-end gap-2 border-t border-[var(--semi-color-border)] pt-3'>
+          <Button
+            type='tertiary'
+            htmlType='submit'
+            loading={loading}
+            size='small'
+          >
+            {t('查询')}
+          </Button>
+          <Button
+            type='tertiary'
+            onClick={resetFilters}
+            htmlType='button'
+            size='small'
+          >
+            {t('重置')}
+          </Button>
+          <Button
+            type='tertiary'
+            onClick={() => setShowColumnSelector(true)}
+            htmlType='button'
+            size='small'
+          >
+            {t('列设置')}
+          </Button>
         </div>
       </div>
     </Form>
