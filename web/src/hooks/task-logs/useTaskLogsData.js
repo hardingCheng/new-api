@@ -94,6 +94,7 @@ export const useTaskLogsData = () => {
   const formInitValues = {
     channel_id: '',
     task_id: '',
+    status: '',
     dateRange: [
       timestamp2string(zeroNow.getTime() / 1000),
       timestamp2string(now.getTime() / 1000 + 3600),
@@ -219,6 +220,7 @@ export const useTaskLogsData = () => {
     return {
       channel_id: formValues.channel_id || '',
       task_id: formValues.task_id || '',
+      status: formValues.status || '',
       username: formValues.username || '',
       model_name: formValues.model_name || '',
       has_video_reference: formValues.has_video_reference || '',
@@ -248,13 +250,13 @@ export const useTaskLogsData = () => {
   // Load logs function
   const loadLogs = async (page = 1, size = pageSize) => {
     setLoading(true);
-    const { channel_id, task_id, username, model_name, has_video_reference, start_timestamp, end_timestamp } =
+    const { channel_id, task_id, status, username, model_name, has_video_reference, start_timestamp, end_timestamp } =
       getFormValues();
     let localStartTimestamp = parseInt(Date.parse(start_timestamp) / 1000);
     let localEndTimestamp = parseInt(Date.parse(end_timestamp) / 1000);
     let url = isAdminUser
-      ? `/api/task/?p=${page}&page_size=${size}&channel_id=${channel_id}&task_id=${task_id}&username=${username}&model_name=${model_name}&has_video_reference=${has_video_reference}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`
-      : `/api/task/self?p=${page}&page_size=${size}&task_id=${task_id}&has_video_reference=${has_video_reference}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
+      ? `/api/task/?p=${page}&page_size=${size}&channel_id=${channel_id}&task_id=${task_id}&status=${status}&username=${username}&model_name=${model_name}&has_video_reference=${has_video_reference}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`
+      : `/api/task/self?p=${page}&page_size=${size}&task_id=${task_id}&status=${status}&has_video_reference=${has_video_reference}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
     const res = await API.get(url);
     const { success, message, data } = res.data;
     if (success) {
@@ -287,11 +289,11 @@ export const useTaskLogsData = () => {
     }
     setExporting(true);
     try {
-      const { channel_id, task_id, start_timestamp, end_timestamp } =
+      const { channel_id, task_id, status, start_timestamp, end_timestamp } =
         getFormValues();
       const localStartTimestamp = parseInt(Date.parse(start_timestamp) / 1000);
       const localEndTimestamp = parseInt(Date.parse(end_timestamp) / 1000);
-      const url = `/api/task/export?channel_id=${channel_id}&task_id=${task_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
+      const url = `/api/task/export?channel_id=${channel_id}&task_id=${task_id}&status=${status}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
 
       const res = await API.get(url, { responseType: 'blob' });
       const blob = new Blob([
