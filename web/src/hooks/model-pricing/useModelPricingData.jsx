@@ -23,6 +23,7 @@ import {
   API,
   copy,
   normalizeEnableGroups,
+  shouldHideModelInAllGroups,
   showError,
   showInfo,
   showSuccess,
@@ -104,14 +105,16 @@ export const useModelPricingData = () => {
         normalizeEnableGroups(model.enable_groups).includes(filterGroup),
       );
     } else {
-      // 全部分组时，只显示用户可见分组中的模型
+      // 全部分组时，只显示用户可见分组中的模型，并隐藏需要仅在具体分组展示的模型。
       const userVisibleGroups = Object.keys(usableGroup).filter((key) => key !== '');
       result = result.filter((model) => {
+        if (shouldHideModelInAllGroups(model.model_name)) {
+          return false;
+        }
         const enableGroups = normalizeEnableGroups(model.enable_groups);
         if (enableGroups.length === 0) {
           return false;
         }
-        // 模型的 enable_groups 中至少有一个在用户可见分组中
         return enableGroups.some((g) => userVisibleGroups.includes(g));
       });
     }

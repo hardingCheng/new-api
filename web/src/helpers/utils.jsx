@@ -218,6 +218,20 @@ export function normalizeEnableGroups(enableGroups) {
     .filter(Boolean);
 }
 
+export function shouldHideModelInAllGroups(modelName) {
+  const normalized = String(modelName || '').toLowerCase().trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    normalized.startsWith('kie/') ||
+    normalized.startsWith('fal/') ||
+    normalized.startsWith('seedance-2.0') ||
+    normalized.startsWith('doubao-seedance-2.0')
+  );
+}
+
 export function getTodayStartTimestamp() {
   var now = new Date();
   now.setHours(0, 0, 0, 0);

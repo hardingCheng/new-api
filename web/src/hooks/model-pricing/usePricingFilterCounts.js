@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import { useMemo } from 'react';
-import { normalizeEnableGroups } from '../../helpers';
+import { normalizeEnableGroups, shouldHideModelInAllGroups } from '../../helpers';
 
 // 工具函数：将 tags 字符串转为小写去重数组
 const normalizeTags = (tags = '') =>
@@ -55,6 +55,9 @@ export const usePricingFilterCounts = ({
     // 分组
     if (!ignore.includes('group') && filterGroup !== 'all') {
       if (!enableGroups.includes(filterGroup)) return false;
+    }
+    if (!ignore.includes('group') && filterGroup === 'all') {
+      if (shouldHideModelInAllGroups(model.model_name)) return false;
     }
 
     // 计费类型
