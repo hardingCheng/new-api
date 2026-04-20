@@ -177,7 +177,7 @@ export default function SettingGeminiModel(props) {
                   label={t('启用图片模型 inlineData 响应模式')}
                   field={'gemini.image_response_inline_data_enabled'}
                   extraText={t(
-                    '开启后，模型名包含 image 的 Gemini generateContent 请求会自动补上 generationConfig.responseMode=inlineData；关闭后不自动传该参数',
+                    '开启后，命中“支持的图像模型”列表或模型名包含 image 的 Gemini generateContent 请求会自动补上 generationConfig.responseMode=inlineData；关闭后不自动传该参数',
                   )}
                   onChange={(value) =>
                     setInputs({

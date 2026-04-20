@@ -183,6 +183,41 @@ export function removeTrailingSlash(url) {
   }
 }
 
+export function normalizeEnableGroups(enableGroups) {
+  if (Array.isArray(enableGroups)) {
+    return enableGroups
+      .map((group) => String(group).trim())
+      .filter(Boolean);
+  }
+
+  if (typeof enableGroups !== 'string') {
+    return [];
+  }
+
+  const trimmed = enableGroups.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((group) => String(group).trim())
+          .filter(Boolean);
+      }
+    } catch {
+      // Fall through to delimiter-based parsing below.
+    }
+  }
+
+  return trimmed
+    .split(/[,;|]+/)
+    .map((group) => group.trim())
+    .filter(Boolean);
+}
+
 export function getTodayStartTimestamp() {
   var now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -618,17 +653,15 @@ export const calculateModelPrice = ({
   precision = 4,
 }) => {
   // 1. 选择实际使用的分组
+  const enableGroups = normalizeEnableGroups(record.enable_groups);
   let usedGroup = selectedGroup;
   let usedGroupRatio = groupRatio[selectedGroup];
 
   if (selectedGroup === 'all' || usedGroupRatio === undefined) {
     // 在模型可用分组中选择倍率最小的分组，若无则使用 1
     let minRatio = Number.POSITIVE_INFINITY;
-    if (
-      Array.isArray(record.enable_groups) &&
-      record.enable_groups.length > 0
-    ) {
-      record.enable_groups.forEach((g) => {
+    if (enableGroups.length > 0) {
+      enableGroups.forEach((g) => {
         const r = groupRatio[g];
         if (r !== undefined && r < minRatio) {
           minRatio = r;

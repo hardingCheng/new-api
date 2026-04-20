@@ -19,7 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { useState, useEffect, useContext, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { API, copy, showError, showInfo, showSuccess } from '../../helpers';
+import {
+  API,
+  copy,
+  normalizeEnableGroups,
+  showError,
+  showInfo,
+  showSuccess,
+} from '../../helpers';
 import { Modal } from '@douyinfe/semi-ui';
 import { UserContext } from '../../context/User';
 import { StatusContext } from '../../context/Status';
@@ -94,17 +101,18 @@ export const useModelPricingData = () => {
     // 分组筛选
     if (filterGroup !== 'all') {
       result = result.filter((model) =>
-        model.enable_groups.includes(filterGroup),
+        normalizeEnableGroups(model.enable_groups).includes(filterGroup),
       );
     } else {
       // 全部分组时，只显示用户可见分组中的模型
       const userVisibleGroups = Object.keys(usableGroup).filter((key) => key !== '');
       result = result.filter((model) => {
-        if (!Array.isArray(model.enable_groups) || model.enable_groups.length === 0) {
+        const enableGroups = normalizeEnableGroups(model.enable_groups);
+        if (enableGroups.length === 0) {
           return false;
         }
         // 模型的 enable_groups 中至少有一个在用户可见分组中
-        return model.enable_groups.some((g) => userVisibleGroups.includes(g));
+        return enableGroups.some((g) => userVisibleGroups.includes(g));
       });
     }
 

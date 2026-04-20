@@ -7,6 +7,9 @@ import (
 )
 
 func shouldUseInlineDataResponseMode(modelName string) bool {
-	return model_setting.GetGeminiSettings().ImageResponseInlineDataEnabled &&
+	if !model_setting.GetGeminiSettings().ImageResponseInlineDataEnabled {
+		return false
+	}
+	return model_setting.IsGeminiModelSupportImagine(modelName) ||
 		strings.Contains(strings.ToLower(modelName), "image")
 }

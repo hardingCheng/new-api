@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import { useMemo } from 'react';
+import { normalizeEnableGroups } from '../../helpers';
 
 // 工具函数：将 tags 字符串转为小写去重数组
 const normalizeTags = (tags = '') =>
@@ -49,10 +50,11 @@ export const usePricingFilterCounts = ({
    * @returns {boolean}
    */
   const matchesFilters = (model, ignore = []) => {
+    const enableGroups = normalizeEnableGroups(model.enable_groups);
+
     // 分组
     if (!ignore.includes('group') && filterGroup !== 'all') {
-      if (!model.enable_groups || !model.enable_groups.includes(filterGroup))
-        return false;
+      if (!enableGroups.includes(filterGroup)) return false;
     }
 
     // 计费类型
