@@ -276,18 +276,30 @@ export const getTaskLogsColumns = ({
       dataIndex: 'channel_id',
       render: (text, record, index) => {
         return isAdminUser ? (
-          <div>
+          <Space spacing={6} wrap>
+            {record.channel_name ? (
+              <Tag
+                color={colors[parseInt(text) % colors.length]}
+                size='large'
+                shape='circle'
+                onClick={() => {
+                  copyText(record.channel_name);
+                }}
+              >
+                {record.channel_name}
+              </Tag>
+            ) : null}
             <Tag
-              color={colors[parseInt(text) % colors.length]}
+              color='grey'
               size='large'
               shape='circle'
               onClick={() => {
                 copyText(text);
               }}
             >
-              {text}
+              #{text}
             </Tag>
-          </div>
+          </Space>
         ) : (
           <></>
         );

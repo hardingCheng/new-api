@@ -116,6 +116,13 @@ func ExportUserTask(c *gin.Context) {
 
 func tasksToDto(tasks []*model.Task, fillUser bool) []*dto.TaskDto {
 	var userIdMap map[int]*model.UserBase
+	channelIds := types.NewSet[int]()
+	for _, task := range tasks {
+		if task.ChannelId > 0 {
+			channelIds.Add(task.ChannelId)
+		}
+	}
+	channelNameMap := getTaskChannelNameMap(channelIds.Items())
 	if fillUser {
 		userIdMap = make(map[int]*model.UserBase)
 		userIds := types.NewSet[int]()
@@ -136,22 +143,54 @@ func tasksToDto(tasks []*model.Task, fillUser bool) []*dto.TaskDto {
 				task.Username = user.Username
 			}
 		}
-		result[i] = relay.TaskModel2Dto(task)
+		taskDto := relay.TaskModel2Dto(task)
+		if task.ChannelId > 0 {
+			taskDto.ChannelName = channelNameMap[task.ChannelId]
+		}
+		result[i] = taskDto
 	}
 	return result
+}
+
+func getTaskChannelNameMap(channelIds []int) map[int]string {
+	channelNameMap := make(map[int]string, len(channelIds))
+	if len(channelIds) == 0 {
+		return channelNameMap
+	}
+	if common.MemoryCacheEnabled {
+		for _, channelId := range channelIds {
+			cacheChannel, err := model.CacheGetChannel(channelId)
+			if err == nil && cacheChannel != nil {
+				channelNameMap[channelId] = cacheChannel.Name
+			}
+		}
+		return channelNameMap
+	}
+
+	var channels []struct {
+		Id   int    `gorm:"column:id"`
+		Name string `gorm:"column:name"`
+	}
+	if err := model.DB.Table("channels").Select("id, name").Where("id IN ?", channelIds).Find(&channels).Error; err != nil {
+		return channelNameMap
+	}
+	for _, channel := range channels {
+		channelNameMap[channel.Id] = channel.Name
+	}
+	return channelNameMap
 }
 
 func parseTaskQueryParams(c *gin.Context) model.SyncTaskQueryParams {
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	params := model.SyncTaskQueryParams{
-		Platform:       constant.TaskPlatform(c.Query("platform")),
-		TaskID:         c.Query("task_id"),
-		Status:         c.Query("status"),
-		Action:         c.Query("action"),
-		StartTimestamp: startTimestamp,
-		EndTimestamp:   endTimestamp,
-		ChannelID:      c.Query("channel_id"),
+		Platform:          constant.TaskPlatform(c.Query("platform")),
+		TaskID:            c.Query("task_id"),
+		Status:            c.Query("status"),
+		Action:            c.Query("action"),
+		StartTimestamp:    startTimestamp,
+		EndTimestamp:      endTimestamp,
+		ChannelID:         c.Query("channel_id"),
 		ModelName:         c.Query("model_name"),
 		HasVideoReference: c.Query("has_video_reference"),
 	}
@@ -176,7 +215,7 @@ func exportTaskAsXlsx(c *gin.Context, items []*dto.TaskDto, scope string) error 
 	f.SetSheetName("Sheet1", sheetName)
 
 	headers := []string{
-		"ID", "任务ID", "平台", "用户ID", "用户名", "分组", "渠道ID", "消耗金额",
+		"ID", "任务ID", "平台", "用户ID", "用户名", "分组", "渠道ID", "渠道名称", "消耗金额",
 		"类型", "状态", "失败原因", "结果URL", "进度", "模型名称", "视频时长(秒)", "视频参考", "退款金额",
 		"提交时间", "开始时间", "结束时间", "创建时间", "更新时间",
 	}
@@ -198,6 +237,7 @@ func exportTaskAsXlsx(c *gin.Context, items []*dto.TaskDto, scope string) error 
 			item.Username,
 			item.Group,
 			item.ChannelId,
+			item.ChannelName,
 			float64(item.Quota) / common.QuotaPerUnit,
 			item.Action,
 			item.Status,
