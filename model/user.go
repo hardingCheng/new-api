@@ -85,6 +85,7 @@ func (user *User) GetSetting() dto.UserSetting {
 			common.SysLog("failed to unmarshal setting: " + err.Error())
 		}
 	}
+	setting.RecordIpLog = true
 	return setting
 }
 

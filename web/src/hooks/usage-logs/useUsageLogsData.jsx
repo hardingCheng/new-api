@@ -945,7 +945,13 @@ export const useLogsData = () => {
       return;
     }
 
-    formApi.setValues(getDefaultFormInitValues());
+    if (isAdminUser) {
+      setPersistentUsernames([]);
+      localStorage.removeItem(ADMIN_USER_FILTER_STORAGE_KEY);
+      setUserOptions((prev) => mergeUserOptions(prev, [], []));
+    }
+
+    formApi.setValues(getDefaultFormInitValues([]));
     setLogType(0);
     setActivePage(1);
     setTimeout(() => {
