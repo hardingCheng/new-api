@@ -68,6 +68,16 @@ export const useTaskLogsData = () => {
   const STORAGE_KEY = isAdminUser
     ? 'task-logs-table-columns-admin'
     : 'task-logs-table-columns-user';
+  const ADMIN_ONLY_COLUMN_KEYS = [
+    COLUMN_KEYS.CHANNEL,
+    COLUMN_KEYS.USERNAME,
+    COLUMN_KEYS.MODEL_NAME,
+    COLUMN_KEYS.QUOTA,
+    COLUMN_KEYS.VIDEO_DURATION,
+    COLUMN_KEYS.REFUND,
+  ];
+  const isAdminOnlyColumn = (columnKey) =>
+    ADMIN_ONLY_COLUMN_KEYS.includes(columnKey);
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -119,12 +129,9 @@ export const useTaskLogsData = () => {
 
         // For non-admin users, force-hide admin-only columns (does not touch admin settings)
         if (!isAdminUser) {
-          merged[COLUMN_KEYS.CHANNEL] = false;
-          merged[COLUMN_KEYS.USERNAME] = false;
-          merged[COLUMN_KEYS.MODEL_NAME] = false;
-          merged[COLUMN_KEYS.QUOTA] = false;
-          merged[COLUMN_KEYS.VIDEO_DURATION] = false;
-          merged[COLUMN_KEYS.REFUND] = false;
+          ADMIN_ONLY_COLUMN_KEYS.forEach((columnKey) => {
+            merged[columnKey] = false;
+          });
         }
         setVisibleColumns(merged);
       } catch (e) {
@@ -168,6 +175,9 @@ export const useTaskLogsData = () => {
 
   // Handle column visibility change
   const handleColumnVisibilityChange = (columnKey, checked) => {
+    if (!isAdminUser && isAdminOnlyColumn(columnKey)) {
+      return;
+    }
     const updatedColumns = { ...visibleColumns, [columnKey]: checked };
     setVisibleColumns(updatedColumns);
   };
@@ -178,12 +188,7 @@ export const useTaskLogsData = () => {
     const updatedColumns = {};
 
     allKeys.forEach((key) => {
-      if (
-        (key === COLUMN_KEYS.CHANNEL || key === COLUMN_KEYS.USERNAME ||
-         key === COLUMN_KEYS.MODEL_NAME || key === COLUMN_KEYS.QUOTA ||
-         key === COLUMN_KEYS.VIDEO_DURATION || key === COLUMN_KEYS.REFUND) &&
-        !isAdminUser
-      ) {
+      if (!isAdminUser && isAdminOnlyColumn(key)) {
         updatedColumns[key] = false;
       } else {
         updatedColumns[key] = checked;
@@ -411,6 +416,7 @@ export const useTaskLogsData = () => {
     handleSelectAll,
     initDefaultColumns,
     COLUMN_KEYS,
+    isAdminOnlyColumn,
 
     // Compact mode
     compactMode,

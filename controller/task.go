@@ -56,7 +56,7 @@ func GetUserTaskDetail(c *gin.Context) {
 		common.ApiErrorMsg(c, "task not found")
 		return
 	}
-	common.ApiSuccess(c, relay.TaskModel2Dto(task))
+	common.ApiSuccess(c, taskDtoToUserResponse(relay.TaskModel2Dto(task)))
 }
 
 func GetAllTask(c *gin.Context) {
@@ -95,7 +95,7 @@ func GetUserTask(c *gin.Context) {
 	items := model.TaskGetAllUserTask(userId, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), queryParams)
 	total := model.TaskCountAllUserTask(userId, queryParams)
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(tasksToDto(items, false))
+	pageInfo.SetItems(tasksToUserResponse(items))
 	common.ApiSuccess(c, pageInfo)
 }
 
@@ -148,6 +148,45 @@ func tasksToDto(tasks []*model.Task, fillUser bool) []*dto.TaskDto {
 			taskDto.ChannelName = channelNameMap[task.ChannelId]
 		}
 		result[i] = taskDto
+	}
+	return result
+}
+
+func tasksToUserResponse(tasks []*model.Task) []map[string]any {
+	taskDtos := tasksToDto(tasks, false)
+	result := make([]map[string]any, len(taskDtos))
+	for i, taskDto := range taskDtos {
+		result[i] = taskDtoToUserResponse(taskDto)
+	}
+	return result
+}
+
+func taskDtoToUserResponse(taskDto *dto.TaskDto) map[string]any {
+	result := map[string]any{
+		"id":                  taskDto.ID,
+		"created_at":          taskDto.CreatedAt,
+		"updated_at":          taskDto.UpdatedAt,
+		"task_id":             taskDto.TaskID,
+		"platform":            taskDto.Platform,
+		"user_id":             taskDto.UserId,
+		"group":               taskDto.Group,
+		"channel_id":          taskDto.ChannelId,
+		"action":              taskDto.Action,
+		"status":              taskDto.Status,
+		"fail_reason":         taskDto.FailReason,
+		"submit_time":         taskDto.SubmitTime,
+		"start_time":          taskDto.StartTime,
+		"finish_time":         taskDto.FinishTime,
+		"progress":            taskDto.Progress,
+		"properties":          taskDto.Properties,
+		"has_video_reference": taskDto.HasVideoReference,
+		"data":                taskDto.Data,
+	}
+	if taskDto.ChannelName != "" {
+		result["channel_name"] = taskDto.ChannelName
+	}
+	if taskDto.ResultURL != "" {
+		result["result_url"] = taskDto.ResultURL
 	}
 	return result
 }
@@ -219,6 +258,13 @@ func exportTaskAsXlsx(c *gin.Context, items []*dto.TaskDto, scope string) error 
 		"类型", "状态", "失败原因", "结果URL", "进度", "模型名称", "视频时长(秒)", "视频参考", "退款金额",
 		"提交时间", "开始时间", "结束时间", "创建时间", "更新时间",
 	}
+	if scope == "self" {
+		headers = []string{
+			"ID", "任务ID", "平台", "用户ID", "用户名", "分组", "渠道ID", "渠道名称",
+			"类型", "状态", "失败原因", "结果URL", "进度", "模型名称", "视频参考",
+			"提交时间", "开始时间", "结束时间", "创建时间", "更新时间",
+		}
+	}
 
 	for i, header := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
@@ -253,6 +299,30 @@ func exportTaskAsXlsx(c *gin.Context, items []*dto.TaskDto, scope string) error 
 			formatUnix(item.FinishTime),
 			formatUnix(item.CreatedAt),
 			formatUnix(item.UpdatedAt),
+		}
+		if scope == "self" {
+			values = []any{
+				item.ID,
+				item.TaskID,
+				item.Platform,
+				item.UserId,
+				item.Username,
+				item.Group,
+				item.ChannelId,
+				item.ChannelName,
+				item.Action,
+				item.Status,
+				item.FailReason,
+				item.ResultURL,
+				item.Progress,
+				item.ModelName,
+				item.HasVideoReference,
+				formatUnix(item.SubmitTime),
+				formatUnix(item.StartTime),
+				formatUnix(item.FinishTime),
+				formatUnix(item.CreatedAt),
+				formatUnix(item.UpdatedAt),
+			}
 		}
 		for col, value := range values {
 			cell, _ := excelize.CoordinatesToCellName(col+1, row)

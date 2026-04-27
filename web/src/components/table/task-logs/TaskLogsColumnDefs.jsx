@@ -244,6 +244,13 @@ export const getTaskLogsColumns = ({
   openAudioModal,
 }) => {
   const [downloadingTasks, setDownloadingTasks] = React.useState(new Set());
+  const getRecordForDetail = (record) => {
+    if (isAdminUser) {
+      return record;
+    }
+    const { quota, video_duration, refund_quota, ...publicRecord } = record;
+    return publicRecord;
+  };
 
   return [
     {
@@ -354,7 +361,7 @@ export const getTaskLogsColumns = ({
           <Typography.Text
             ellipsis={{ showTooltip: true }}
             onClick={() => {
-              openContentModal(JSON.stringify(record, null, 2));
+              openContentModal(JSON.stringify(getRecordForDetail(record), null, 2));
             }}
           >
             <div>{text}</div>
