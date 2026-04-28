@@ -109,6 +109,12 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		return nil
 	}
 
+	if taskcommon.IsGrokImagineVideoModel(info.UpstreamModelName) ||
+		taskcommon.IsGrokImagineVideoModel(info.OriginModelName) ||
+		taskcommon.IsGrokImagineVideoModel(req.Model) {
+		return nil
+	}
+
 	seconds, _ := strconv.Atoi(strings.TrimSpace(req.Seconds))
 	if seconds == 0 {
 		seconds = req.Duration
@@ -388,7 +394,7 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 		} else if resTask.VideoURL != "" {
 			originalURL = resTask.VideoURL
 		}
-		
+
 		// 直接使用原始 URL，R2 上传统一在 task_polling.go 中处理
 		taskResult.Url = originalURL
 		// 如果上游没有返回 URL，调用者会构建代理 URL
@@ -411,12 +417,12 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	data := task.Data
 	var err error
-	
+
 	// 替换为公开的 task ID
 	if data, err = sjson.SetBytes(data, "id", task.TaskID); err != nil {
 		return nil, errors.Wrap(err, "set id failed")
 	}
-	
+
 	// 如果任务成功，确保 url、video_url 和 result_url 字段存在
 	if task.Status == model.TaskStatusSuccess {
 		var respMap map[string]any
@@ -430,7 +436,7 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 			} else if task.PrivateData.ResultURL != "" {
 				resultURL = task.PrivateData.ResultURL
 			}
-			
+
 			// 如果有视频 URL，确保顶层的 url、video_url 和 result_url 都存在
 			if resultURL != "" {
 				// 设置顶层 url（如果不存在）
@@ -439,21 +445,21 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 						return nil, errors.Wrap(err, "set url failed")
 					}
 				}
-				
+
 				// 设置顶层 video_url（如果不存在）
 				if _, hasVideoURL := respMap["video_url"]; !hasVideoURL {
 					if data, err = sjson.SetBytes(data, "video_url", resultURL); err != nil {
 						return nil, errors.Wrap(err, "set video_url failed")
 					}
 				}
-				
+
 				// 设置顶层 result_url（如果不存在）
 				if _, hasResultURL := respMap["result_url"]; !hasResultURL {
 					if data, err = sjson.SetBytes(data, "result_url", resultURL); err != nil {
 						return nil, errors.Wrap(err, "set result_url failed")
 					}
 				}
-				
+
 				// 同时将 url、video_url 和 result_url 添加到 metadata 中
 				if data, err = sjson.SetBytes(data, "metadata.url", resultURL); err != nil {
 					return nil, errors.Wrap(err, "set metadata.url failed")
@@ -467,6 +473,6 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 			}
 		}
 	}
-	
+
 	return data, nil
 }

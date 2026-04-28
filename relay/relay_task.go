@@ -196,6 +196,9 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 			info.PriceData.AddOtherRatio(k, v)
 		}
 	}
+	if taskcommon.IsGrokImagineVideoModel(info.OriginModelName) || taskcommon.IsGrokImagineVideoModel(info.UpstreamModelName) {
+		info.PriceData.OtherRatios = nil
+	}
 
 	// 6. 将 OtherRatios 应用到基础额度
 	if !common.StringsContains(constant.TaskPricePatches, modelName) {
@@ -545,7 +548,7 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 	data := task.Data
 	resultURL := task.GetResultURL()
-	
+
 	// 如果任务成功，优先从 data 中提取 url/video_url，最后才使用 ResultURL
 	if task.Status == model.TaskStatusSuccess {
 		var dataMap map[string]any
@@ -556,23 +559,23 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 			} else if videoURL, ok := dataMap["video_url"].(string); ok && videoURL != "" {
 				resultURL = videoURL
 			}
-			
+
 			// 确保 data 中包含 url 和 video_url（如果有 resultURL）
 			if resultURL != "" {
 				modified := false
-				
+
 				// 如果 data 中没有 url，添加它
 				if _, hasURL := dataMap["url"]; !hasURL {
 					dataMap["url"] = resultURL
 					modified = true
 				}
-				
+
 				// 如果 data 中没有 video_url，添加它
 				if _, hasVideoURL := dataMap["video_url"]; !hasVideoURL {
 					dataMap["video_url"] = resultURL
 					modified = true
 				}
-				
+
 				// 如果修改了，重新序列化
 				if modified {
 					if newData, err := common.Marshal(dataMap); err == nil {
@@ -582,25 +585,25 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 			}
 		}
 	}
-	
+
 	d := &dto.TaskDto{
-		ID:         task.ID,
-		CreatedAt:  task.CreatedAt,
-		UpdatedAt:  task.UpdatedAt,
-		TaskID:     task.TaskID,
-		Platform:   string(task.Platform),
-		UserId:     task.UserId,
-		Group:      task.Group,
-		ChannelId:  task.ChannelId,
-		Quota:      task.Quota,
-		Action:     task.Action,
-		Status:     string(task.Status),
-		FailReason: task.FailReason,
-		ResultURL:  resultURL,
-		SubmitTime: task.SubmitTime,
-		StartTime:  task.StartTime,
-		FinishTime: task.FinishTime,
-		Progress:   task.Progress,
+		ID:                task.ID,
+		CreatedAt:         task.CreatedAt,
+		UpdatedAt:         task.UpdatedAt,
+		TaskID:            task.TaskID,
+		Platform:          string(task.Platform),
+		UserId:            task.UserId,
+		Group:             task.Group,
+		ChannelId:         task.ChannelId,
+		Quota:             task.Quota,
+		Action:            task.Action,
+		Status:            string(task.Status),
+		FailReason:        task.FailReason,
+		ResultURL:         resultURL,
+		SubmitTime:        task.SubmitTime,
+		StartTime:         task.StartTime,
+		FinishTime:        task.FinishTime,
+		Progress:          task.Progress,
 		Properties:        task.Properties,
 		HasVideoReference: task.HasVideoReference,
 		Username:          task.Username,

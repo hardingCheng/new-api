@@ -180,6 +180,11 @@ func IsSeedance2Model(modelName string) bool {
 	return strings.HasPrefix(m, "seedance-2.0") || strings.HasPrefix(m, "doubao-seedance-2.0")
 }
 
+func IsGrokImagineVideoModel(modelName string) bool {
+	m := strings.ToLower(strings.TrimSpace(modelName))
+	return m == "grok-imagine-video" || m == "grok-imagine-1.0-video"
+}
+
 // ---------------------------------------------------------------------------
 // BaseBilling — embeddable no-op implementations for TaskAdaptor billing methods.
 // Adaptors that do not need custom billing can embed this struct directly.
