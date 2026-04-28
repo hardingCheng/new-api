@@ -35,6 +35,32 @@ type TaskPollingAdaptor interface {
 // 打破 service -> relay -> relay/channel -> service 的循环依赖。
 var GetTaskAdaptorFunc func(platform constant.TaskPlatform) TaskPollingAdaptor
 
+func setTaskDataURLFields(task *model.Task, resultURL string) {
+	if resultURL == "" {
+		return
+	}
+
+	dataMap := map[string]interface{}{}
+	if len(task.Data) > 0 && string(task.Data) != "null" {
+		if err := common.Unmarshal(task.Data, &dataMap); err != nil {
+			common.SysError(fmt.Sprintf("Failed to unmarshal task.Data for task %s: %v", task.TaskID, err))
+			dataMap = map[string]interface{}{}
+		}
+	}
+	if dataMap == nil {
+		dataMap = map[string]interface{}{}
+	}
+
+	dataMap["url"] = resultURL
+	dataMap["video_url"] = resultURL
+	dataMap["result_url"] = resultURL
+	if updatedData, err := common.Marshal(dataMap); err == nil {
+		task.Data = updatedData
+	} else {
+		common.SysError(fmt.Sprintf("Failed to marshal task.Data for task %s: %v", task.TaskID, err))
+	}
+}
+
 // sweepTimedOutTasks 在主轮询之前独立清理超时任务。
 // 每次最多处理 100 条，剩余的下个周期继续处理。
 // 使用 per-task CAS (UpdateWithStatus) 防止覆盖被正常轮询已推进的任务。
@@ -517,20 +543,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 
 			// 无论 R2 上传是否成功，都需要更新 task.Data 中的 URL 字段为最终 URL
 			// 这样可以确保返回给客户端的 data 字段中的 URL 是正确的
-			var dataMap map[string]interface{}
-			if err := common.Unmarshal(task.Data, &dataMap); err == nil {
-				dataMap["url"] = finalURL
-				dataMap["video_url"] = finalURL
-				dataMap["result_url"] = finalURL
-				if updatedData, err := common.Marshal(dataMap); err == nil {
-					task.Data = updatedData
-				} else {
-					common.SysError(fmt.Sprintf("Failed to marshal updated task.Data for task %s: %v", task.TaskID, err))
-				}
-			} else {
-				common.SysError(fmt.Sprintf("Failed to unmarshal task.Data for task %s: %v", task.TaskID, err))
-			}
-
+			setTaskDataURLFields(task, finalURL)
 			task.PrivateData.ResultURL = finalURL
 		} else {
 			// No URL from adaptor but status is SUCCESS — this might be a timing issue
@@ -544,19 +557,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 				logger.LogError(ctx, fmt.Sprintf("Task %s has been SUCCESS for >3min without URL, using proxy URL as fallback", task.TaskID))
 				proxyURL := taskcommon.BuildProxyURL(task.TaskID)
 				task.PrivateData.ResultURL = proxyURL
-				var dataMap map[string]interface{}
-				if err := common.Unmarshal(task.Data, &dataMap); err == nil {
-					dataMap["url"] = proxyURL
-					dataMap["video_url"] = proxyURL
-					dataMap["result_url"] = proxyURL
-					if updatedData, err := common.Marshal(dataMap); err == nil {
-						task.Data = updatedData
-					} else {
-						common.SysError(fmt.Sprintf("Failed to marshal fallback task.Data for task %s: %v", task.TaskID, err))
-					}
-				} else {
-					common.SysError(fmt.Sprintf("Failed to unmarshal fallback task.Data for task %s: %v", task.TaskID, err))
-				}
+				setTaskDataURLFields(task, proxyURL)
 				shouldSettle = true
 			} else {
 				// 保持 InProgress 状态，继续轮询
