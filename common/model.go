@@ -17,6 +17,12 @@ var (
 		"flux-",
 		"flux.1-",
 	}
+	OpenAIVideoModels = []string{
+		"grok-imagine-video",
+		"grok-imagine-1.0-video",
+		"sora-2",
+		"sora-2-pro",
+	}
 	OpenAITextModels = []string{
 		"gpt-",
 		"o1",
@@ -42,6 +48,16 @@ func IsImageGenerationModel(modelName string) bool {
 			return true
 		}
 		if strings.HasPrefix(m, "prefix:") && strings.HasPrefix(modelName, strings.TrimPrefix(m, "prefix:")) {
+			return true
+		}
+	}
+	return false
+}
+
+func IsOpenAIVideoModel(modelName string) bool {
+	modelName = strings.ToLower(modelName)
+	for _, m := range OpenAIVideoModels {
+		if modelName == m {
 			return true
 		}
 	}
