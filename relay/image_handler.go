@@ -37,6 +37,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
 	}
+	removedUnsupportedBackground := removeUnsupportedTransparentBackgroundForImageRequest(info, request)
 
 	adaptor := GetAdaptor(info.ApiType)
 	if adaptor == nil {
@@ -46,7 +47,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	var requestBody io.Reader
 
-	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
+	if !removedUnsupportedBackground && (model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled) {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
@@ -143,4 +144,28 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	postConsumeQuota(c, info, usage.(*dto.Usage), logContent...)
 	return nil
+}
+
+func removeUnsupportedTransparentBackgroundForImageRequest(info *relaycommon.RelayInfo, request *dto.ImageRequest) bool {
+	if request == nil || len(request.Background) == 0 {
+		return false
+	}
+	if !isGPTImage2Model(request.Model) && (info == nil || (!isGPTImage2Model(info.OriginModelName) && !isGPTImage2Model(info.UpstreamModelName))) {
+		return false
+	}
+
+	var background string
+	if err := common.Unmarshal(request.Background, &background); err != nil {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(background), "transparent") {
+		return false
+	}
+	request.Background = nil
+	return true
+}
+
+func isGPTImage2Model(modelName string) bool {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	return modelName == "gpt-image-2" || modelName == "gpt-image-2-pro"
 }
