@@ -2,6 +2,7 @@ package relay
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -110,6 +111,22 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
 	if newAPIError != nil {
+		if shouldBillGPTImage2UpstreamDisconnect(info, request, newAPIError) {
+			imageN := uint(1)
+			if request.N != nil {
+				imageN = *request.N
+			}
+			postConsumeQuota(c, info, &dto.Usage{
+				PromptTokens: int(imageN),
+				TotalTokens:  int(imageN),
+			}, "上游 502 断流，按上游已消费计费")
+			newAPIError = types.NewOpenAIError(
+				errors.New("由于官方生成中，波动导致数据断流。"),
+				newAPIError.GetErrorCode(),
+				newAPIError.StatusCode,
+				types.ErrOptionWithSkipRetry(),
+			)
+		}
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError
@@ -214,4 +231,18 @@ func isGPTImage2Request(info *relaycommon.RelayInfo, request *dto.ImageRequest) 
 func isGPTImage2Model(modelName string) bool {
 	modelName = strings.ToLower(strings.TrimSpace(modelName))
 	return modelName == "gpt-image-2" || modelName == "gpt-image-2-pro"
+}
+
+func shouldBillGPTImage2UpstreamDisconnect(info *relaycommon.RelayInfo, request *dto.ImageRequest, err *types.NewAPIError) bool {
+	if err == nil || !isGPTImage2Request(info, request) {
+		return false
+	}
+	if err.StatusCode != http.StatusBadGateway && !strings.Contains(err.ErrorWithStatusCode(), "status_code=502") {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "stream disconnected before completion") {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.ToOpenAIError().Message), "stream disconnected before completion")
 }
