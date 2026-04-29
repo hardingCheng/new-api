@@ -585,6 +585,16 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 			}
 		}
 	}
+	if task.Status == model.TaskStatusSuccess && resultURL != "" {
+		dataMap := map[string]any{
+			"url":        resultURL,
+			"video_url":  resultURL,
+			"result_url": resultURL,
+		}
+		if newData, err := common.Marshal(dataMap); err == nil {
+			data = newData
+		}
+	}
 
 	d := &dto.TaskDto{
 		ID:                task.ID,
@@ -600,6 +610,8 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		Status:            string(task.Status),
 		FailReason:        task.FailReason,
 		ResultURL:         resultURL,
+		URL:               resultURL,
+		VideoURL:          resultURL,
 		SubmitTime:        task.SubmitTime,
 		StartTime:         task.StartTime,
 		FinishTime:        task.FinishTime,
