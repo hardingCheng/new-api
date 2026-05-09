@@ -71,6 +71,8 @@ type TaskAdaptor struct {
 	baseURL     string
 }
 
+const defaultSeedance2Duration = 15
+
 func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.ChannelType = info.ChannelType
 	a.baseURL = info.ChannelBaseUrl
@@ -121,6 +123,9 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	}
 
 	if isSeedanceModel(info.UpstreamModelName) || isSeedanceModel(info.OriginModelName) || isSeedanceModel(req.Model) {
+		if seconds <= 0 && isSeedance2Request(info, req.Model) {
+			seconds = defaultSeedance2Duration
+		}
 		if seconds <= 0 {
 			return nil
 		}
@@ -154,6 +159,12 @@ func isSeedanceModel(modelName string) bool {
 	return strings.HasPrefix(modelName, "seedance-") || strings.HasPrefix(modelName, "doubao-seedance-")
 }
 
+func isSeedance2Request(info *relaycommon.RelayInfo, requestModel string) bool {
+	return taskcommon.IsSeedance2Model(info.UpstreamModelName) ||
+		taskcommon.IsSeedance2Model(info.OriginModelName) ||
+		taskcommon.IsSeedance2Model(requestModel)
+}
+
 func parsePositiveIntValue(v interface{}) int {
 	switch value := v.(type) {
 	case int:
@@ -181,7 +192,7 @@ func parsePositiveIntValue(v interface{}) int {
 	return 0
 }
 
-func normalizeSeedanceDuration(bodyMap map[string]interface{}) {
+func normalizeSeedanceDuration(bodyMap map[string]interface{}, defaultDuration int) {
 	if bodyMap == nil {
 		return
 	}
@@ -191,6 +202,8 @@ func normalizeSeedanceDuration(bodyMap map[string]interface{}) {
 	}
 	if seconds := parsePositiveIntValue(bodyMap["seconds"]); seconds > 0 {
 		bodyMap["duration"] = seconds
+	} else if defaultDuration > 0 {
+		bodyMap["duration"] = defaultDuration
 	}
 	delete(bodyMap, "seconds")
 }
@@ -225,7 +238,11 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		if err := common.Unmarshal(cachedBody, &bodyMap); err == nil {
 			bodyMap["model"] = info.UpstreamModelName
 			if isSeedanceModel(info.UpstreamModelName) || isSeedanceModel(info.OriginModelName) {
-				normalizeSeedanceDuration(bodyMap)
+				defaultDuration := 0
+				if isSeedance2Request(info, "") {
+					defaultDuration = defaultSeedance2Duration
+				}
+				normalizeSeedanceDuration(bodyMap, defaultDuration)
 			}
 			if newBody, err := common.Marshal(bodyMap); err == nil {
 				return bytes.NewReader(newBody), nil
@@ -248,20 +265,22 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 				seedanceDuration = strings.TrimSpace(values[0])
 			} else if values := formData.Value["seconds"]; len(values) > 0 && strings.TrimSpace(values[0]) != "" {
 				seedanceDuration = strings.TrimSpace(values[0])
+			} else if isSeedance2Request(info, "") {
+				seedanceDuration = strconv.Itoa(defaultSeedance2Duration)
 			}
 		}
 		for key, values := range formData.Value {
 			if key == "model" {
 				continue
 			}
-			if seedanceDuration != "" && key == "seconds" {
+			if seedanceDuration != "" && (key == "seconds" || key == "duration") {
 				continue
 			}
 			for _, v := range values {
 				writer.WriteField(key, v)
 			}
 		}
-		if seedanceDuration != "" && len(formData.Value["duration"]) == 0 {
+		if seedanceDuration != "" {
 			writer.WriteField("duration", seedanceDuration)
 		}
 		for fieldName, fileHeaders := range formData.File {
