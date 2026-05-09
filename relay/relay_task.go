@@ -404,7 +404,7 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 				taskResp = service.TaskErrorWrapper(err, "convert_to_openai_video_failed", http.StatusInternalServerError)
 				return
 			}
-			respBody = openAIVideoData
+			respBody = ensureOpenAIVideoDataURLs(openAIVideoData)
 			return
 		}
 		taskResp = service.TaskErrorWrapperLocal(fmt.Errorf("not_implemented:%s", originTask.Platform), "not_implemented", http.StatusNotImplemented)
@@ -543,6 +543,43 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 	default:
 		return "processing"
 	}
+}
+
+func ensureOpenAIVideoDataURLs(respBody []byte) []byte {
+	var respMap map[string]any
+	if err := common.Unmarshal(respBody, &respMap); err != nil {
+		return respBody
+	}
+
+	resultURL := firstNonEmptyString(respMap["result_url"], respMap["url"], respMap["video_url"])
+	if resultURL == "" {
+		if metadata, ok := respMap["metadata"].(map[string]any); ok {
+			resultURL = firstNonEmptyString(metadata["result_url"], metadata["url"], metadata["video_url"])
+		}
+	}
+	if resultURL == "" {
+		return respBody
+	}
+
+	respMap["data"] = map[string]any{
+		"result_url": resultURL,
+		"url":        resultURL,
+		"video_url":  resultURL,
+	}
+	newRespBody, err := common.Marshal(respMap)
+	if err != nil {
+		return respBody
+	}
+	return newRespBody
+}
+
+func firstNonEmptyString(values ...any) string {
+	for _, value := range values {
+		if s, ok := value.(string); ok && s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
