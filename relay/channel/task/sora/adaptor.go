@@ -87,6 +87,9 @@ func validateRemixRequest(c *gin.Context) *dto.TaskError {
 	if strings.TrimSpace(req.Prompt) == "" {
 		return service.TaskErrorWrapperLocal(fmt.Errorf("field prompt is required"), "invalid_request", http.StatusBadRequest)
 	}
+	if taskErr := relaycommon.NormalizeSeedanceDuration(&req, nil); taskErr != nil {
+		return taskErr
+	}
 	// 存储原始请求到 context，与 ValidateMultipartDirect 路径保持一致
 	c.Set("task_request", req)
 	return nil
@@ -117,9 +120,9 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		return nil
 	}
 
-	seconds, _ := strconv.Atoi(strings.TrimSpace(req.Seconds))
+	seconds := req.Duration
 	if seconds == 0 {
-		seconds = req.Duration
+		seconds, _ = strconv.Atoi(strings.TrimSpace(req.Seconds))
 	}
 
 	if isSeedanceModel(info.UpstreamModelName) || isSeedanceModel(info.OriginModelName) || isSeedanceModel(req.Model) {
@@ -192,16 +195,34 @@ func parsePositiveIntValue(v interface{}) int {
 	return 0
 }
 
+func parseIntValue(v interface{}) (int, bool) {
+	switch value := v.(type) {
+	case int:
+		return value, true
+	case int32:
+		return int(value), true
+	case int64:
+		return int(value), true
+	case float64:
+		return int(value), true
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(value))
+		return n, err == nil
+	}
+	return 0, false
+}
+
 func normalizeSeedanceDuration(bodyMap map[string]interface{}, defaultDuration int) {
 	if bodyMap == nil {
 		return
 	}
-	if parsePositiveIntValue(bodyMap["duration"]) > 0 {
+	if duration, ok := parseIntValue(bodyMap["duration"]); ok {
+		bodyMap["duration"] = relaycommon.ClampSeedanceDuration(duration)
 		delete(bodyMap, "seconds")
 		return
 	}
-	if seconds := parsePositiveIntValue(bodyMap["seconds"]); seconds > 0 {
-		bodyMap["duration"] = seconds
+	if seconds, ok := parseIntValue(bodyMap["seconds"]); ok {
+		bodyMap["duration"] = relaycommon.ClampSeedanceDuration(seconds)
 	} else if defaultDuration > 0 {
 		bodyMap["duration"] = defaultDuration
 	}
@@ -238,11 +259,16 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		if err := common.Unmarshal(cachedBody, &bodyMap); err == nil {
 			bodyMap["model"] = info.UpstreamModelName
 			if isSeedanceModel(info.UpstreamModelName) || isSeedanceModel(info.OriginModelName) {
-				defaultDuration := 0
-				if isSeedance2Request(info, "") {
-					defaultDuration = defaultSeedance2Duration
+				if taskReq, err := relaycommon.GetTaskRequest(c); err == nil && taskReq.Duration > 0 {
+					bodyMap["duration"] = taskReq.Duration
+					delete(bodyMap, "seconds")
+				} else {
+					defaultDuration := 0
+					if isSeedance2Request(info, "") {
+						defaultDuration = defaultSeedance2Duration
+					}
+					normalizeSeedanceDuration(bodyMap, defaultDuration)
 				}
-				normalizeSeedanceDuration(bodyMap, defaultDuration)
 			}
 			if newBody, err := common.Marshal(bodyMap); err == nil {
 				return bytes.NewReader(newBody), nil
@@ -261,10 +287,16 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		writer.WriteField("model", info.UpstreamModelName)
 		seedanceDuration := ""
 		if isSeedanceModel(info.UpstreamModelName) || isSeedanceModel(info.OriginModelName) {
-			if values := formData.Value["duration"]; len(values) > 0 && strings.TrimSpace(values[0]) != "" {
-				seedanceDuration = strings.TrimSpace(values[0])
+			if taskReq, err := relaycommon.GetTaskRequest(c); err == nil && taskReq.Duration > 0 {
+				seedanceDuration = strconv.Itoa(taskReq.Duration)
+			} else if values := formData.Value["duration"]; len(values) > 0 && strings.TrimSpace(values[0]) != "" {
+				if duration, err := strconv.Atoi(strings.TrimSpace(values[0])); err == nil {
+					seedanceDuration = strconv.Itoa(relaycommon.ClampSeedanceDuration(duration))
+				}
 			} else if values := formData.Value["seconds"]; len(values) > 0 && strings.TrimSpace(values[0]) != "" {
-				seedanceDuration = strings.TrimSpace(values[0])
+				if duration, err := strconv.Atoi(strings.TrimSpace(values[0])); err == nil {
+					seedanceDuration = strconv.Itoa(relaycommon.ClampSeedanceDuration(duration))
+				}
 			} else if isSeedance2Request(info, "") {
 				seedanceDuration = strconv.Itoa(defaultSeedance2Duration)
 			}
