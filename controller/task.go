@@ -178,7 +178,7 @@ func taskDtoToUserResponse(taskDto *dto.TaskDto) map[string]any {
 		"start_time":          taskDto.StartTime,
 		"finish_time":         taskDto.FinishTime,
 		"progress":            taskDto.Progress,
-		"properties":          taskDto.Properties,
+		"properties":          taskPropertiesToUserResponse(taskDto.Properties),
 		"has_video_reference": taskDto.HasVideoReference,
 		"data":                taskDto.Data,
 	}
@@ -189,6 +189,23 @@ func taskDtoToUserResponse(taskDto *dto.TaskDto) map[string]any {
 		result["result_url"] = taskDto.ResultURL
 	}
 	return result
+}
+
+func taskPropertiesToUserResponse(properties any) any {
+	switch props := properties.(type) {
+	case model.Properties:
+		props.UpstreamModelName = ""
+		return props
+	case *model.Properties:
+		if props == nil {
+			return props
+		}
+		copied := *props
+		copied.UpstreamModelName = ""
+		return copied
+	default:
+		return properties
+	}
 }
 
 func getTaskChannelNameMap(channelIds []int) map[int]string {

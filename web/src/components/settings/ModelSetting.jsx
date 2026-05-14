@@ -26,6 +26,7 @@ import SettingGeminiModel from '../../pages/Setting/Model/SettingGeminiModel';
 import SettingClaudeModel from '../../pages/Setting/Model/SettingClaudeModel';
 import SettingGlobalModel from '../../pages/Setting/Model/SettingGlobalModel';
 import SettingGrokModel from '../../pages/Setting/Model/SettingGrokModel';
+import SettingSeedanceModel from '../../pages/Setting/Model/SettingSeedanceModel';
 import SettingsChannelAffinity from '../../pages/Setting/Operation/SettingsChannelAffinity';
 
 const ModelSetting = () => {
@@ -49,6 +50,7 @@ const ModelSetting = () => {
     'gemini.thinking_adapter_budget_tokens_percentage': 0.6,
     'grok.violation_deduction_enabled': true,
     'grok.violation_deduction_amount': 0.05,
+    'task_billing_setting.seedance_reference_video_mode': 'legacy',
   });
 
   let [loading, setLoading] = useState(false);
@@ -113,6 +115,10 @@ const ModelSetting = () => {
         {/* OpenAI */}
         <Card style={{ marginTop: '10px' }}>
           <SettingGlobalModel options={inputs} refresh={onRefresh} />
+        </Card>
+        {/* Seedance */}
+        <Card style={{ marginTop: '10px' }}>
+          <SettingSeedanceModel options={inputs} refresh={onRefresh} />
         </Card>
         {/* Channel affinity */}
         <Card style={{ marginTop: '10px' }}>
