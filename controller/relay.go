@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay"
+	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -567,18 +568,45 @@ func RelayTask(c *gin.Context) {
 		}
 		service.LogTaskConsumption(c, relayInfo)
 
+		referenceVideoSummary := taskcommon.GetCachedReferenceVideoDurationSummary(c)
+		effectiveReferenceVideoMode := taskcommon.GetCachedSeedanceReferenceVideoBillingMode(c)
+		generatedSeconds := 0.0
+		if seconds, ok := relayInfo.PriceData.OtherRatios["seconds"]; ok {
+			generatedSeconds = seconds
+			if referenceVideoSummary != nil &&
+				referenceVideoSummary.DetectedCount > 0 &&
+				effectiveReferenceVideoMode == operation_setting.SeedanceReferenceVideoBillingModeDurationOnly &&
+				referenceVideoSummary.TotalSeconds > 0 &&
+				generatedSeconds >= referenceVideoSummary.TotalSeconds {
+				generatedSeconds -= referenceVideoSummary.TotalSeconds
+			}
+		}
+
 		task := model.InitTask(result.Platform, relayInfo)
 		task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
 		task.PrivateData.BillingSource = relayInfo.BillingSource
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
 		task.PrivateData.TokenId = relayInfo.TokenId
 		task.PrivateData.BillingContext = &model.TaskBillingContext{
-			ModelPrice:      relayInfo.PriceData.ModelPrice,
-			GroupRatio:      relayInfo.PriceData.GroupRatioInfo.GroupRatio,
-			ModelRatio:      relayInfo.PriceData.ModelRatio,
-			OtherRatios:     relayInfo.PriceData.OtherRatios,
-			OriginModelName: relayInfo.OriginModelName,
-			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName),
+			ModelPrice:       relayInfo.PriceData.ModelPrice,
+			GroupRatio:       relayInfo.PriceData.GroupRatioInfo.GroupRatio,
+			ModelRatio:       relayInfo.PriceData.ModelRatio,
+			OtherRatios:      relayInfo.PriceData.OtherRatios,
+			OriginModelName:  relayInfo.OriginModelName,
+			PerCallBilling:   common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName),
+			GeneratedSeconds: generatedSeconds,
+		}
+		if effectiveReferenceVideoMode != "" {
+			task.PrivateData.BillingContext.ReferenceVideoBillingMode = effectiveReferenceVideoMode
+		}
+		if referenceVideoSummary != nil && referenceVideoSummary.DetectedCount > 0 {
+			task.PrivateData.BillingContext.ReferenceVideoSecondsTotal = referenceVideoSummary.TotalSeconds
+			task.PrivateData.BillingContext.ReferenceVideoCount = referenceVideoSummary.DetectedCount
+			task.PrivateData.BillingContext.ReferenceVideoProbedCount = referenceVideoSummary.ProbedCount
+			task.PrivateData.BillingContext.ReferenceVideoFailedCount = referenceVideoSummary.FailedCount
+			if details := referenceVideoSummary.DetailMaps(); len(details) > 0 {
+				task.PrivateData.BillingContext.ReferenceVideoDetails = details
+			}
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData

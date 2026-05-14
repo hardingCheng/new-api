@@ -664,7 +664,9 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		if bc.OriginModelName != "" {
 			d.ModelName = bc.OriginModelName
 		}
-		if seconds, ok := bc.OtherRatios["seconds"]; ok {
+		if bc.GeneratedSeconds > 0 {
+			d.VideoDuration = bc.GeneratedSeconds
+		} else if seconds, ok := bc.OtherRatios["seconds"]; ok {
 			d.VideoDuration = seconds
 		}
 		if !d.HasVideoReference {

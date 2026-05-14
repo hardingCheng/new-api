@@ -294,8 +294,8 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		"seconds": float64(body.Duration),
 	}
 	if taskcommon.IsSeedance2Model(info.UpstreamModelName) || taskcommon.IsSeedance2Model(info.OriginModelName) {
-		if taskcommon.HasVideoURLContent(c) {
-			ratios["reference_video"] = 2.0
+		if referenceRatios := taskcommon.BuildSeedanceReferenceVideoBillingRatios(c, int(body.Duration)); len(referenceRatios) > 0 {
+			ratios = referenceRatios
 		}
 	}
 	return ratios

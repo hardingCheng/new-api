@@ -49,6 +49,7 @@ export default function GeneralSettings(props) {
     'general_setting.quota_display_type': 'USD',
     'general_setting.custom_currency_symbol': '¤',
     'general_setting.custom_currency_exchange_rate': '',
+    'task_billing_setting.seedance_reference_video_mode': 'legacy',
     QuotaPerUnit: '',
     RetryTimes: '',
     USDExchangeRate: '',
@@ -199,6 +200,29 @@ export default function GeneralSettings(props) {
                   placeholder={t('失败重试次数')}
                   onChange={handleFieldChange('RetryTimes')}
                   showClear
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Select
+                  field={'task_billing_setting.seedance_reference_video_mode'}
+                  label={t('Seedance 参考视频计费模式')}
+                  initValue={'legacy'}
+                  onChange={handleFieldChange(
+                    'task_billing_setting.seedance_reference_video_mode',
+                  )}
+                  extraText={t(
+                    'legacy: 保持原逻辑；duration: reference_video=1，并把参考视频秒数加到 seconds',
+                  )}
+                  optionList={[
+                    {
+                      label: t('legacy'),
+                      value: 'legacy',
+                    },
+                    {
+                      label: t('duration'),
+                      value: 'duration',
+                    },
+                  ]}
                 />
               </Col>
               <Col xs={24} sm={12} md={8} lg={8} xl={8}>

@@ -43,25 +43,25 @@ const (
 )
 
 type Task struct {
-	ID         int64                 `json:"id" gorm:"primary_key;AUTO_INCREMENT"`
-	CreatedAt  int64                 `json:"created_at" gorm:"index"`
-	UpdatedAt  int64                 `json:"updated_at"`
-	TaskID     string                `json:"task_id" gorm:"type:varchar(191);index"` // 第三方id，不一定有/ song id\ Task id
-	Platform   constant.TaskPlatform `json:"platform" gorm:"type:varchar(30);index"` // 平台
-	UserId     int                   `json:"user_id" gorm:"index"`
-	Group      string                `json:"group" gorm:"type:varchar(50)"` // 修正计费用
-	ChannelId  int                   `json:"channel_id" gorm:"index"`
-	Quota      int                   `json:"quota"`
-	Action     string                `json:"action" gorm:"type:varchar(40);index"` // 任务类型, song, lyrics, description-mode
-	Status     TaskStatus            `json:"status" gorm:"type:varchar(20);index"` // 任务状态
-	FailReason string                `json:"fail_reason"`
-	SubmitTime int64                 `json:"submit_time" gorm:"index"`
-	StartTime  int64                 `json:"start_time" gorm:"index"`
-	FinishTime int64                 `json:"finish_time" gorm:"index"`
+	ID                int64                 `json:"id" gorm:"primary_key;AUTO_INCREMENT"`
+	CreatedAt         int64                 `json:"created_at" gorm:"index"`
+	UpdatedAt         int64                 `json:"updated_at"`
+	TaskID            string                `json:"task_id" gorm:"type:varchar(191);index"` // 第三方id，不一定有/ song id\ Task id
+	Platform          constant.TaskPlatform `json:"platform" gorm:"type:varchar(30);index"` // 平台
+	UserId            int                   `json:"user_id" gorm:"index"`
+	Group             string                `json:"group" gorm:"type:varchar(50)"` // 修正计费用
+	ChannelId         int                   `json:"channel_id" gorm:"index"`
+	Quota             int                   `json:"quota"`
+	Action            string                `json:"action" gorm:"type:varchar(40);index"` // 任务类型, song, lyrics, description-mode
+	Status            TaskStatus            `json:"status" gorm:"type:varchar(20);index"` // 任务状态
+	FailReason        string                `json:"fail_reason"`
+	SubmitTime        int64                 `json:"submit_time" gorm:"index"`
+	StartTime         int64                 `json:"start_time" gorm:"index"`
+	FinishTime        int64                 `json:"finish_time" gorm:"index"`
 	Progress          string                `json:"progress" gorm:"type:varchar(20);index"`
 	HasVideoReference bool                  `json:"has_video_reference" gorm:"index;default:false"`
 	Properties        Properties            `json:"properties" gorm:"type:json"`
-	Username   string                `json:"username,omitempty" gorm:"-"`
+	Username          string                `json:"username,omitempty" gorm:"-"`
 	// 禁止返回给用户，内部可能包含key等隐私信息
 	PrivateData TaskPrivateData `json:"-" gorm:"column:private_data;type:json"`
 	Data        json.RawMessage `json:"data" gorm:"type:json"`
@@ -111,12 +111,19 @@ type TaskPrivateData struct {
 
 // TaskBillingContext 记录任务提交时的计费参数，以便轮询阶段可以重新计算额度。
 type TaskBillingContext struct {
-	ModelPrice      float64            `json:"model_price,omitempty"`       // 模型单价
-	GroupRatio      float64            `json:"group_ratio,omitempty"`       // 分组倍率
-	ModelRatio      float64            `json:"model_ratio,omitempty"`       // 模型倍率
-	OtherRatios     map[string]float64 `json:"other_ratios,omitempty"`      // 附加倍率（时长、分辨率等）
-	OriginModelName string             `json:"origin_model_name,omitempty"` // 模型名称，必须为OriginModelName
-	PerCallBilling  bool               `json:"per_call_billing,omitempty"`  // 按次计费：跳过轮询阶段的差额结算
+	ModelPrice                 float64                  `json:"model_price,omitempty"`                   // 模型单价
+	GroupRatio                 float64                  `json:"group_ratio,omitempty"`                   // 分组倍率
+	ModelRatio                 float64                  `json:"model_ratio,omitempty"`                   // 模型倍率
+	OtherRatios                map[string]float64       `json:"other_ratios,omitempty"`                  // 附加倍率（时长、分辨率等）
+	OriginModelName            string                   `json:"origin_model_name,omitempty"`             // 模型名称，必须为OriginModelName
+	PerCallBilling             bool                     `json:"per_call_billing,omitempty"`              // 按次计费：跳过轮询阶段的差额结算
+	GeneratedSeconds           float64                  `json:"generated_seconds,omitempty"`             // 用户请求的视频输出秒数
+	ReferenceVideoSecondsTotal float64                  `json:"reference_video_seconds_total,omitempty"` // 已探测到的参考视频总秒数
+	ReferenceVideoCount        int                      `json:"reference_video_count,omitempty"`         // 请求中参考视频数量
+	ReferenceVideoProbedCount  int                      `json:"reference_video_probed_count,omitempty"`  // 成功探测时长的参考视频数量
+	ReferenceVideoFailedCount  int                      `json:"reference_video_failed_count,omitempty"`  // 探测失败的参考视频数量
+	ReferenceVideoBillingMode  string                   `json:"reference_video_billing_mode,omitempty"`  // 实际生效的参考视频计费模式
+	ReferenceVideoDetails      []map[string]interface{} `json:"reference_video_details,omitempty"`       // 参考视频探测明细（脱敏）
 }
 
 // GetUpstreamTaskID 获取上游真实 task ID（用于与 provider 通信）
@@ -160,14 +167,14 @@ func (p TaskPrivateData) Value() (driver.Value, error) {
 
 // SyncTaskQueryParams 用于包含所有搜索条件的结构体，可以根据需求添加更多字段
 type SyncTaskQueryParams struct {
-	Platform       constant.TaskPlatform
-	ChannelID      string
-	TaskID         string
-	UserID         string
-	Action         string
-	Status         string
-	StartTimestamp int64
-	EndTimestamp   int64
+	Platform          constant.TaskPlatform
+	ChannelID         string
+	TaskID            string
+	UserID            string
+	Action            string
+	Status            string
+	StartTimestamp    int64
+	EndTimestamp      int64
 	UserIDs           []int
 	Username          string
 	ModelName         string

@@ -9,7 +9,9 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	taskcommon "github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 )
@@ -45,6 +47,30 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	if info.IsModelMapped {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = info.UpstreamModelName
+	}
+	if generatedSeconds, ok := info.PriceData.OtherRatios["seconds"]; ok {
+		other["generated_seconds"] = generatedSeconds
+	}
+	effectiveReferenceVideoMode := taskcommon.GetCachedSeedanceReferenceVideoBillingMode(c)
+	if refSummary := taskcommon.GetCachedReferenceVideoDurationSummary(c); refSummary != nil && refSummary.DetectedCount > 0 {
+		if effectiveReferenceVideoMode == "" {
+			effectiveReferenceVideoMode = operation_setting.GetSeedanceReferenceVideoBillingMode()
+		}
+		other["reference_video_billing_mode"] = effectiveReferenceVideoMode
+		other["reference_video_count"] = refSummary.DetectedCount
+		other["reference_video_probed_count"] = refSummary.ProbedCount
+		other["reference_video_failed_count"] = refSummary.FailedCount
+		if refSummary.TotalSeconds > 0 {
+			other["reference_video_seconds_total"] = refSummary.TotalSeconds
+			if generatedSeconds, ok := info.PriceData.OtherRatios["seconds"]; ok &&
+				effectiveReferenceVideoMode == operation_setting.SeedanceReferenceVideoBillingModeDurationOnly &&
+				generatedSeconds >= refSummary.TotalSeconds {
+				other["generated_seconds"] = generatedSeconds - refSummary.TotalSeconds
+			}
+		}
+		if details := refSummary.DetailMaps(); len(details) > 0 {
+			other["reference_video_details"] = details
+		}
 	}
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 		ChannelId: info.ChannelId,
@@ -122,6 +148,23 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 			for k, v := range bc.OtherRatios {
 				other[k] = v
 			}
+		}
+		if bc.GeneratedSeconds > 0 {
+			other["generated_seconds"] = bc.GeneratedSeconds
+		}
+		if bc.ReferenceVideoBillingMode != "" {
+			other["reference_video_billing_mode"] = bc.ReferenceVideoBillingMode
+		}
+		if bc.ReferenceVideoCount > 0 {
+			other["reference_video_count"] = bc.ReferenceVideoCount
+			other["reference_video_probed_count"] = bc.ReferenceVideoProbedCount
+			other["reference_video_failed_count"] = bc.ReferenceVideoFailedCount
+		}
+		if bc.ReferenceVideoSecondsTotal > 0 {
+			other["reference_video_seconds_total"] = bc.ReferenceVideoSecondsTotal
+		}
+		if len(bc.ReferenceVideoDetails) > 0 {
+			other["reference_video_details"] = bc.ReferenceVideoDetails
 		}
 	}
 	props := task.Properties
