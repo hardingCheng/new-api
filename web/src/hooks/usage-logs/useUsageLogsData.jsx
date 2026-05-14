@@ -585,7 +585,7 @@ export const useLogsData = () => {
       if (
         isAdminUser &&
         other?.billing_seconds_total > 0 &&
-        other?.reference_video_seconds_total > 0
+        (logs[i].type === 6 || other?.reference_video_seconds_total > 0)
       ) {
         expandDataLocal.push({
           key: t('计费总秒数'),
