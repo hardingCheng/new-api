@@ -18,9 +18,9 @@ func TestSummarizeReferenceVideoDurations(t *testing.T) {
 	referenceVideoDurationProbe = func(_ context.Context, source string) (*referenceVideoProbeResult, error) {
 		switch source {
 		case "mock://video-a":
-			return &referenceVideoProbeResult{Duration: 3, ProbeMethod: "mock"}, nil
+			return &referenceVideoProbeResult{Duration: 3.456, ProbeMethod: "mock"}, nil
 		case "mock://video-b":
-			return &referenceVideoProbeResult{Duration: 5, ProbeMethod: "mock"}, nil
+			return &referenceVideoProbeResult{Duration: 5.555, ProbeMethod: "mock"}, nil
 		default:
 			return nil, errors.New("unexpected source")
 		}
@@ -46,10 +46,12 @@ func TestSummarizeReferenceVideoDurations(t *testing.T) {
 	require.NotNil(t, summary)
 	require.Equal(t, 2, summary.DetectedCount)
 	require.Equal(t, 2, summary.ProbedCount)
-	require.InDelta(t, 8.0, summary.TotalSeconds, 0.0001)
+	require.InDelta(t, 9.02, summary.TotalSeconds, 0.0001)
 	require.Len(t, summary.Details, 2)
 	require.Equal(t, "success", summary.Details[0].Status)
 	require.Equal(t, "mock", summary.Details[0].ProbeMethod)
+	require.InDelta(t, 3.46, summary.Details[0].Duration, 0.0001)
+	require.InDelta(t, 5.56, summary.Details[1].Duration, 0.0001)
 }
 
 func TestBuildSeedanceReferenceVideoBillingRatiosLegacyMode(t *testing.T) {

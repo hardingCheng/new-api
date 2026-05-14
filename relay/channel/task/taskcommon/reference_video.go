@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"net/url"
@@ -92,6 +93,13 @@ var (
 	referenceVideoFFProbePath       string
 	referenceVideoFFProbeErr        error
 )
+
+func roundReferenceVideoSeconds(seconds float64) float64 {
+	if seconds <= 0 {
+		return seconds
+	}
+	return math.Round(seconds*100) / 100
+}
 
 func referenceVideoProbeTimeout() time.Duration {
 	seconds := common.GetEnvOrDefault("REFERENCE_VIDEO_PROBE_TIMEOUT_SECONDS", defaultReferenceVideoProbeSecs)
@@ -239,6 +247,7 @@ func SummarizeReferenceVideoDurations(c *gin.Context) (*ReferenceVideoDurationSu
 			continue
 		}
 		if result != nil {
+			result.Duration = roundReferenceVideoSeconds(result.Duration)
 			detail.Duration = result.Duration
 			detail.ProbeMethod = result.ProbeMethod
 		}
@@ -252,7 +261,7 @@ func SummarizeReferenceVideoDurations(c *gin.Context) (*ReferenceVideoDurationSu
 		}
 		detail.Status = "success"
 		summary.ProbedCount++
-		summary.TotalSeconds += result.Duration
+		summary.TotalSeconds = roundReferenceVideoSeconds(summary.TotalSeconds + result.Duration)
 		summary.Details = append(summary.Details, detail)
 	}
 
@@ -679,13 +688,14 @@ func getCachedReferenceVideoDuration(source string) (float64, bool) {
 	if err != nil || !found || entry.Duration <= 0 {
 		return 0, false
 	}
-	return entry.Duration, true
+	return roundReferenceVideoSeconds(entry.Duration), true
 }
 
 func cacheReferenceVideoDuration(source string, duration float64) {
 	if duration <= 0 {
 		return
 	}
+	duration = roundReferenceVideoSeconds(duration)
 	key := referenceVideoSourceCacheKey(source)
 	if key == "" {
 		return
