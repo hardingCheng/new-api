@@ -10,7 +10,9 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	taskcommon "github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -185,6 +187,24 @@ func countLogs(t *testing.T) int64 {
 // ===========================================================================
 // RefundTaskQuota tests
 // ===========================================================================
+
+func TestTaskReferenceVideoSecondsLogContent(t *testing.T) {
+	ratios := map[string]float64{
+		"seconds":         64.72,
+		"reference_video": 1,
+	}
+	summary := &taskcommon.ReferenceVideoDurationSummary{
+		DetectedCount: 1,
+		ProbedCount:   1,
+		TotalSeconds:  49.72,
+	}
+
+	generatedSeconds := taskGeneratedSeconds(ratios, summary, operation_setting.SeedanceReferenceVideoBillingModeDurationOnly)
+	content := taskRatioLogContent(ratios, generatedSeconds, summary.TotalSeconds, true)
+
+	assert.InDelta(t, 15.00, generatedSeconds, 0.001)
+	assert.Equal(t, "发起请求秒数: 15.00, 参考视频秒数: 49.72, 计费总秒数: 64.72", content)
+}
 
 func TestRefundTaskQuota_Wallet(t *testing.T) {
 	truncate(t)

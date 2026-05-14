@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -50,6 +51,18 @@ const (
 	LogTypeRefund  = 6
 )
 
+var userHiddenLogOtherFields = []string{
+	"billing_seconds_total",
+	"generated_seconds",
+	"reference_video",
+	"reference_video_billing_mode",
+	"reference_video_count",
+	"reference_video_seconds_total",
+	"reference_video_probed_count",
+	"reference_video_failed_count",
+	"reference_video_details",
+}
+
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
 		logs[i].ChannelName = ""
@@ -61,10 +74,30 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			delete(otherMap, "reject_reason")
 			delete(otherMap, "is_model_mapped")
 			delete(otherMap, "upstream_model_name")
+			for _, field := range userHiddenLogOtherFields {
+				delete(otherMap, field)
+			}
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)
+		logs[i].Content = redactUserLogContent(logs[i].Content)
 		logs[i].Id = startIdx + i + 1
 	}
+}
+
+func redactUserLogContent(content string) string {
+	if content == "" ||
+		(!strings.Contains(content, "发起请求秒数") &&
+			!strings.Contains(content, "参考视频秒数") &&
+			!strings.Contains(content, "计费总秒数")) {
+		return content
+	}
+	if idx := strings.Index(content, ", 计算参数："); idx >= 0 {
+		return content[:idx]
+	}
+	if idx := strings.Index(content, "，计算参数："); idx >= 0 {
+		return content[:idx]
+	}
+	return ""
 }
 
 func GetLogByTokenId(tokenId int) (logs []*Log, err error) {

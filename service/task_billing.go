@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -21,20 +22,20 @@ import (
 func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	tokenName := c.GetString("token_name")
 	logContent := fmt.Sprintf("操作 %s", info.Action)
+	effectiveReferenceVideoMode := taskcommon.GetCachedSeedanceReferenceVideoBillingMode(c)
+	referenceVideoSummary := taskcommon.GetCachedReferenceVideoDurationSummary(c)
+	generatedSeconds := taskGeneratedSeconds(info.PriceData.OtherRatios, referenceVideoSummary, effectiveReferenceVideoMode)
+	referenceVideoSeconds := 0.0
+	hasReferenceVideo := referenceVideoSummary != nil && referenceVideoSummary.DetectedCount > 0
+	if hasReferenceVideo {
+		referenceVideoSeconds = referenceVideoSummary.TotalSeconds
+	}
 	// 支持任务仅按次计费
 	if common.StringsContains(constant.TaskPricePatches, info.OriginModelName) {
 		logContent = fmt.Sprintf("%s，按次计费", logContent)
 	} else {
-		if len(info.PriceData.OtherRatios) > 0 {
-			var contents []string
-			for key, ra := range info.PriceData.OtherRatios {
-				if 1.0 != ra {
-					contents = append(contents, fmt.Sprintf("%s: %.2f", key, ra))
-				}
-			}
-			if len(contents) > 0 {
-				logContent = fmt.Sprintf("%s, 计算参数：%s", logContent, strings.Join(contents, ", "))
-			}
+		if ratioContent := taskRatioLogContent(info.PriceData.OtherRatios, generatedSeconds, referenceVideoSeconds, hasReferenceVideo); ratioContent != "" {
+			logContent = fmt.Sprintf("%s, 计算参数：%s", logContent, ratioContent)
 		}
 	}
 	other := make(map[string]interface{})
@@ -48,11 +49,13 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = info.UpstreamModelName
 	}
-	if generatedSeconds, ok := info.PriceData.OtherRatios["seconds"]; ok {
+	if billingSeconds, ok := info.PriceData.OtherRatios["seconds"]; ok {
+		other["billing_seconds_total"] = billingSeconds
+	}
+	if generatedSeconds > 0 {
 		other["generated_seconds"] = generatedSeconds
 	}
-	effectiveReferenceVideoMode := taskcommon.GetCachedSeedanceReferenceVideoBillingMode(c)
-	if refSummary := taskcommon.GetCachedReferenceVideoDurationSummary(c); refSummary != nil && refSummary.DetectedCount > 0 {
+	if refSummary := referenceVideoSummary; refSummary != nil && refSummary.DetectedCount > 0 {
 		if effectiveReferenceVideoMode == "" {
 			effectiveReferenceVideoMode = operation_setting.GetSeedanceReferenceVideoBillingMode()
 		}
@@ -62,11 +65,6 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		other["reference_video_failed_count"] = refSummary.FailedCount
 		if refSummary.TotalSeconds > 0 {
 			other["reference_video_seconds_total"] = refSummary.TotalSeconds
-			if generatedSeconds, ok := info.PriceData.OtherRatios["seconds"]; ok &&
-				effectiveReferenceVideoMode == operation_setting.SeedanceReferenceVideoBillingModeDurationOnly &&
-				generatedSeconds >= refSummary.TotalSeconds {
-				other["generated_seconds"] = generatedSeconds - refSummary.TotalSeconds
-			}
 		}
 		if details := refSummary.DetailMaps(); len(details) > 0 {
 			other["reference_video_details"] = details
@@ -84,6 +82,59 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	})
 	model.UpdateUserUsedQuotaAndRequestCount(info.UserId, info.PriceData.Quota)
 	model.UpdateChannelUsedQuota(info.ChannelId, info.PriceData.Quota)
+}
+
+func taskGeneratedSeconds(ratios map[string]float64, refSummary *taskcommon.ReferenceVideoDurationSummary, refMode string) float64 {
+	if len(ratios) == 0 {
+		return 0
+	}
+	seconds, ok := ratios["seconds"]
+	if !ok || seconds <= 0 {
+		return 0
+	}
+	if refSummary != nil &&
+		refSummary.DetectedCount > 0 &&
+		refMode == operation_setting.SeedanceReferenceVideoBillingModeDurationOnly &&
+		refSummary.TotalSeconds > 0 &&
+		seconds >= refSummary.TotalSeconds {
+		return seconds - refSummary.TotalSeconds
+	}
+	return seconds
+}
+
+func taskRatioLogContent(ratios map[string]float64, generatedSeconds float64, referenceVideoSeconds float64, hasReferenceVideo bool) string {
+	if len(ratios) == 0 {
+		return ""
+	}
+
+	contents := make([]string, 0, len(ratios)+2)
+	if hasReferenceVideo {
+		if generatedSeconds > 0 {
+			contents = append(contents, fmt.Sprintf("发起请求秒数: %.2f", generatedSeconds))
+		}
+		if referenceVideoSeconds > 0 {
+			contents = append(contents, fmt.Sprintf("参考视频秒数: %.2f", referenceVideoSeconds))
+		}
+		if billingSeconds, ok := ratios["seconds"]; ok && billingSeconds > 0 {
+			contents = append(contents, fmt.Sprintf("计费总秒数: %.2f", billingSeconds))
+		}
+	}
+
+	keys := make([]string, 0, len(ratios))
+	for key := range ratios {
+		if hasReferenceVideo && key == "seconds" {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		ra := ratios[key]
+		if 1.0 != ra {
+			contents = append(contents, fmt.Sprintf("%s: %.2f", key, ra))
+		}
+	}
+	return strings.Join(contents, ", ")
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +198,9 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 		if len(bc.OtherRatios) > 0 {
 			for k, v := range bc.OtherRatios {
 				other[k] = v
+			}
+			if billingSeconds, ok := bc.OtherRatios["seconds"]; ok {
+				other["billing_seconds_total"] = billingSeconds
 			}
 		}
 		if bc.GeneratedSeconds > 0 {

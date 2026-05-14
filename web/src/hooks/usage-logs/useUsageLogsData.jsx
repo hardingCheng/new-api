@@ -43,6 +43,14 @@ import { useTableCompactMode } from '../common/useTableCompactMode';
 export const useLogsData = () => {
   const { t } = useTranslation();
 
+  const formatLogSeconds = (value) => {
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      return '';
+    }
+    return seconds.toFixed(2);
+  };
+
   // Define column keys for selection
   const COLUMN_KEYS = {
     TIME: 'time',
@@ -560,6 +568,28 @@ export const useLogsData = () => {
         expandDataLocal.push({
           key: t('Request ID'),
           value: logs[i].request_id,
+        });
+      }
+      if (isAdminUser && other?.generated_seconds > 0) {
+        expandDataLocal.push({
+          key: t('发起请求秒数'),
+          value: `${formatLogSeconds(other.generated_seconds)} ${t('秒')}`,
+        });
+      }
+      if (isAdminUser && other?.reference_video_seconds_total > 0) {
+        expandDataLocal.push({
+          key: t('参考视频秒数'),
+          value: `${formatLogSeconds(other.reference_video_seconds_total)} ${t('秒')}`,
+        });
+      }
+      if (
+        isAdminUser &&
+        other?.billing_seconds_total > 0 &&
+        other?.reference_video_seconds_total > 0
+      ) {
+        expandDataLocal.push({
+          key: t('计费总秒数'),
+          value: `${formatLogSeconds(other.billing_seconds_total)} ${t('秒')}`,
         });
       }
       if (other?.ws || other?.audio) {
