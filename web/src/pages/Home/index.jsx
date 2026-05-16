@@ -154,15 +154,15 @@ const Home = () => {
             <PricingComparison />
 
             {/* 可用模型 */}
-            <AvailableModels />
+            {/*<AvailableModels />*/}
 
             {/* 我们的优势 */}
             <OurAdvantages />
 
             {/* 联系我们 */}
-            <div ref={contactUsRef}>
-              <ContactUs />
-            </div>
+            {/*<div ref={contactUsRef}>*/}
+            {/*  <ContactUs />*/}
+            {/*</div>*/}
           </div>
         ) : (
           <div className='overflow-x-hidden w-full'>

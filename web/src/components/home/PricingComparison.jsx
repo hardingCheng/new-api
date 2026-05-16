@@ -398,7 +398,7 @@ const PricingComparison = () => {
               }}>
                 ¥10
               </span> 
-              {t('即可体验 Claude Sonnet 约')} 
+              {t('即可体验约')}
               <span className='number-scale' style={{ 
                 color: 'rgb(250, 173, 20)', 
                 fontWeight: 800, 
