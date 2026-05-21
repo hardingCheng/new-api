@@ -169,16 +169,14 @@ const buildModelState = (name, sourceMaps) => {
     completionPrice:
       inputPriceNumber !== null &&
       hasValue(
-        completionRatioMeta.locked
-          ? completionRatioMeta.ratio
-          : completionRatio,
+        hasValue(completionRatio) ? completionRatio : completionRatioMeta.ratio,
       )
         ? formatNumber(
             inputPriceNumber *
               Number(
-                completionRatioMeta.locked
-                  ? completionRatioMeta.ratio
-                  : completionRatio,
+                hasValue(completionRatio)
+                  ? completionRatio
+                  : completionRatioMeta.ratio,
               ),
           )
         : '',
