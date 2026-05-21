@@ -928,6 +928,28 @@ func ManageUser(c *gin.Context) {
 			return
 		}
 		user.Role = common.RoleCommonUser
+	case "pin":
+		if err := model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("pinned", 1).Error; err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"data":    gin.H{"id": user.Id, "pinned": 1},
+		})
+		return
+	case "unpin":
+		if err := model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("pinned", 0).Error; err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"data":    gin.H{"id": user.Id, "pinned": 0},
+		})
+		return
 	case "add_quota":
 		adminName := c.GetString("username")
 		adminId := c.GetInt("id")

@@ -28,7 +28,7 @@ import {
   Typography,
   Dropdown,
 } from '@douyinfe/semi-ui';
-import { IconMore } from '@douyinfe/semi-icons';
+import { IconMore, IconMapPin } from '@douyinfe/semi-icons';
 import {
   renderGroup,
   renderNumber,
@@ -75,14 +75,24 @@ const renderRole = (role, t) => {
  */
 const renderUsername = (text, record) => {
   const remark = record.remark;
+  const isPinned = !!record.pinned;
+  const pinIcon = isPinned ? (
+    <IconMapPin style={{ color: '#f59e0b' }} />
+  ) : null;
   if (!remark) {
-    return <span>{text}</span>;
+    return (
+      <Space spacing={4}>
+        {pinIcon}
+        <span>{text}</span>
+      </Space>
+    );
   }
   const maxLen = 10;
   const displayRemark =
     remark.length > maxLen ? remark.slice(0, maxLen) + '…' : remark;
   return (
     <Space spacing={2}>
+      {pinIcon}
       <span>{text}</span>
       <Tooltip content={remark} position='top' showArrow>
         <Tag color='white' shape='circle' className='!text-xs'>
@@ -216,6 +226,7 @@ const renderOperations = (
     showResetPasskeyModal,
     showResetTwoFAModal,
     showUserSubscriptionsModal,
+    manageUser,
     t,
   },
 ) => {
@@ -223,7 +234,17 @@ const renderOperations = (
     return <></>;
   }
 
+  const isPinned = !!record.pinned;
   const moreMenu = [
+    {
+      node: 'item',
+      name: isPinned ? t('取消置顶') : t('置顶'),
+      onClick: () =>
+        manageUser && manageUser(record.id, isPinned ? 'unpin' : 'pin', record),
+    },
+    {
+      node: 'divider',
+    },
     {
       node: 'item',
       name: t('订阅管理'),
@@ -316,6 +337,7 @@ export const getUsersColumns = ({
   showResetPasskeyModal,
   showResetTwoFAModal,
   showUserSubscriptionsModal,
+  manageUser,
 }) => {
   return [
     {
@@ -383,6 +405,7 @@ export const getUsersColumns = ({
           showResetPasskeyModal,
           showResetTwoFAModal,
           showUserSubscriptionsModal,
+          manageUser,
           t,
         }),
     },

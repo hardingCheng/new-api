@@ -141,6 +141,12 @@ export const useUsersData = () => {
           if (action === 'delete') {
             return { ...u, DeletedAt: new Date() };
           }
+          if (action === 'pin') {
+            return { ...u, pinned: 1 };
+          }
+          if (action === 'unpin') {
+            return { ...u, pinned: 0 };
+          }
           return { ...u, status: user.status, role: user.role };
         }
         return u;

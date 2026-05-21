@@ -30,6 +30,8 @@ import {
   ShieldAlert,
   Link2,
   CreditCard,
+  Pin,
+  PinOff,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -154,6 +156,15 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
             {t('Edit')}
             <DropdownMenuShortcut>
               <Pencil size={16} />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
+
+          <DropdownMenuItem
+            onClick={() => handleManage(user.pinned ? 'unpin' : 'pin')}
+          >
+            {user.pinned ? t('Unpin') : t('Pin')}
+            <DropdownMenuShortcut>
+              {user.pinned ? <PinOff size={16} /> : <Pin size={16} />}
             </DropdownMenuShortcut>
           </DropdownMenuItem>
 

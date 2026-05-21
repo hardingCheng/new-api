@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { type ColumnDef } from '@tanstack/react-table'
+import { Pin } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatQuota, formatTimestamp } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -90,6 +91,12 @@ export function useUsersColumns(): ColumnDef<User>[] {
         return (
           <div className='flex min-w-[160px] flex-col gap-1'>
             <div className='flex items-center gap-2'>
+              {row.original.pinned ? (
+                <Pin
+                  size={14}
+                  className='text-amber-500 shrink-0 fill-amber-500'
+                />
+              ) : null}
               <LongText className='max-w-[140px] font-medium'>
                 {username}
               </LongText>
