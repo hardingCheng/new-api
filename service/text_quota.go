@@ -55,6 +55,7 @@ type textQuotaSummary struct {
 	AudioInputPrice          float64
 	ImageGenerationCallPrice float64
 	ToolCallSurchargeQuota   decimal.Decimal
+	IsLocalBilling           bool
 }
 
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
@@ -175,6 +176,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.IsClaudeUsageSemantic = summary.UsageSemantic == "anthropic"
 
 	if usage == nil {
+		summary.IsLocalBilling = true
 		usage = &dto.Usage{
 			PromptTokens:     relayInfo.GetEstimatePromptTokens(),
 			CompletionTokens: 0,
@@ -191,6 +193,22 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.CacheCreationTokens1h = usage.ClaudeCacheCreation1hTokens
 	summary.ImageTokens = usage.PromptTokensDetails.ImageTokens
 	summary.AudioTokens = usage.PromptTokensDetails.AudioTokens
+
+	if summary.IsLocalBilling {
+		userRole := ctx.GetInt("role")
+		if userRole >= common.RoleAdminUser {
+			logger.LogInfo(ctx, fmt.Sprintf("本地计费模式 - 模型: %s, 渠道: %d, 原始估算 PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d",
+				relayInfo.OriginModelName, relayInfo.ChannelId, summary.PromptTokens, summary.CompletionTokens, summary.TotalTokens))
+		}
+		summary.PromptTokens = int(float64(summary.PromptTokens) * 1.4)
+		summary.CompletionTokens = int(float64(summary.CompletionTokens) * 1.4)
+		summary.TotalTokens = int(float64(summary.TotalTokens) * 1.4)
+		if userRole >= common.RoleAdminUser {
+			logger.LogInfo(ctx, fmt.Sprintf("本地计费模式 - 调整后 PromptTokens: %d, CompletionTokens: %d, TotalTokens: %d, 倍率: 1.4",
+				summary.PromptTokens, summary.CompletionTokens, summary.TotalTokens))
+		}
+	}
+
 	legacyClaudeDerived := isLegacyClaudeDerivedOpenAIUsage(relayInfo, usage)
 	isOpenRouterClaudeBilling := relayInfo.ChannelMeta != nil &&
 		relayInfo.ChannelType == constant.ChannelTypeOpenRouter &&
@@ -283,6 +301,9 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 				quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(otherRatio))
 			}
 		}
+		if summary.IsLocalBilling {
+			quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(1.4))
+		}
 
 		if !ratio.IsZero() && quotaCalculateDecimal.LessThanOrEqual(decimal.Zero) {
 			quotaCalculateDecimal = decimal.NewFromInt(1)
@@ -296,6 +317,9 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			for _, otherRatio := range relayInfo.PriceData.OtherRatios {
 				quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(otherRatio))
 			}
+		}
+		if summary.IsLocalBilling {
+			quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(1.4))
 		}
 		summary.Quota = int(quotaCalculateDecimal.Round(0).IntPart())
 	}
@@ -330,6 +354,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	adminRejectReason := common.GetContextKeyString(ctx, constant.ContextKeyAdminRejectReason)
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+	if summary.IsLocalBilling {
+		extraContent = append(extraContent, "本地计费")
+	}
 
 	var tieredResult *billingexpr.TieredResult
 	tieredBillingApplied := false

@@ -10,6 +10,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -59,4 +60,33 @@ func TestModelPriceHelperTieredUsesPreloadedRequestInput(t *testing.T) {
 	require.Equal(t, "stream", info.TieredBillingSnapshot.EstimatedTier)
 	require.Equal(t, billing_setting.BillingModeTieredExpr, info.TieredBillingSnapshot.BillingMode)
 	require.Equal(t, common.QuotaPerUnit, info.TieredBillingSnapshot.QuotaPerUnit)
+}
+
+func TestModelPriceHelperUsePricePreConsumeInflatesLocalBilling(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	originalModelPrice := ratio_setting.ModelPrice2JSONString()
+	originalGroupRatio := ratio_setting.GroupRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(originalModelPrice))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalGroupRatio))
+	})
+
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"local-price-model":0.01}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1}`))
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("group", "default")
+
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "local-price-model",
+		UserGroup:       "default",
+		UsingGroup:      "default",
+	}
+
+	priceData, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+	require.NoError(t, err)
+	require.True(t, priceData.UsePrice)
+	require.Equal(t, int(0.01*common.QuotaPerUnit*1.4), priceData.QuotaToPreConsume)
 }

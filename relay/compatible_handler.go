@@ -182,8 +182,10 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	var httpResp *http.Response
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
+		logger.LogError(c, fmt.Sprintf("请求上游失败 - 模型: %s, 渠道: %d, 错误: %v", info.OriginModelName, info.ChannelId, err))
 		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
 	}
+	logger.LogInfo(c, fmt.Sprintf("请求上游成功 - 模型: %s, 渠道: %d", info.OriginModelName, info.ChannelId))
 
 	statusCodeMappingStr := c.GetString("status_code_mapping")
 
@@ -200,10 +202,12 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 	usage, newApiErr := adaptor.DoResponse(c, httpResp, info)
 	if newApiErr != nil {
+		logger.LogError(c, fmt.Sprintf("处理上游响应失败 - 模型: %s, 渠道: %d, 错误: %v", info.OriginModelName, info.ChannelId, newApiErr))
 		// reset status code 重置状态码
 		service.ResetStatusCode(newApiErr, statusCodeMappingStr)
 		return newApiErr
 	}
+	logger.LogInfo(c, fmt.Sprintf("处理上游响应成功 - 模型: %s, 渠道: %d, usage: %+v", info.OriginModelName, info.ChannelId, usage))
 
 	var containAudioTokens = usage.(*dto.Usage).CompletionTokenDetails.AudioTokens > 0 || usage.(*dto.Usage).PromptTokensDetails.AudioTokens > 0
 	var containsAudioRatios = ratio_setting.ContainsAudioRatio(info.OriginModelName) || ratio_setting.ContainsAudioCompletionRatio(info.OriginModelName)
@@ -213,5 +217,6 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	} else {
 		service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
 	}
+	logger.LogInfo(c, fmt.Sprintf("响应已返回给用户 - 模型: %s, 渠道: %d, 最终 usage: %+v", info.OriginModelName, info.ChannelId, usage))
 	return nil
 }

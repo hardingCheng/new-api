@@ -68,6 +68,31 @@ func TestCalculateTextQuotaSummaryUnifiedForClaudeSemantic(t *testing.T) {
 	require.Equal(t, 1488, chatSummary.Quota)
 }
 
+func TestCalculateTextQuotaSummaryInflatesLocalBilling(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "local-billing-model",
+		PriceData: types.PriceData{
+			ModelRatio:      1,
+			CompletionRatio: 1,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+	relayInfo.SetEstimatePromptTokens(100)
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, nil)
+
+	require.True(t, summary.IsLocalBilling)
+	require.Equal(t, 140, summary.PromptTokens)
+	require.Equal(t, 0, summary.CompletionTokens)
+	require.Equal(t, 140, summary.TotalTokens)
+	require.Equal(t, 196, summary.Quota)
+}
+
 func TestCalculateTextQuotaSummaryUsesSplitClaudeCacheCreationRatios(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
