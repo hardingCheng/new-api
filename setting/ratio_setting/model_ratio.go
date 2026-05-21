@@ -475,14 +475,6 @@ func GetCompletionRatioInfo(name string) CompletionRatioInfo {
 		}
 	}
 
-	hardCodedRatio, locked := getHardcodedCompletionModelRatio(name)
-	if locked {
-		return CompletionRatioInfo{
-			Ratio:  hardCodedRatio,
-			Locked: true,
-		}
-	}
-
 	if ratio, ok := completionRatioMap.Get(name); ok {
 		return CompletionRatioInfo{
 			Ratio:  ratio,
@@ -490,6 +482,7 @@ func GetCompletionRatioInfo(name string) CompletionRatioInfo {
 		}
 	}
 
+	hardCodedRatio, _ := getHardcodedCompletionModelRatio(name)
 	return CompletionRatioInfo{
 		Ratio:  hardCodedRatio,
 		Locked: false,
