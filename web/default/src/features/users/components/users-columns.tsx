@@ -94,7 +94,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
               {row.original.pinned ? (
                 <Pin
                   size={14}
-                  className='text-amber-500 shrink-0 fill-amber-500'
+                  className='shrink-0 fill-amber-500 text-amber-500'
                 />
               ) : null}
               <LongText className='max-w-[140px] font-medium'>
@@ -273,6 +273,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
     },
     {
       id: 'invite_info',
+      accessorFn: (row) => row.aff_count,
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('Invite Info')} />
       ),

@@ -25,6 +25,7 @@ import UsersFilters from './UsersFilters';
 import UsersDescription from './UsersDescription';
 import AddUserModal from './modals/AddUserModal';
 import EditUserModal from './modals/EditUserModal';
+import ColumnSelectorModal from './modals/ColumnSelectorModal';
 import { useUsersData } from '../../../hooks/users/useUsersData';
 import { useIsMobile } from '../../../hooks/common/useIsMobile';
 import { createCardProPagination } from '../../../helpers/utils';
@@ -77,6 +78,8 @@ const UsersPage = () => {
         editingUser={editingUser}
       />
 
+      <ColumnSelectorModal {...usersData} />
+
       <CardPro
         type='type1'
         descriptionArea={
@@ -88,7 +91,11 @@ const UsersPage = () => {
         }
         actionsArea={
           <div className='flex flex-col md:flex-row justify-between items-center gap-2 w-full'>
-            <UsersActions setShowAddUser={setShowAddUser} t={t} />
+            <UsersActions
+              setShowAddUser={setShowAddUser}
+              setShowColumnSelector={usersData.setShowColumnSelector}
+              t={t}
+            />
 
             <UsersFilters
               formInitValues={formInitValues}

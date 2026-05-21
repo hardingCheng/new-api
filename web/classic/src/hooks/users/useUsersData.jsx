@@ -22,6 +22,22 @@ import { useTranslation } from 'react-i18next';
 import { API, showError, showSuccess } from '../../helpers';
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
+import { USER_COLUMN_KEYS } from '../../components/table/users/UsersColumnDefs';
+
+const USERS_TABLE_COLUMNS_STORAGE_KEY = 'users-table-columns';
+
+const getDefaultUserColumnVisibility = () => ({
+  [USER_COLUMN_KEYS.ID]: true,
+  [USER_COLUMN_KEYS.USERNAME]: true,
+  [USER_COLUMN_KEYS.INFO]: true,
+  [USER_COLUMN_KEYS.QUOTA_USAGE]: true,
+  [USER_COLUMN_KEYS.GROUP]: true,
+  [USER_COLUMN_KEYS.ROLE]: true,
+  [USER_COLUMN_KEYS.INVITE]: true,
+  [USER_COLUMN_KEYS.CREATED_AT]: true,
+  [USER_COLUMN_KEYS.LAST_LOGIN_AT]: true,
+  [USER_COLUMN_KEYS.OPERATE]: true,
+});
 
 export const useUsersData = () => {
   const { t } = useTranslation();
@@ -35,6 +51,10 @@ export const useUsersData = () => {
   const [searching, setSearching] = useState(false);
   const [groupOptions, setGroupOptions] = useState([]);
   const [userCount, setUserCount] = useState(0);
+  const [visibleColumns, setVisibleColumns] = useState(
+    getDefaultUserColumnVisibility,
+  );
+  const [showColumnSelector, setShowColumnSelector] = useState(false);
 
   // Modal states
   const [showAddUser, setShowAddUser] = useState(false);
@@ -51,6 +71,51 @@ export const useUsersData = () => {
 
   // Form API reference
   const [formApi, setFormApi] = useState(null);
+
+  const initDefaultColumns = () => {
+    setVisibleColumns(getDefaultUserColumnVisibility());
+  };
+
+  useEffect(() => {
+    const savedColumns = localStorage.getItem(USERS_TABLE_COLUMNS_STORAGE_KEY);
+    if (savedColumns) {
+      try {
+        const parsed = JSON.parse(savedColumns);
+        setVisibleColumns({
+          ...getDefaultUserColumnVisibility(),
+          ...parsed,
+          [USER_COLUMN_KEYS.OPERATE]: true,
+        });
+      } catch (e) {
+        console.error('Failed to parse saved user column preferences', e);
+        initDefaultColumns();
+      }
+    } else {
+      initDefaultColumns();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (Object.keys(visibleColumns).length > 0) {
+      localStorage.setItem(
+        USERS_TABLE_COLUMNS_STORAGE_KEY,
+        JSON.stringify(visibleColumns),
+      );
+    }
+  }, [visibleColumns]);
+
+  const handleColumnVisibilityChange = (columnKey, checked) => {
+    setVisibleColumns({ ...visibleColumns, [columnKey]: checked });
+  };
+
+  const handleSelectAll = (checked) => {
+    const updatedColumns = {};
+    Object.values(USER_COLUMN_KEYS).forEach((key) => {
+      updatedColumns[key] = checked;
+    });
+    updatedColumns[USER_COLUMN_KEYS.OPERATE] = true;
+    setVisibleColumns(updatedColumns);
+  };
 
   // Get form values helper function
   const getFormValues = () => {
@@ -306,6 +371,9 @@ export const useUsersData = () => {
     // UI state
     compactMode,
     setCompactMode,
+    visibleColumns,
+    showColumnSelector,
+    setShowColumnSelector,
 
     // Actions
     loadUsers,
@@ -316,6 +384,9 @@ export const useUsersData = () => {
     handlePageChange,
     handlePageSizeChange,
     handleRow,
+    handleColumnVisibilityChange,
+    handleSelectAll,
+    initDefaultColumns,
     refresh,
     closeAddUser,
     closeEditUser,

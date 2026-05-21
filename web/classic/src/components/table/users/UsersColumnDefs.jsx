@@ -36,6 +36,31 @@ import {
   timestamp2string,
 } from '../../../helpers';
 
+export const USER_COLUMN_KEYS = {
+  ID: 'id',
+  USERNAME: 'username',
+  INFO: 'info',
+  QUOTA_USAGE: 'quota_usage',
+  GROUP: 'group',
+  ROLE: 'role',
+  INVITE: 'invite',
+  CREATED_AT: 'created_at',
+  LAST_LOGIN_AT: 'last_login_at',
+  OPERATE: 'operate',
+};
+
+export const getUsersColumnOptions = (t) => [
+  { key: USER_COLUMN_KEYS.ID, title: 'ID' },
+  { key: USER_COLUMN_KEYS.USERNAME, title: t('用户名') },
+  { key: USER_COLUMN_KEYS.INFO, title: t('状态') },
+  { key: USER_COLUMN_KEYS.QUOTA_USAGE, title: t('剩余额度/总额度') },
+  { key: USER_COLUMN_KEYS.GROUP, title: t('分组') },
+  { key: USER_COLUMN_KEYS.ROLE, title: t('角色') },
+  { key: USER_COLUMN_KEYS.INVITE, title: t('邀请信息') },
+  { key: USER_COLUMN_KEYS.CREATED_AT, title: t('创建时间') },
+  { key: USER_COLUMN_KEYS.LAST_LOGIN_AT, title: t('最后登录') },
+];
+
 const renderTimestamp = (text) => (text ? timestamp2string(text) : '-');
 
 /**
@@ -76,9 +101,7 @@ const renderRole = (role, t) => {
 const renderUsername = (text, record) => {
   const remark = record.remark;
   const isPinned = !!record.pinned;
-  const pinIcon = isPinned ? (
-    <IconMapPin style={{ color: '#f59e0b' }} />
-  ) : null;
+  const pinIcon = isPinned ? <IconMapPin style={{ color: '#f59e0b' }} /> : null;
   if (!remark) {
     return (
       <Space spacing={4}>
@@ -342,56 +365,65 @@ export const getUsersColumns = ({
   return [
     {
       title: 'ID',
-      dataIndex: 'id',
+      dataIndex: USER_COLUMN_KEYS.ID,
+      key: USER_COLUMN_KEYS.ID,
     },
     {
       title: t('用户名'),
-      dataIndex: 'username',
+      dataIndex: USER_COLUMN_KEYS.USERNAME,
+      key: USER_COLUMN_KEYS.USERNAME,
       render: (text, record) => renderUsername(text, record),
     },
     {
       title: t('状态'),
-      dataIndex: 'info',
+      dataIndex: USER_COLUMN_KEYS.INFO,
+      key: USER_COLUMN_KEYS.INFO,
       render: (text, record, index) =>
         renderStatistics(text, record, showEnableDisableModal, t),
     },
     {
       title: t('剩余额度/总额度'),
-      key: 'quota_usage',
+      key: USER_COLUMN_KEYS.QUOTA_USAGE,
       render: (text, record) => renderQuotaUsage(text, record, t),
     },
     {
       title: t('分组'),
-      dataIndex: 'group',
+      dataIndex: USER_COLUMN_KEYS.GROUP,
+      key: USER_COLUMN_KEYS.GROUP,
       render: (text, record, index) => {
         return <div>{renderGroup(text)}</div>;
       },
     },
     {
       title: t('角色'),
-      dataIndex: 'role',
+      dataIndex: USER_COLUMN_KEYS.ROLE,
+      key: USER_COLUMN_KEYS.ROLE,
       render: (text, record, index) => {
         return <div>{renderRole(text, t)}</div>;
       },
     },
     {
       title: t('邀请信息'),
-      dataIndex: 'invite',
+      dataIndex: USER_COLUMN_KEYS.INVITE,
+      key: USER_COLUMN_KEYS.INVITE,
       render: (text, record, index) => renderInviteInfo(text, record, t),
     },
     {
       title: t('创建时间'),
-      dataIndex: 'created_at',
+      dataIndex: USER_COLUMN_KEYS.CREATED_AT,
+      key: USER_COLUMN_KEYS.CREATED_AT,
       render: renderTimestamp,
     },
     {
       title: t('最后登录'),
-      dataIndex: 'last_login_at',
+      dataIndex: USER_COLUMN_KEYS.LAST_LOGIN_AT,
+      key: USER_COLUMN_KEYS.LAST_LOGIN_AT,
       render: renderTimestamp,
     },
     {
       title: '',
-      dataIndex: 'operate',
+      dataIndex: USER_COLUMN_KEYS.OPERATE,
+      key: USER_COLUMN_KEYS.OPERATE,
       fixed: 'right',
       width: 200,
       render: (text, record, index) =>

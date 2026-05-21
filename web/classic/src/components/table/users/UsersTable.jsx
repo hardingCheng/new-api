@@ -41,6 +41,7 @@ const UsersTable = (usersData) => {
     pageSize,
     userCount,
     compactMode,
+    visibleColumns,
     handlePageChange,
     handlePageSizeChange,
     handleRow,
@@ -159,16 +160,20 @@ const UsersTable = (usersData) => {
 
   // Handle compact mode by removing fixed positioning
   const tableColumns = useMemo(() => {
+    const filteredColumns = columns.filter(
+      (column) => visibleColumns[column.key],
+    );
+
     return compactMode
-      ? columns.map((col) => {
+      ? filteredColumns.map((col) => {
           if (col.dataIndex === 'operate') {
             const { fixed, ...rest } = col;
             return rest;
           }
           return col;
         })
-      : columns;
-  }, [compactMode, columns]);
+      : filteredColumns;
+  }, [compactMode, columns, visibleColumns]);
 
   return (
     <>
@@ -188,6 +193,7 @@ const UsersTable = (usersData) => {
         hidePagination={true}
         loading={loading}
         onRow={handleRow}
+        visibleColumns={visibleColumns}
         empty={
           <Empty
             image={<IllustrationNoResult style={{ width: 150, height: 150 }} />}
