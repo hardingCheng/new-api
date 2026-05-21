@@ -188,6 +188,7 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
   const handleReset = () => {
     props.table.resetColumnFilters()
     props.table.setGlobalFilter('')
+    setExpanded(false)
     props.onReset?.()
   }
 
@@ -210,7 +211,13 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
   ) : null
 
   const searchButton = hasSearch ? (
-    <Button onClick={props.onSearch} disabled={props.searchLoading}>
+    <Button
+      onClick={() => {
+        setExpanded(false)
+        props.onSearch?.()
+      }}
+      disabled={props.searchLoading}
+    >
       {props.searchLoading && <Loader2 className='animate-spin' />}
       {t('Search')}
     </Button>

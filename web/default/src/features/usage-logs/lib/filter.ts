@@ -43,6 +43,7 @@ export function buildSearchParams(
     ...(filters.startTime && { startTime: filters.startTime.getTime() }),
     ...(filters.endTime && { endTime: filters.endTime.getTime() }),
     ...(filters.channel && { channel: filters.channel }),
+    ...(filters.channelIds && { channelIds: filters.channelIds }),
   }
 
   switch (logCategory) {
@@ -54,6 +55,7 @@ export function buildSearchParams(
         ...(commonFilters.token && { token: commonFilters.token }),
         ...(commonFilters.group && { group: commonFilters.group }),
         ...(commonFilters.username && { username: commonFilters.username }),
+        ...(commonFilters.userIds && { userIds: commonFilters.userIds }),
         ...(commonFilters.requestId && { requestId: commonFilters.requestId }),
         ...(commonFilters.upstreamRequestId && {
           upstreamRequestId: commonFilters.upstreamRequestId,

@@ -178,6 +178,7 @@ export function buildApiParams(config: {
   isAdmin: boolean
 }): GetLogsParams {
   const { page, pageSize, searchParams, columnFilters = [], isAdmin } = config
+  const channelIdsValue = searchParams.channelIds || searchParams.channel
 
   // Helper to process type parameter (single value from array)
   const processType = (value: unknown) => {
@@ -195,11 +196,14 @@ export function buildApiParams(config: {
     ...(searchParams.model ? { model_name: String(searchParams.model) } : {}),
     ...(searchParams.token ? { token_name: String(searchParams.token) } : {}),
     ...(searchParams.group ? { group: String(searchParams.group) } : {}),
-    ...(isAdmin && searchParams.channel
-      ? { channel: Number(searchParams.channel) || 0 }
+    ...(isAdmin && channelIdsValue
+      ? { channel_ids: String(channelIdsValue) }
       : {}),
     ...(isAdmin && searchParams.username
       ? { username: String(searchParams.username) }
+      : {}),
+    ...(isAdmin && searchParams.userIds
+      ? { user_ids: String(searchParams.userIds) }
       : {}),
     ...(searchParams.requestId
       ? { request_id: String(searchParams.requestId) }
@@ -228,11 +232,14 @@ export function buildApiParams(config: {
         case 'group':
           params.group = String(value)
           break
-        case 'channel':
-          if (isAdmin) params.channel = Number(value) || 0
+        case 'channel_ids':
+          if (isAdmin) params.channel_ids = String(value)
           break
         case 'username':
           if (isAdmin) params.username = String(value)
+          break
+        case 'user_ids':
+          if (isAdmin) params.user_ids = String(value)
           break
       }
     })

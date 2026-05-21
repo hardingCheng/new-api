@@ -32,6 +32,7 @@ const LogsFilters = ({
   setLogType,
   loading,
   isAdminUser,
+  userOptions,
   t,
 }) => {
   return (
@@ -112,13 +113,19 @@ const LogsFilters = ({
                 pure
                 size='small'
               />
-              <Form.Input
-                field='username'
-                prefix={<IconSearch />}
-                placeholder={t('用户名称')}
+              <Form.Select
+                field='user_ids'
+                placeholder={t('选择用户或输入用户名')}
+                optionList={userOptions}
+                multiple
+                filter
+                allowCreate
                 showClear
                 pure
                 size='small'
+                maxTagCount={1}
+                showRestTagsPopover
+                className='usage-log-user-filter'
               />
             </>
           )}

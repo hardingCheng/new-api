@@ -144,10 +144,7 @@ function renderType(type, t) {
 
 function buildStreamStatusTooltip(ss, t) {
   if (!ss) return null;
-  const lines = [
-    t('流状态') + '：' + t('异常'),
-    (ss.end_reason || 'unknown'),
-  ];
+  const lines = [t('流状态') + '：' + t('异常'), ss.end_reason || 'unknown'];
   if (ss.error_count > 0) {
     lines.push(`${t('软错误')}: ${ss.error_count}`);
   }
@@ -185,11 +182,7 @@ function renderIsStream(bool, t, streamStatus) {
                 userSelect: 'none',
               }}
             >
-              <CircleAlert
-                size={14}
-                strokeWidth={2.5}
-                color='currentColor'
-              />
+              <CircleAlert size={14} strokeWidth={2.5} color='currentColor' />
             </span>
           </Tooltip>
         )}
@@ -269,7 +262,7 @@ function renderBillingTag(record, t) {
   return null;
 }
 
-function renderModelName(record, copyText, t) {
+function renderModelName(record, copyText, t, isAdminUser) {
   let other = getLogOther(record.other);
   let modelMapped =
     other?.is_model_mapped &&
@@ -299,18 +292,20 @@ function renderModelName(record, copyText, t) {
                       },
                     })}
                   </div>
-                  <div className='flex items-center'>
-                    <Typography.Text strong style={{ marginRight: 8 }}>
-                      {t('实际模型')}:
-                    </Typography.Text>
-                    {renderModelTag(other.upstream_model_name, {
-                      onClick: (event) => {
-                        copyText(event, other.upstream_model_name).then(
-                          (r) => {},
-                        );
-                      },
-                    })}
-                  </div>
+                  {isAdminUser && (
+                    <div className='flex items-center'>
+                      <Typography.Text strong style={{ marginRight: 8 }}>
+                        {t('实际模型')}:
+                      </Typography.Text>
+                      {renderModelTag(other.upstream_model_name, {
+                        onClick: (event) => {
+                          copyText(event, other.upstream_model_name).then(
+                            (r) => {},
+                          );
+                        },
+                      })}
+                    </div>
+                  )}
                 </Space>
               </div>
             }
@@ -319,11 +314,11 @@ function renderModelName(record, copyText, t) {
               onClick: (event) => {
                 copyText(event, record.model_name).then((r) => {});
               },
-              suffixIcon: (
+              suffixIcon: isAdminUser ? (
                 <Route
                   style={{ width: '0.9em', height: '0.9em', opacity: 0.75 }}
                 />
-              ),
+              ) : null,
             })}
           </Popover>
         </Space>
@@ -461,7 +456,11 @@ function getUsageLogDetailSummary(record, text, billingDisplayMode, t) {
     };
   }
 
-  const summaryOpts = { ...other, displayMode: billingDisplayMode, outputMode: 'segments' };
+  const summaryOpts = {
+    ...other,
+    displayMode: billingDisplayMode,
+    outputMode: 'segments',
+  };
 
   if (other?.billing_mode === 'tiered_expr') {
     return { segments: renderTieredModelPriceSimple(summaryOpts) };
@@ -688,7 +687,7 @@ export const getLogsColumns = ({
           record.type === 2 ||
           record.type === 5 ||
           record.type === 6 ? (
-          <>{renderModelName(record, copyText, t)}</>
+          <>{renderModelName(record, copyText, t, isAdminUser)}</>
         ) : (
           <></>
         );

@@ -3648,6 +3648,8 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "选择用户": "ユーザーを選択",
+    "选择用户或输入用户名": "ユーザーを選択またはユーザー名を入力"
   }
 }

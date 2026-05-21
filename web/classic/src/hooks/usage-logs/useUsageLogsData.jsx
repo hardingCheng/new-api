@@ -74,6 +74,7 @@ export const useLogsData = () => {
   const [logCount, setLogCount] = useState(0);
   const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
   const [logType, setLogType] = useState(0);
+  const [userOptions, setUserOptions] = useState([]);
 
   // User and admin
   const isAdminUser = isAdmin();
@@ -96,6 +97,7 @@ export const useLogsData = () => {
   let now = new Date();
   const formInitValues = {
     username: '',
+    user_ids: [],
     token_name: '',
     model_name: '',
     channel: '',
@@ -164,7 +166,9 @@ export const useLogsData = () => {
   };
 
   // Column visibility state
-  const [visibleColumns, setVisibleColumns] = useState(getInitialVisibleColumns);
+  const [visibleColumns, setVisibleColumns] = useState(
+    getInitialVisibleColumns,
+  );
   const [showColumnSelector, setShowColumnSelector] = useState(false);
   const [billingDisplayMode, setBillingDisplayMode] = useState(
     getInitialBillingDisplayMode,
@@ -235,6 +239,11 @@ export const useLogsData = () => {
   // 获取表单值的辅助函数，确保所有值都是字符串
   const getFormValues = () => {
     const formValues = formApi ? formApi.getValues() : {};
+    const userFilterValues = Array.isArray(formValues.user_ids)
+      ? formValues.user_ids.map((value) => String(value).trim()).filter(Boolean)
+      : [];
+    const userIds = userFilterValues.filter((value) => /^\d+$/.test(value));
+    const usernames = userFilterValues.filter((value) => !/^\d+$/.test(value));
 
     let start_timestamp = timestamp2string(getTodayStartTimestamp());
     let end_timestamp = timestamp2string(now.getTime() / 1000 + 3600);
@@ -249,7 +258,8 @@ export const useLogsData = () => {
     }
 
     return {
-      username: formValues.username || '',
+      username: usernames[0] || '',
+      user_ids: userIds,
       token_name: formValues.token_name || '',
       model_name: formValues.model_name || '',
       start_timestamp,
@@ -288,6 +298,7 @@ export const useLogsData = () => {
   const getLogStat = async () => {
     const {
       username,
+      user_ids,
       token_name,
       model_name,
       start_timestamp,
@@ -299,7 +310,7 @@ export const useLogsData = () => {
     const currentLogType = formLogType !== undefined ? formLogType : logType;
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
-    let url = `/api/log/stat?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
+    let url = `/api/log/stat?type=${currentLogType}&username=${username}&user_ids=${user_ids.join(',')}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel_ids=${channel}&group=${group}`;
     url = encodeURI(url);
     let res = await API.get(url);
     const { success, message, data } = res.data;
@@ -336,6 +347,28 @@ export const useLogsData = () => {
       setShowUserInfoModal(true);
     } else {
       showError(message);
+    }
+  };
+
+  const fetchUserOptions = async () => {
+    if (!isAdminUser) {
+      return;
+    }
+    try {
+      const res = await API.get(
+        '/api/user/search?keyword=&group=&p=1&page_size=100',
+      );
+      const { success, data } = res.data;
+      if (success) {
+        setUserOptions(
+          (data?.items || []).map((user) => ({
+            label: `${user.username} (#${user.id})`,
+            value: String(user.id),
+          })),
+        );
+      }
+    } catch (error) {
+      console.error('Failed to load log filter users', error);
     }
   };
 
@@ -383,7 +416,10 @@ export const useLogsData = () => {
       let other = getLogOther(logs[i].other);
       let expandDataLocal = [];
 
-      if (isAdminUser && (logs[i].type === 0 || logs[i].type === 2 || logs[i].type === 6)) {
+      if (
+        isAdminUser &&
+        (logs[i].type === 0 || logs[i].type === 2 || logs[i].type === 6)
+      ) {
         expandDataLocal.push({
           key: t('渠道信息'),
           value: `${logs[i].channel} - ${logs[i].channel_name || '[未知]'}`,
@@ -430,7 +466,10 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('日志详情'),
             value: other?.claude
-              ? renderClaudeLogContent({ ...other, displayMode: billingDisplayMode })
+              ? renderClaudeLogContent({
+                  ...other,
+                  displayMode: billingDisplayMode,
+                })
               : renderLogContent({ ...other, displayMode: billingDisplayMode }),
           });
         }
@@ -457,10 +496,12 @@ export const useLogsData = () => {
             key: t('请求并计费模型'),
             value: logs[i].model_name,
           });
-          expandDataLocal.push({
-            key: t('实际模型'),
-            value: other.upstream_model_name,
-          });
+          if (isAdminUser) {
+            expandDataLocal.push({
+              key: t('实际模型'),
+              value: other.upstream_model_name,
+            });
+          }
         }
 
         const isViolationFeeLog =
@@ -520,7 +561,14 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('失败原因'),
             value: (
-              <div style={{ maxWidth: 600, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.6 }}>
+              <div
+                style={{
+                  maxWidth: 600,
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-word',
+                  lineHeight: 1.6,
+                }}
+              >
                 {other.reason}
               </div>
             ),
@@ -537,7 +585,8 @@ export const useLogsData = () => {
         const ss = other.stream_status;
         const isOk = ss.status === 'ok';
         const statusLabel = isOk ? '✓ ' + t('正常') : '✗ ' + t('异常');
-        let streamValue = statusLabel + ' (' + (ss.end_reason || 'unknown') + ')';
+        let streamValue =
+          statusLabel + ' (' + (ss.end_reason || 'unknown') + ')';
         if (ss.error_count > 0) {
           streamValue += ` [${t('软错误')}: ${ss.error_count}]`;
         }
@@ -552,7 +601,14 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('流错误详情'),
             value: (
-              <div style={{ maxWidth: 600, whiteSpace: 'pre-line', wordBreak: 'break-word', lineHeight: 1.6 }}>
+              <div
+                style={{
+                  maxWidth: 600,
+                  whiteSpace: 'pre-line',
+                  wordBreak: 'break-word',
+                  lineHeight: 1.6,
+                }}
+              >
                 {ss.errors.join('\n')}
               </div>
             ),
@@ -732,6 +788,7 @@ export const useLogsData = () => {
     let url = '';
     const {
       username,
+      user_ids,
       token_name,
       model_name,
       start_timestamp,
@@ -752,7 +809,7 @@ export const useLogsData = () => {
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
     if (isAdminUser) {
-      url = `/api/log/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}&request_id=${request_id}`;
+      url = `/api/log/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${username}&user_ids=${user_ids.join(',')}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel_ids=${channel}&group=${group}&request_id=${request_id}`;
     } else {
       url = `/api/log/self/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}&request_id=${request_id}`;
     }
@@ -816,6 +873,7 @@ export const useLogsData = () => {
       .catch((reason) => {
         showError(reason);
       });
+    fetchUserOptions();
   }, []);
 
   // Initialize statistics when formApi is available
@@ -845,6 +903,7 @@ export const useLogsData = () => {
     logType,
     stat,
     isAdminUser,
+    userOptions,
 
     // Form state
     formApi,

@@ -16,8 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useQueryClient, useIsFetching } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate, getRouteApi } from '@tanstack/react-router'
 import { type Table } from '@tanstack/react-table'
 import { Eye, EyeOff } from 'lucide-react'
@@ -39,6 +40,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { DataTableToolbar } from '@/components/data-table'
+import { MultiSelect, type Option } from '@/components/multi-select'
+import { searchUsers } from '@/features/users/api'
 import { LOG_TYPES } from '../constants'
 import { buildSearchParams } from '../lib/filter'
 import { getDefaultTimeRange } from '../lib/utils'
@@ -49,8 +52,39 @@ import { useUsageLogsContext } from './usage-logs-provider'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
 const logTypeValues = ['0', '1', '2', '3', '4', '5', '6'] as const
+const usernameFilterPrefix = 'username:'
 
 type LogTypeValue = (typeof logTypeValues)[number]
+
+function splitMultiValue(value?: string): string[] {
+  return String(value || '')
+    .split(/[\s,，]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function joinMultiValue(values: string[]): string {
+  return values.join(',')
+}
+
+function encodeUsernameFilter(username: string): string {
+  return `${usernameFilterPrefix}${encodeURIComponent(username)}`
+}
+
+function decodeUsernameFilter(value: string): string {
+  return decodeURIComponent(value.slice(usernameFilterPrefix.length))
+}
+
+function isUsernameFilter(value: string): boolean {
+  return value.startsWith(usernameFilterPrefix)
+}
+
+function findLastUsernameFilter(values: string[]): string | undefined {
+  return [...values]
+    .reverse()
+    .find((value) => isUsernameFilter(value))
+    ?.slice(usernameFilterPrefix.length)
+}
 
 function isLogTypeValue(value: string): value is LogTypeValue {
   return (logTypeValues as readonly string[]).includes(value)
@@ -70,6 +104,12 @@ export function CommonLogsFilterBar<TData>(
   const isAdmin = useIsAdmin()
   const { sensitiveVisible, setSensitiveVisible } = useUsageLogsContext()
   const fetchingLogs = useIsFetching({ queryKey: ['logs'] })
+  const { data: usersData } = useQuery({
+    queryKey: ['usage-log-filter-users'],
+    queryFn: () => searchUsers({ p: 1, page_size: 100 }),
+    enabled: isAdmin,
+    staleTime: 5 * 60 * 1000,
+  })
 
   const [filters, setFilters] = useState<CommonLogFilters>(() => {
     const { start, end } = getDefaultTimeRange()
@@ -82,11 +122,15 @@ export function CommonLogsFilterBar<TData>(
     if (searchParams.startTime)
       next.startTime = new Date(searchParams.startTime)
     if (searchParams.endTime) next.endTime = new Date(searchParams.endTime)
-    if (searchParams.channel) next.channel = String(searchParams.channel)
+    if (searchParams.channelIds)
+      next.channelIds = String(searchParams.channelIds)
+    else if (searchParams.channel)
+      next.channelIds = String(searchParams.channel)
     if (searchParams.model) next.model = searchParams.model
     if (searchParams.token) next.token = searchParams.token
     if (searchParams.group) next.group = searchParams.group
     if (searchParams.username) next.username = searchParams.username
+    if (searchParams.userIds) next.userIds = String(searchParams.userIds)
     if (searchParams.requestId) next.requestId = searchParams.requestId
     if (searchParams.upstreamRequestId)
       next.upstreamRequestId = searchParams.upstreamRequestId
@@ -103,10 +147,12 @@ export function CommonLogsFilterBar<TData>(
     searchParams.startTime,
     searchParams.endTime,
     searchParams.channel,
+    searchParams.channelIds,
     searchParams.model,
     searchParams.token,
     searchParams.group,
     searchParams.username,
+    searchParams.userIds,
     searchParams.requestId,
     searchParams.upstreamRequestId,
     searchParams.type,
@@ -120,7 +166,21 @@ export function CommonLogsFilterBar<TData>(
   )
 
   const handleApply = useCallback(() => {
-    const filterParams = buildSearchParams(filters, 'common')
+    const userFilterValues = splitMultiValue(filters.userIds)
+    const selectedUserIds = userFilterValues.filter(
+      (value) => !isUsernameFilter(value)
+    )
+    const selectedUsername = findLastUsernameFilter(userFilterValues)
+    const filterParams = buildSearchParams(
+      {
+        ...filters,
+        userIds: joinMultiValue(selectedUserIds),
+        username: selectedUsername
+          ? decodeURIComponent(selectedUsername)
+          : filters.username || undefined,
+      },
+      'common'
+    )
     navigate({
       to: '/usage-logs/$section',
       params: { section: 'common' },
@@ -162,8 +222,9 @@ export function CommonLogsFilterBar<TData>(
 
   const hasExpandedFilters =
     !!filters.token ||
+    !!filters.userIds ||
     !!filters.username ||
-    !!filters.channel ||
+    !!filters.channelIds ||
     !!filters.requestId ||
     !!filters.upstreamRequestId
 
@@ -172,6 +233,19 @@ export function CommonLogsFilterBar<TData>(
 
   const inputClass = 'w-full sm:w-[140px] lg:w-[160px]'
   const sensitiveType = sensitiveVisible ? 'text' : 'password'
+  const userOptions = useMemo<Option[]>(
+    () =>
+      (usersData?.data?.items || []).map((user) => ({
+        value: String(user.id),
+        label: `${user.username} (#${user.id})`,
+      })),
+    [usersData?.data?.items]
+  )
+  const selectedUserValues = useMemo(() => {
+    const values = splitMultiValue(filters.userIds)
+    if (filters.username) values.push(encodeUsernameFilter(filters.username))
+    return Array.from(new Set(values))
+  }, [filters.userIds, filters.username])
 
   const statsBar = (
     <div className='flex flex-wrap items-center gap-2'>
@@ -269,22 +343,43 @@ export function CommonLogsFilterBar<TData>(
             className={inputClass}
           />
           {isAdmin && (
-            <Input
-              placeholder={t('Username')}
-              type={sensitiveType}
-              value={filters.username || ''}
-              onChange={(e) => handleChange('username', e.target.value)}
-              onKeyDown={handleKeyDown}
-              className={inputClass}
-            />
+            <div className='w-full sm:w-[220px] lg:w-[260px]'>
+              <MultiSelect
+                options={userOptions}
+                selected={selectedUserValues}
+                onChange={(values) => {
+                  const userIds = values.filter(
+                    (value) => !isUsernameFilter(value)
+                  )
+                  const username = findLastUsernameFilter(values)
+                  setFilters((prev) => ({
+                    ...prev,
+                    userIds: joinMultiValue(userIds),
+                    username: username ? decodeURIComponent(username) : '',
+                  }))
+                }}
+                placeholder={t('Select users or enter username...')}
+                className='text-xs'
+                maxVisible={1}
+                createOption={(value) => ({
+                  label: value,
+                  value: encodeUsernameFilter(value),
+                })}
+                formatSelectedLabel={(value, option) =>
+                  isUsernameFilter(value)
+                    ? decodeUsernameFilter(value)
+                    : option?.label || value
+                }
+              />
+            </div>
           )}
           {isAdmin && (
             <Input
               placeholder={t('Channel ID')}
-              value={filters.channel || ''}
-              onChange={(e) => handleChange('channel', e.target.value)}
+              value={filters.channelIds || ''}
+              onChange={(e) => handleChange('channelIds', e.target.value)}
               onKeyDown={handleKeyDown}
-              className={inputClass}
+              className='w-full sm:w-[180px] lg:w-[220px]'
             />
           )}
           <Input
@@ -297,9 +392,7 @@ export function CommonLogsFilterBar<TData>(
           <Input
             placeholder={t('Upstream Request ID')}
             value={filters.upstreamRequestId || ''}
-            onChange={(e) =>
-              handleChange('upstreamRequestId', e.target.value)
-            }
+            onChange={(e) => handleChange('upstreamRequestId', e.target.value)}
             onKeyDown={handleKeyDown}
             className={inputClass}
           />

@@ -41,6 +41,7 @@ export interface CommonFilters {
   startTime?: Date
   endTime?: Date
   channel?: string
+  channelIds?: string
 }
 
 /**
@@ -51,6 +52,7 @@ export interface CommonLogFilters extends CommonFilters {
   token?: string
   group?: string
   username?: string
+  userIds?: string
   requestId?: string
   upstreamRequestId?: string
 }
@@ -261,11 +263,13 @@ export interface GetLogsParams {
   page_size?: number
   type?: number
   username?: string
+  user_ids?: string
   token_name?: string
   model_name?: string
   start_timestamp?: number
   end_timestamp?: number
   channel?: number
+  channel_ids?: string
   group?: string
   request_id?: string
   upstream_request_id?: string
@@ -285,11 +289,13 @@ export interface GetLogsResponse {
 export interface GetLogStatsParams {
   type?: number
   username?: string
+  user_ids?: string
   token_name?: string
   model_name?: string
   start_timestamp?: number
   end_timestamp?: number
   channel?: number
+  channel_ids?: string
   group?: string
   request_id?: string
   upstream_request_id?: string

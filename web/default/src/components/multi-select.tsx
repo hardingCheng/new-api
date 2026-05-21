@@ -35,6 +35,9 @@ interface MultiSelectProps {
   onChange: (values: string[]) => void
   placeholder?: string
   className?: string
+  maxVisible?: number
+  createOption?: (inputValue: string) => Option | null
+  formatSelectedLabel?: (value: string, option?: Option) => string
 }
 
 export function MultiSelect({
@@ -43,6 +46,9 @@ export function MultiSelect({
   onChange,
   placeholder,
   className,
+  maxVisible,
+  createOption,
+  formatSelectedLabel,
 }: MultiSelectProps) {
   const { t } = useTranslation()
   const resolvedPlaceholder = placeholder ?? t('Select items...')
@@ -71,19 +77,42 @@ export function MultiSelect({
   const selectables = options.filter(
     (option) => !selected.includes(option.value)
   )
+  const trimmedInputValue = inputValue.trim()
+  const createdOption =
+    trimmedInputValue.length > 0 && createOption
+      ? createOption(trimmedInputValue)
+      : null
+  const showCreatedOption =
+    createdOption != null &&
+    !selected.includes(createdOption.value) &&
+    !options.some(
+      (option) =>
+        option.value === createdOption.value ||
+        option.label.toLowerCase() === createdOption.label.toLowerCase()
+    )
+  const visibleSelected =
+    maxVisible && maxVisible > 0 ? selected.slice(0, maxVisible) : selected
+  const hiddenSelectedCount = selected.length - visibleSelected.length
 
   return (
     <Command
       onKeyDown={handleKeyDown}
       className={`overflow-visible bg-transparent ${className || ''}`}
     >
-      <div className='group border-input ring-offset-background focus-within:ring-ring rounded-md border px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-offset-2'>
-        <div className='flex flex-wrap gap-1'>
-          {selected.map((value) => {
+      <div className='group border-input ring-offset-background focus-within:ring-ring flex h-9 items-center overflow-hidden rounded-md border px-2 text-sm focus-within:ring-2 focus-within:ring-offset-2'>
+        <div className='flex min-w-0 flex-1 items-center gap-1 overflow-hidden'>
+          {visibleSelected.map((value) => {
             const option = options.find((o) => o.value === value)
+            const label = formatSelectedLabel
+              ? formatSelectedLabel(value, option)
+              : option?.label || value
             return (
-              <Badge key={value} variant='secondary'>
-                {option?.label || value}
+              <Badge
+                key={value}
+                variant='secondary'
+                className='max-w-[8rem] px-1.5'
+              >
+                <span className='truncate'>{label}</span>
                 <Button
                   variant='ghost'
                   size='icon-sm'
@@ -108,6 +137,9 @@ export function MultiSelect({
               </Badge>
             )
           })}
+          {hiddenSelectedCount > 0 && (
+            <Badge variant='outline'>+{hiddenSelectedCount}</Badge>
+          )}
           <CommandPrimitive.Input
             ref={inputRef}
             value={inputValue}
@@ -115,18 +147,36 @@ export function MultiSelect({
             onBlur={() => setOpen(false)}
             onFocus={() => setOpen(true)}
             placeholder={selected.length === 0 ? resolvedPlaceholder : ''}
-            className='placeholder:text-muted-foreground flex-1 bg-transparent outline-none'
+            className='placeholder:text-muted-foreground min-w-[3rem] flex-1 bg-transparent outline-none'
           />
         </div>
       </div>
       <div className='relative'>
-        {open && selectables.length > 0 ? (
+        {open && (selectables.length > 0 || showCreatedOption) ? (
           <div className='bg-popover text-popover-foreground animate-in absolute top-0 z-10 w-full rounded-md border shadow-md outline-none'>
             <CommandGroup className='h-full max-h-60 overflow-auto'>
+              {showCreatedOption && (
+                <CommandItem
+                  key={createdOption.value}
+                  value={createdOption.label}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }}
+                  onSelect={() => {
+                    setInputValue('')
+                    onChange([...selected, createdOption.value])
+                  }}
+                  className='cursor-pointer'
+                >
+                  {createdOption.label}
+                </CommandItem>
+              )}
               {selectables.map((option) => {
                 return (
                   <CommandItem
                     key={option.value}
+                    value={option.label}
                     onMouseDown={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
