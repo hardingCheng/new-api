@@ -31,6 +31,7 @@ const baseURL = ''
 // Create axios instance with default config
 export const api = axios.create({
   baseURL,
+  timeout: 30 * 60 * 1000, // 30分钟超时（毫秒）
   withCredentials: true, // Include cookies in cross-origin requests
   headers: {
     'Cache-Control': 'no-store', // Prevent caching
