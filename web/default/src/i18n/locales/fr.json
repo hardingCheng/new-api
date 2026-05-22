@@ -4484,6 +4484,16 @@
     "Zoom": "Zoom",
     "Channel IDs": "ID de canaux",
     "Select users...": "Sélectionner des utilisateurs...",
-    "Select users or enter username...": "Sélectionner des utilisateurs ou saisir un nom d'utilisateur..."
+    "Select users or enter username...": "Sélectionner des utilisateurs ou saisir un nom d'utilisateur...",
+    "All Statuses": "Tous les statuts",
+    "Task Status": "Statut de la tâche",
+    "Task Type": "Type de tâche",
+    "User Filter": "Filtre utilisateur",
+    "Video Reference": "Référence vidéo",
+    "Has Video Reference": "Avec référence vidéo",
+    "No Video Reference": "Sans référence vidéo",
+    "Consumed Quota": "Quota consommé",
+    "Refund Quota": "Quota remboursé",
+    "Video Duration": "Durée vidéo"
   }
 }

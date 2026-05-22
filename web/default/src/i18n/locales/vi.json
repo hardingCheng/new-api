@@ -4484,6 +4484,16 @@
     "Zoom": "Zoom",
     "Channel IDs": "ID kênh",
     "Select users...": "Chọn người dùng...",
-    "Select users or enter username...": "Chọn người dùng hoặc nhập tên người dùng..."
+    "Select users or enter username...": "Chọn người dùng hoặc nhập tên người dùng...",
+    "All Statuses": "Tất cả trạng thái",
+    "Task Status": "Trạng thái tác vụ",
+    "Task Type": "Loại tác vụ",
+    "User Filter": "Bộ lọc người dùng",
+    "Video Reference": "Tham chiếu video",
+    "Has Video Reference": "Có tham chiếu video",
+    "No Video Reference": "Không có tham chiếu video",
+    "Consumed Quota": "Hạn mức đã dùng",
+    "Refund Quota": "Hạn mức hoàn trả",
+    "Video Duration": "Thời lượng video"
   }
 }

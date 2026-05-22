@@ -577,6 +577,7 @@ func RelayTask(c *gin.Context) {
 		service.LogTaskConsumption(c, relayInfo)
 
 		task := model.InitTask(result.Platform, relayInfo)
+		task.Properties.Input = taskInputSnapshot(c)
 		task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
 		task.PrivateData.BillingSource = relayInfo.BillingSource
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
@@ -600,6 +601,23 @@ func RelayTask(c *gin.Context) {
 	if taskErr != nil {
 		respondTaskError(c, taskErr)
 	}
+}
+
+func taskInputSnapshot(c *gin.Context) string {
+	if storage, err := common.GetBodyStorage(c); err == nil {
+		if body, err := storage.Bytes(); err == nil && len(body) > 0 {
+			contentType := c.GetHeader("Content-Type")
+			if strings.HasPrefix(contentType, "application/json") {
+				return string(body)
+			}
+		}
+	}
+	if req, err := relaycommon.GetTaskRequest(c); err == nil {
+		if b, err := common.Marshal(req); err == nil {
+			return string(b)
+		}
+	}
+	return ""
 }
 
 // respondTaskError 统一输出 Task 错误响应（含 429 限流提示改写）

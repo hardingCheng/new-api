@@ -4484,6 +4484,16 @@
     "Zoom": "Zoom",
     "Channel IDs": "ID каналов",
     "Select users...": "Выберите пользователей...",
-    "Select users or enter username...": "Выберите пользователей или введите имя пользователя..."
+    "Select users or enter username...": "Выберите пользователей или введите имя пользователя...",
+    "All Statuses": "Все статусы",
+    "Task Status": "Статус задачи",
+    "Task Type": "Тип задачи",
+    "User Filter": "Фильтр пользователя",
+    "Video Reference": "Видео-референс",
+    "Has Video Reference": "Есть видео-референс",
+    "No Video Reference": "Нет видео-референса",
+    "Consumed Quota": "Израсходованная квота",
+    "Refund Quota": "Возвращённая квота",
+    "Video Duration": "Длительность видео"
   }
 }

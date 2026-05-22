@@ -562,3 +562,15 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		Data:       task.Data,
 	}
 }
+
+func TaskModel2AdminDto(task *model.Task) *dto.TaskDto {
+	taskDto := TaskModel2Dto(task)
+	consumedQuota := task.GetConsumedQuota()
+	refundQuota := task.GetRefundQuota()
+	hasVideoReference := task.HasVideoReference()
+	taskDto.ConsumedQuota = &consumedQuota
+	taskDto.RefundQuota = &refundQuota
+	taskDto.VideoSeconds = task.GetVideoSeconds()
+	taskDto.HasVideoReference = &hasVideoReference
+	return taskDto
+}

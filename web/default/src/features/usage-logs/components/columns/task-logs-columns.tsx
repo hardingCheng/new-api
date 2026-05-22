@@ -22,13 +22,18 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { Music } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
+import { formatLogQuota } from '@/lib/format'
 import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { DataTableColumnHeader } from '@/components/data-table'
 import { StatusBadge } from '@/components/status-badge'
 import { TASK_ACTIONS, TASK_STATUS } from '../../constants'
-import { taskActionMapper, taskStatusMapper } from '../../lib/mappers'
+import {
+  taskActionMapper,
+  taskPlatformMapper,
+  taskStatusMapper,
+} from '../../lib/mappers'
 import type { TaskLog } from '../../types'
 import {
   AudioPreviewDialog,
@@ -98,25 +103,33 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
         <DataTableColumnHeader column={column} title={t('Submit Time')} />
       ),
       cell: ({ row }) => {
-        const log = row.original
         const submitTime = row.getValue('submit_time') as number
 
         return (
-          <div className='flex flex-col gap-0.5'>
-            <span className='font-mono text-xs tabular-nums'>
-              {formatTimestampToDate(submitTime, 'seconds')}
-            </span>
-            {log.finish_time ? (
-              <span className='text-muted-foreground/60 font-mono text-[11px] tabular-nums'>
-                {formatTimestampToDate(log.finish_time, 'seconds')}
-              </span>
-            ) : (
-              <span className='text-muted-foreground/50 text-[11px]'>-</span>
-            )}
-          </div>
+          <span className='font-mono text-xs tabular-nums'>
+            {formatTimestampToDate(submitTime, 'seconds')}
+          </span>
         )
       },
       meta: { label: t('Submit Time') },
+    },
+    {
+      accessorKey: 'finish_time',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Finish Time')} />
+      ),
+      cell: ({ row }) => {
+        const finishTime = row.getValue('finish_time') as number
+        if (!finishTime) {
+          return <span className='text-muted-foreground/60 text-xs'>-</span>
+        }
+        return (
+          <span className='font-mono text-xs tabular-nums'>
+            {formatTimestampToDate(finishTime, 'seconds')}
+          </span>
+        )
+      },
+      meta: { label: t('Finish Time') },
     },
   ]
 
@@ -172,27 +185,65 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
         <DataTableColumnHeader column={column} title={t('Task ID')} />
       ),
       cell: ({ row }) => {
-        const log = row.original
         const taskId = row.getValue('task_id') as string
         if (!taskId) {
           return <span className='text-muted-foreground/60 text-xs'>-</span>
         }
         return (
-          <div className='flex max-w-[170px] flex-col gap-0.5'>
-            <StatusBadge
-              label={taskId}
-              autoColor={taskId}
-              size='sm'
-              showDot={false}
-              className='border-border/60 bg-muted/30 max-w-full truncate rounded-md border px-1.5 py-0.5 font-mono'
-            />
-            <span className='text-muted-foreground/60 truncate text-[11px]'>
-              {t(log.platform)} · {t(taskActionMapper.getLabel(log.action))}
-            </span>
-          </div>
+          <StatusBadge
+            label={taskId}
+            autoColor={taskId}
+            size='sm'
+            showDot={false}
+            className='border-border/60 bg-muted/30 max-w-[170px] truncate rounded-md border px-1.5 py-0.5 font-mono'
+          />
         )
       },
       meta: { label: t('Task ID'), mobileTitle: true },
+    },
+    {
+      accessorKey: 'platform',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Platform')} />
+      ),
+      cell: ({ row }) => {
+        const platform = row.getValue('platform') as string
+        if (!platform) {
+          return <span className='text-muted-foreground/60 text-xs'>-</span>
+        }
+        return (
+          <StatusBadge
+            label={t(taskPlatformMapper.getLabel(platform, platform))}
+            variant={taskPlatformMapper.getVariant(platform)}
+            size='sm'
+            copyable={false}
+            showDot
+          />
+        )
+      },
+      meta: { label: t('Platform'), mobileHidden: true },
+    },
+    {
+      accessorKey: 'action',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Task Type')} />
+      ),
+      cell: ({ row }) => {
+        const action = row.getValue('action') as string
+        if (!action) {
+          return <span className='text-muted-foreground/60 text-xs'>-</span>
+        }
+        return (
+          <StatusBadge
+            label={t(taskActionMapper.getLabel(action, action))}
+            variant={taskActionMapper.getVariant(action)}
+            size='sm'
+            copyable={false}
+            showDot
+          />
+        )
+      },
+      meta: { label: t('Task Type'), mobileHidden: true },
     },
     createDurationColumn<TaskLog>({
       submitTimeKey: 'submit_time',
@@ -200,7 +251,83 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
       unit: 'seconds',
       headerLabel: t('Duration'),
       warningThresholdSec: 300,
-    }),
+    })
+  )
+
+  if (isAdmin) {
+    columns.push(
+      {
+        accessorKey: 'consumed_quota',
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('Consumed Quota')} />
+        ),
+        cell: ({ row }) => {
+          const log = row.original
+          const quota = log.consumed_quota ?? log.quota ?? 0
+          return (
+            <span className='border-border/80 bg-muted/60 inline-flex w-fit items-center rounded-md border px-1.5 py-0.5 font-mono text-xs font-semibold tabular-nums'>
+              {formatLogQuota(quota)}
+            </span>
+          )
+        },
+        meta: { label: t('Consumed Quota') },
+      },
+      {
+        accessorKey: 'video_seconds',
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('Video Duration')} />
+        ),
+        cell: ({ row }) => {
+          const seconds = row.getValue('video_seconds') as string | undefined
+          return (
+            <span className='font-mono text-xs tabular-nums'>
+              {seconds ? `${seconds}s` : '-'}
+            </span>
+          )
+        },
+        meta: { label: t('Video Duration') },
+      },
+      {
+        accessorKey: 'refund_quota',
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('Refund Quota')} />
+        ),
+        cell: ({ row }) => {
+          const refundQuota = row.getValue('refund_quota') as number | undefined
+          if (!refundQuota) {
+            return <span className='text-muted-foreground/60 text-xs'>-</span>
+          }
+          return (
+            <span className='inline-flex w-fit items-center rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 font-mono text-xs font-semibold text-blue-700 tabular-nums dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300'>
+              {formatLogQuota(refundQuota)}
+            </span>
+          )
+        },
+        meta: { label: t('Refund Quota') },
+      },
+      {
+        accessorKey: 'has_video_reference',
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('Video Reference')} />
+        ),
+        cell: ({ row }) => {
+          const hasReference = row.getValue('has_video_reference') as boolean
+          return (
+            <StatusBadge
+              label={hasReference ? t('Yes') : t('No')}
+              variant={hasReference ? 'blue' : 'neutral'}
+              size='sm'
+              copyable={false}
+              showDot
+            />
+          )
+        },
+        meta: { label: t('Video Reference') },
+      }
+    )
+  }
+
+  columns.push(
     {
       accessorKey: 'status',
       header: ({ column }) => (

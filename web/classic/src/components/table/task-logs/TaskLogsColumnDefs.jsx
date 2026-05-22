@@ -42,7 +42,7 @@ import {
   TASK_ACTION_REMIX_GENERATE,
 } from '../../../constants/common.constant';
 import { CHANNEL_OPTIONS } from '../../../constants/channel.constants';
-import { stringToColor } from '../../../helpers/render';
+import { renderQuota, stringToColor } from '../../../helpers/render';
 import { Avatar, Space } from '@douyinfe/semi-ui';
 
 const colors = [
@@ -86,6 +86,15 @@ function renderDuration(submit_time, finishTime) {
   return (
     <Tag color={color} shape='circle'>
       {durationSec} s
+    </Tag>
+  );
+}
+
+function renderVideoSeconds(seconds) {
+  if (!seconds) return '-';
+  return (
+    <Tag color='blue' shape='circle'>
+      {seconds} s
     </Tag>
   );
 }
@@ -267,6 +276,51 @@ export const getTaskLogsColumns = ({
         return <>{finish ? renderDuration(record.submit_time, finish) : '-'}</>;
       },
     },
+    ...(isAdminUser
+      ? [
+          {
+            key: COLUMN_KEYS.CONSUMED_QUOTA,
+            title: t('消耗额度'),
+            dataIndex: 'consumed_quota',
+            render: (quota, record) => {
+              return (
+                <Tag color='grey' shape='circle'>
+                  {renderQuota(quota ?? record.quota ?? 0)}
+                </Tag>
+              );
+            },
+          },
+          {
+            key: COLUMN_KEYS.VIDEO_SECONDS,
+            title: t('视频时长'),
+            dataIndex: 'video_seconds',
+            render: (seconds) => renderVideoSeconds(seconds),
+          },
+          {
+            key: COLUMN_KEYS.REFUND_QUOTA,
+            title: t('退款额度'),
+            dataIndex: 'refund_quota',
+            render: (quota) => {
+              if (!quota) return '-';
+              return (
+                <Tag color='blue' shape='circle'>
+                  {renderQuota(quota)}
+                </Tag>
+              );
+            },
+          },
+          {
+            key: COLUMN_KEYS.VIDEO_REFERENCE,
+            title: t('视频参考'),
+            dataIndex: 'has_video_reference',
+            render: (hasVideoReference) => (
+              <Tag color={hasVideoReference ? 'blue' : 'grey'} shape='circle'>
+                {hasVideoReference ? t('有') : t('无')}
+              </Tag>
+            ),
+          },
+        ]
+      : []),
     {
       key: COLUMN_KEYS.CHANNEL,
       title: t('渠道'),

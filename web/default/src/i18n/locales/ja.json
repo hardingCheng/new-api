@@ -4484,6 +4484,16 @@
     "Zoom": "ズーム",
     "Channel IDs": "複数のチャンネル ID",
     "Select users...": "ユーザーを選択...",
-    "Select users or enter username...": "ユーザーを選択またはユーザー名を入力..."
+    "Select users or enter username...": "ユーザーを選択またはユーザー名を入力...",
+    "All Statuses": "すべてのステータス",
+    "Task Status": "タスクステータス",
+    "Task Type": "タスクタイプ",
+    "User Filter": "ユーザーフィルター",
+    "Video Reference": "動画リファレンス",
+    "Has Video Reference": "動画リファレンスあり",
+    "No Video Reference": "動画リファレンスなし",
+    "Consumed Quota": "消費クォータ",
+    "Refund Quota": "返金クォータ",
+    "Video Duration": "動画の長さ"
   }
 }

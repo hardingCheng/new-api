@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	commonRelay "github.com/QuantumNous/new-api/relay/common"
+	"gorm.io/gorm"
 )
 
 type TaskStatus string
@@ -100,6 +103,7 @@ type TaskPrivateData struct {
 	Key            string `json:"key,omitempty"`
 	UpstreamTaskID string `json:"upstream_task_id,omitempty"` // 上游真实 task ID
 	ResultURL      string `json:"result_url,omitempty"`       // 任务成功后的结果 URL（视频地址等）
+	RefundQuota    int    `json:"refund_quota,omitempty"`     // 任务异步结算或失败退款额度
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
 	BillingSource  string              `json:"billing_source,omitempty"`  // "wallet" 或 "subscription"
 	SubscriptionId int                 `json:"subscription_id,omitempty"` // 订阅 ID，用于订阅退款
@@ -164,6 +168,10 @@ type SyncTaskQueryParams struct {
 	UserID         string
 	Action         string
 	Status         string
+	ModelName      string
+	ModelNames     []string
+	Reference      string
+	ReferenceMode  string
 	StartTimestamp int64
 	EndTimestamp   int64
 	UserIDs        []int
@@ -208,13 +216,210 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 	return t
 }
 
-func TaskGetAllUserTask(userId int, startIdx int, num int, queryParams SyncTaskQueryParams) []*Task {
-	var tasks []*Task
-	var err error
+func (t *Task) HasVideoReference() bool {
+	return hasVideoReferenceInInput(t.Properties.Input)
+}
 
-	// 初始化查询构建器
-	query := DB.Where("user_id = ?", userId)
+func (t *Task) GetVideoSeconds() string {
+	if seconds := extractTaskVideoSeconds(t.Properties.Input); seconds != "" {
+		return seconds
+	}
+	return extractTaskVideoSeconds(string(t.Data))
+}
 
+func (t *Task) GetRefundQuota() int {
+	return t.PrivateData.RefundQuota
+}
+
+func (t *Task) GetConsumedQuota() int {
+	refundQuota := t.GetRefundQuota()
+	if refundQuota > 0 && refundQuota >= t.Quota {
+		return 0
+	}
+	return t.Quota
+}
+
+func taskJSONTextLikeCondition(column string) string {
+	if common.UsingMySQL {
+		return "COALESCE(LOWER(CAST(" + column + " AS CHAR)), '') LIKE ? ESCAPE '!'"
+	}
+	return "COALESCE(LOWER(CAST(" + column + " AS TEXT)), '') LIKE ? ESCAPE '!'"
+}
+
+func applyTaskTextContainsFilter(query *gorm.DB, column string, value string) *gorm.DB {
+	pattern, ok := logContainsPattern(strings.ToLower(value))
+	if !ok {
+		return query
+	}
+	return query.Where(taskJSONTextLikeCondition(column), pattern)
+}
+
+func applyTaskAnyTextContainsFilter(query *gorm.DB, column string, values []string) *gorm.DB {
+	if len(values) == 0 {
+		return query
+	}
+	condition := ""
+	args := make([]any, 0, len(values))
+	for _, value := range values {
+		pattern, ok := logContainsPattern(strings.ToLower(value))
+		if !ok {
+			continue
+		}
+		if condition != "" {
+			condition += " OR "
+		}
+		condition += taskJSONTextLikeCondition(column)
+		args = append(args, pattern)
+	}
+	if condition == "" {
+		return query
+	}
+	return query.Where("("+condition+")", args...)
+}
+
+func taskVideoReferenceCondition() (string, []any) {
+	propertyLikeClause := taskJSONTextLikeCondition("properties")
+	referenceConditions := []string{
+		propertyLikeClause,
+		propertyLikeClause,
+	}
+	referenceArgs := []any{"%reference_video%", "%remixed_from_video_id%"}
+
+	videoURLConditions := []string{
+		propertyLikeClause,
+		propertyLikeClause,
+		propertyLikeClause,
+	}
+	videoURLArgs := []any{"%video_url%", "%input_reference%", "%remixed_from_video_id%"}
+
+	videoValueConditions := []string{propertyLikeClause}
+	videoValueArgs := []any{"%remixed_from_video_id%"}
+	for _, marker := range videoReferenceValueMarkers {
+		videoValueConditions = append(videoValueConditions, propertyLikeClause)
+		videoValueArgs = append(videoValueArgs, "%"+marker+"%")
+	}
+
+	condition := "(" +
+		"(" + strings.Join(referenceConditions, " OR ") + ") AND " +
+		"(" + strings.Join(videoURLConditions, " OR ") + ") AND " +
+		"(" + strings.Join(videoValueConditions, " OR ") + ")" +
+		")"
+	args := append(referenceArgs, videoURLArgs...)
+	args = append(args, videoValueArgs...)
+	return condition, args
+}
+
+var videoReferenceValueMarkers = []string{
+	".mp4",
+	".mov",
+	".webm",
+	".m4v",
+	".avi",
+	".mpeg",
+	".mpg",
+	".m3u8",
+	"video/",
+	"data:video",
+	"quicktime",
+}
+
+func hasVideoReferenceInInput(input string) bool {
+	input = strings.ToLower(strings.TrimSpace(input))
+	if input == "" {
+		return false
+	}
+	if strings.Contains(input, "remixed_from_video_id") {
+		return true
+	}
+	hasReferenceRole := strings.Contains(input, "reference_video")
+	hasVideoURLField := strings.Contains(input, "video_url") || strings.Contains(input, "input_reference")
+	if !hasReferenceRole || !hasVideoURLField {
+		return false
+	}
+	for _, marker := range videoReferenceValueMarkers {
+		if strings.Contains(input, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractTaskVideoSeconds(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	var payload any
+	if err := common.Unmarshal([]byte(raw), &payload); err != nil {
+		return ""
+	}
+	if seconds, ok := findTaskVideoSeconds(payload); ok {
+		return seconds
+	}
+	return ""
+}
+
+func findTaskVideoSeconds(value any) (string, bool) {
+	switch v := value.(type) {
+	case map[string]any:
+		for _, key := range []string{"duration", "seconds"} {
+			if seconds, ok := normalizeTaskVideoSeconds(v[key]); ok {
+				return seconds, true
+			}
+		}
+		for _, child := range v {
+			if seconds, ok := findTaskVideoSeconds(child); ok {
+				return seconds, true
+			}
+		}
+	case []any:
+		for _, child := range v {
+			if seconds, ok := findTaskVideoSeconds(child); ok {
+				return seconds, true
+			}
+		}
+	}
+	return "", false
+}
+
+func normalizeTaskVideoSeconds(value any) (string, bool) {
+	switch v := value.(type) {
+	case string:
+		v = strings.TrimSpace(v)
+		if v != "" {
+			return v, true
+		}
+	case float64:
+		if v > 0 {
+			return fmt.Sprintf("%g", v), true
+		}
+	case int:
+		if v > 0 {
+			return fmt.Sprintf("%d", v), true
+		}
+	case int64:
+		if v > 0 {
+			return fmt.Sprintf("%d", v), true
+		}
+	}
+	return "", false
+}
+
+func applyTaskQueryFilters(query *gorm.DB, queryParams SyncTaskQueryParams, includeAdminFilters bool) *gorm.DB {
+	if includeAdminFilters {
+		if queryParams.ChannelID != "" {
+			query = query.Where("channel_id = ?", queryParams.ChannelID)
+		}
+		if queryParams.UserID != "" {
+			query = query.Where("user_id = ?", queryParams.UserID)
+		}
+		if len(queryParams.UserIDs) != 0 {
+			query = query.Where("user_id in (?)", queryParams.UserIDs)
+		}
+	}
+	if queryParams.Platform != "" {
+		query = query.Where("platform = ?", queryParams.Platform)
+	}
 	if queryParams.TaskID != "" {
 		query = query.Where("task_id = ?", queryParams.TaskID)
 	}
@@ -224,16 +429,47 @@ func TaskGetAllUserTask(userId int, startIdx int, num int, queryParams SyncTaskQ
 	if queryParams.Status != "" {
 		query = query.Where("status = ?", queryParams.Status)
 	}
-	if queryParams.Platform != "" {
-		query = query.Where("platform = ?", queryParams.Platform)
+	if queryParams.ModelName != "" {
+		query = applyTaskTextContainsFilter(query, "properties", queryParams.ModelName)
+	}
+	if len(queryParams.ModelNames) != 0 {
+		query = applyTaskAnyTextContainsFilter(query, "properties", queryParams.ModelNames)
+	}
+	if queryParams.ReferenceMode != "" {
+		condition, args := taskVideoReferenceCondition()
+		if queryParams.ReferenceMode == "without" {
+			query = query.Where("NOT "+condition, args...)
+		} else {
+			query = query.Where(condition, args...)
+		}
+	}
+	if queryParams.Reference != "" {
+		pattern, ok := logContainsPattern(strings.ToLower(queryParams.Reference))
+		if ok {
+			query = query.Where(
+				"("+taskJSONTextLikeCondition("properties")+" OR "+taskJSONTextLikeCondition("data")+")",
+				pattern,
+				pattern,
+			)
+		}
 	}
 	if queryParams.StartTimestamp != 0 {
-		// 假设您已将前端传来的时间戳转换为数据库所需的时间格式，并处理了时间戳的验证和解析
 		query = query.Where("submit_time >= ?", queryParams.StartTimestamp)
 	}
 	if queryParams.EndTimestamp != 0 {
 		query = query.Where("submit_time <= ?", queryParams.EndTimestamp)
 	}
+	return query
+}
+
+func TaskGetAllUserTask(userId int, startIdx int, num int, queryParams SyncTaskQueryParams) []*Task {
+	var tasks []*Task
+	var err error
+
+	// 初始化查询构建器
+	query := DB.Where("user_id = ?", userId)
+
+	query = applyTaskQueryFilters(query, queryParams, false)
 
 	// 获取数据
 	err = query.Omit("channel_id").Order("id desc").Limit(num).Offset(startIdx).Find(&tasks).Error
@@ -251,34 +487,7 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 	// 初始化查询构建器
 	query := DB
 
-	// 添加过滤条件
-	if queryParams.ChannelID != "" {
-		query = query.Where("channel_id = ?", queryParams.ChannelID)
-	}
-	if queryParams.Platform != "" {
-		query = query.Where("platform = ?", queryParams.Platform)
-	}
-	if queryParams.UserID != "" {
-		query = query.Where("user_id = ?", queryParams.UserID)
-	}
-	if len(queryParams.UserIDs) != 0 {
-		query = query.Where("user_id in (?)", queryParams.UserIDs)
-	}
-	if queryParams.TaskID != "" {
-		query = query.Where("task_id = ?", queryParams.TaskID)
-	}
-	if queryParams.Action != "" {
-		query = query.Where("action = ?", queryParams.Action)
-	}
-	if queryParams.Status != "" {
-		query = query.Where("status = ?", queryParams.Status)
-	}
-	if queryParams.StartTimestamp != 0 {
-		query = query.Where("submit_time >= ?", queryParams.StartTimestamp)
-	}
-	if queryParams.EndTimestamp != 0 {
-		query = query.Where("submit_time <= ?", queryParams.EndTimestamp)
-	}
+	query = applyTaskQueryFilters(query, queryParams, true)
 
 	// 获取数据
 	err = query.Order("id desc").Limit(num).Offset(startIdx).Find(&tasks).Error
@@ -450,33 +659,7 @@ type TaskQuotaUsage struct {
 func TaskCountAllTasks(queryParams SyncTaskQueryParams) int64 {
 	var total int64
 	query := DB.Model(&Task{})
-	if queryParams.ChannelID != "" {
-		query = query.Where("channel_id = ?", queryParams.ChannelID)
-	}
-	if queryParams.Platform != "" {
-		query = query.Where("platform = ?", queryParams.Platform)
-	}
-	if queryParams.UserID != "" {
-		query = query.Where("user_id = ?", queryParams.UserID)
-	}
-	if len(queryParams.UserIDs) != 0 {
-		query = query.Where("user_id in (?)", queryParams.UserIDs)
-	}
-	if queryParams.TaskID != "" {
-		query = query.Where("task_id = ?", queryParams.TaskID)
-	}
-	if queryParams.Action != "" {
-		query = query.Where("action = ?", queryParams.Action)
-	}
-	if queryParams.Status != "" {
-		query = query.Where("status = ?", queryParams.Status)
-	}
-	if queryParams.StartTimestamp != 0 {
-		query = query.Where("submit_time >= ?", queryParams.StartTimestamp)
-	}
-	if queryParams.EndTimestamp != 0 {
-		query = query.Where("submit_time <= ?", queryParams.EndTimestamp)
-	}
+	query = applyTaskQueryFilters(query, queryParams, true)
 	_ = query.Count(&total).Error
 	return total
 }
@@ -485,24 +668,7 @@ func TaskCountAllTasks(queryParams SyncTaskQueryParams) int64 {
 func TaskCountAllUserTask(userId int, queryParams SyncTaskQueryParams) int64 {
 	var total int64
 	query := DB.Model(&Task{}).Where("user_id = ?", userId)
-	if queryParams.TaskID != "" {
-		query = query.Where("task_id = ?", queryParams.TaskID)
-	}
-	if queryParams.Action != "" {
-		query = query.Where("action = ?", queryParams.Action)
-	}
-	if queryParams.Status != "" {
-		query = query.Where("status = ?", queryParams.Status)
-	}
-	if queryParams.Platform != "" {
-		query = query.Where("platform = ?", queryParams.Platform)
-	}
-	if queryParams.StartTimestamp != 0 {
-		query = query.Where("submit_time >= ?", queryParams.StartTimestamp)
-	}
-	if queryParams.EndTimestamp != 0 {
-		query = query.Where("submit_time <= ?", queryParams.EndTimestamp)
-	}
+	query = applyTaskQueryFilters(query, queryParams, false)
 	_ = query.Count(&total).Error
 	return total
 }

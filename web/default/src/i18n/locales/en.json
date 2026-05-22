@@ -4488,6 +4488,16 @@
     "Zoom": "Zoom",
     "Channel IDs": "Channel IDs",
     "Select users...": "Select users...",
-    "Select users or enter username...": "Select users or enter username..."
+    "Select users or enter username...": "Select users or enter username...",
+    "All Statuses": "All Statuses",
+    "Task Status": "Task Status",
+    "Task Type": "Task Type",
+    "User Filter": "User Filter",
+    "Video Reference": "Video Reference",
+    "Has Video Reference": "Has Video Reference",
+    "No Video Reference": "No Video Reference",
+    "Consumed Quota": "Consumed Quota",
+    "Refund Quota": "Refund Quota",
+    "Video Duration": "Video Duration"
   }
 }

@@ -23,6 +23,16 @@ import { IconSearch } from '@douyinfe/semi-icons';
 
 import { DATE_RANGE_PRESETS } from '../../../constants/console.constants';
 
+const TASK_STATUS_OPTIONS = [
+  { label: 'NOT_START', value: 'NOT_START' },
+  { label: 'SUBMITTED', value: 'SUBMITTED' },
+  { label: 'QUEUED', value: 'QUEUED' },
+  { label: 'IN_PROGRESS', value: 'IN_PROGRESS' },
+  { label: 'SUCCESS', value: 'SUCCESS' },
+  { label: 'FAILURE', value: 'FAILURE' },
+  { label: 'UNKNOWN', value: 'UNKNOWN' },
+];
+
 const TaskLogsFilters = ({
   formInitValues,
   setFormApi,
@@ -31,6 +41,8 @@ const TaskLogsFilters = ({
   formApi,
   loading,
   isAdminUser,
+  userOptions,
+  modelOptions,
   t,
 }) => {
   return (
@@ -45,9 +57,9 @@ const TaskLogsFilters = ({
       stopValidateWithError={false}
     >
       <div className='flex flex-col gap-2'>
-        <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2'>
+        <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-2'>
           {/* 时间选择器 */}
-          <div className='col-span-1 lg:col-span-2'>
+          <div className='col-span-1 md:col-span-2'>
             <Form.DatePicker
               field='dateRange'
               className='w-full'
@@ -80,6 +92,68 @@ const TaskLogsFilters = ({
               field='channel_id'
               prefix={<IconSearch />}
               placeholder={t('渠道 ID')}
+              showClear
+              pure
+              size='small'
+            />
+          )}
+
+          {/* 用户筛选 - 仅管理员可见 */}
+          {isAdminUser && (
+            <Form.Select
+              field='user_ids'
+              placeholder={t('用户筛选')}
+              optionList={userOptions}
+              multiple
+              filter
+              allowCreate
+              showClear
+              pure
+              size='small'
+              maxTagCount={1}
+              showRestTagsPopover
+            />
+          )}
+
+          {/* 模型名称 - 仅管理员可见 */}
+          {isAdminUser && (
+            <Form.Select
+              field='model_names'
+              placeholder={t('模型名称')}
+              optionList={modelOptions}
+              multiple
+              filter
+              allowCreate
+              showClear
+              pure
+              size='small'
+              maxTagCount={1}
+              showRestTagsPopover
+            />
+          )}
+
+          {/* 任务状态 */}
+          <Form.Select
+            field='status'
+            placeholder={t('任务状态')}
+            optionList={[
+              { label: t('所有状态'), value: '' },
+              ...TASK_STATUS_OPTIONS,
+            ]}
+            showClear
+            pure
+            size='small'
+          />
+
+          {/* 视频参考 - 仅管理员可见 */}
+          {isAdminUser && (
+            <Form.Select
+              field='reference'
+              placeholder={t('视频参考')}
+              optionList={[
+                { label: t('有视频参考'), value: 'with' },
+                { label: t('无视频参考'), value: 'without' },
+              ]}
               showClear
               pure
               size='small'

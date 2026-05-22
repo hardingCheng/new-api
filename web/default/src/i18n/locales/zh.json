@@ -4488,6 +4488,16 @@
     "Zoom": "缩放",
     "Channel IDs": "多个渠道 ID",
     "Select users...": "选择用户...",
-    "Select users or enter username...": "选择用户或输入用户名..."
+    "Select users or enter username...": "选择用户或输入用户名...",
+    "All Statuses": "所有状态",
+    "Task Status": "任务状态",
+    "Task Type": "任务类型",
+    "User Filter": "用户筛选",
+    "Video Reference": "视频参考",
+    "Has Video Reference": "有视频参考",
+    "No Video Reference": "无视频参考",
+    "Consumed Quota": "消耗额度",
+    "Refund Quota": "退款额度",
+    "Video Duration": "视频时长"
   }
 }

@@ -74,6 +74,10 @@ export function buildSearchParams(
       return {
         ...baseParams,
         ...(taskFilters.taskId && { filter: taskFilters.taskId }),
+        ...(taskFilters.modelNames && { modelNames: taskFilters.modelNames }),
+        ...(taskFilters.status && { status: taskFilters.status }),
+        ...(taskFilters.reference && { reference: taskFilters.reference }),
+        ...(taskFilters.userIds && { userIds: taskFilters.userIds }),
       }
     }
     default:

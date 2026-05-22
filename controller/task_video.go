@@ -126,6 +126,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 
 	// 记录原本的状态，防止重复退款
 	shouldRefund := false
+	refundQuota := 0
 	quota := task.Quota
 	preStatus := task.Status
 
@@ -221,6 +222,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 									logger.LogError(ctx, fmt.Sprintf("退还预扣费失败: %s", err.Error()))
 								} else {
 									task.Quota = actualQuota // 更新任务记录的实际扣费额度
+									task.PrivateData.RefundQuota = refundQuota
 
 									// 记录退款日志
 									logContent := fmt.Sprintf("视频任务成功退还多扣费用，模型倍率 %.2f，分组倍率 %.2f，tokens %d，预扣费 %s，实际扣费 %s，退还 %s",
@@ -251,6 +253,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 		if quota != 0 {
 			if preStatus != model.TaskStatusFailure {
 				shouldRefund = true
+				refundQuota = quota
 			} else {
 				logger.LogWarn(ctx, fmt.Sprintf("Task %s already in failure status, skip refund", task.TaskID))
 			}
@@ -273,6 +276,11 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 		}
 		logContent := fmt.Sprintf("Video async task failed %s, refund %s", task.TaskID, logger.LogQuota(quota))
 		model.RecordLog(task.UserId, model.LogTypeSystem, logContent)
+		task.PrivateData.RefundQuota = refundQuota
+		task.Quota = 0
+		if err := task.Update(); err != nil {
+			common.SysLog("UpdateVideoTask refund data error: " + err.Error())
+		}
 	}
 
 	return nil

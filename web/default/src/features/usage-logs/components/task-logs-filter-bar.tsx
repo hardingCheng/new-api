@@ -16,14 +16,26 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useEffect, useCallback } from 'react'
-import { useQueryClient, useIsFetching } from '@tanstack/react-query'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useQueryClient, useIsFetching, useQuery } from '@tanstack/react-query'
 import { useNavigate, getRouteApi } from '@tanstack/react-router'
 import { type Table } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 import { useIsAdmin } from '@/hooks/use-admin'
+import { api } from '@/lib/api'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { DataTableToolbar } from '@/components/data-table'
+import { MultiSelect, type Option } from '@/components/multi-select'
+import { searchUsers } from '@/features/users/api'
+import { TASK_STATUS, TASK_STATUS_MAPPINGS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
 import { getDefaultTimeRange } from '../lib/utils'
 import type { DrawingLogFilters, LogCategory, TaskLogFilters } from '../types'
@@ -33,6 +45,18 @@ const route = getRouteApi('/_authenticated/usage-logs/$section')
 
 type TaskLikeLogCategory = Extract<LogCategory, 'drawing' | 'task'>
 type TaskLogsFilters = DrawingLogFilters | TaskLogFilters
+const taskStatusValues = Object.values(TASK_STATUS)
+
+function splitMultiValue(value?: string): string[] {
+  return String(value || '')
+    .split(/[\s,，]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function joinMultiValue(values: string[]): string {
+  return values.join(',')
+}
 
 interface TaskLogsFilterBarProps<TData> {
   table: Table<TData>
@@ -67,6 +91,24 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
   const searchParams = route.useSearch()
   const isAdmin = useIsAdmin()
   const fetchingLogs = useIsFetching({ queryKey: ['logs'] })
+  const { data: usersData } = useQuery({
+    queryKey: ['task-log-filter-users'],
+    queryFn: () => searchUsers({ p: 1, page_size: 100 }),
+    enabled: isAdmin && props.logCategory === 'task',
+    staleTime: 5 * 60 * 1000,
+  })
+  const { data: modelsData } = useQuery({
+    queryKey: ['task-log-filter-models'],
+    queryFn: async () => {
+      const res = await api.get('/api/models')
+      return res.data as {
+        success: boolean
+        data?: Record<string, string[]>
+      }
+    },
+    enabled: isAdmin && props.logCategory === 'task',
+    staleTime: 5 * 60 * 1000,
+  })
 
   const [filters, setFilters] = useState<TaskLogsFilters>(() => {
     const { start, end } = getDefaultTimeRange()
@@ -93,6 +135,16 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
         : {
             ...baseFilters,
             ...(searchParams.filter ? { taskId: searchParams.filter } : {}),
+            ...(searchParams.modelNames
+              ? { modelNames: String(searchParams.modelNames) }
+              : {}),
+            ...(searchParams.status ? { status: searchParams.status } : {}),
+            ...(searchParams.reference
+              ? { reference: searchParams.reference }
+              : {}),
+            ...(searchParams.userIds
+              ? { userIds: String(searchParams.userIds) }
+              : {}),
           }
 
     setFilters(next)
@@ -102,6 +154,10 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
     searchParams.endTime,
     searchParams.channel,
     searchParams.filter,
+    searchParams.modelNames,
+    searchParams.status,
+    searchParams.reference,
+    searchParams.userIds,
   ])
 
   const handleChange = useCallback(
@@ -156,12 +212,46 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
   )
 
   const filterValue = getFilterValue(filters, props.logCategory)
+  const taskFilters = filters as TaskLogFilters
+  const selectedUserValues = useMemo(
+    () => splitMultiValue(taskFilters.userIds),
+    [taskFilters.userIds]
+  )
+  const selectedModelValues = useMemo(
+    () => splitMultiValue(taskFilters.modelNames),
+    [taskFilters.modelNames]
+  )
+  const userOptions = useMemo<Option[]>(
+    () =>
+      (usersData?.data?.items || []).map((user) => ({
+        value: String(user.id),
+        label: `${user.username} (#${user.id})`,
+      })),
+    [usersData?.data?.items]
+  )
+  const modelOptions = useMemo<Option[]>(() => {
+    const values = Object.values(modelsData?.data || {})
+      .flat()
+      .map((model) => String(model || '').trim())
+      .filter(Boolean)
+    return Array.from(new Set(values))
+      .sort((a, b) => a.localeCompare(b))
+      .map((model) => ({ value: model, label: model }))
+  }, [modelsData?.data])
   const placeholder =
     props.logCategory === 'drawing'
       ? t('Filter by Midjourney task ID')
       : t('Filter by task ID')
   const inputClass = 'w-full sm:w-[180px] lg:w-[200px]'
-  const hasAdditionalFilters = !!filterValue || !!filters.channel
+  const hasTaskFilters =
+    props.logCategory === 'task' &&
+    (!!taskFilters.status ||
+      (isAdmin &&
+        (!!taskFilters.modelNames ||
+          !!taskFilters.reference ||
+          !!taskFilters.userIds)))
+  const hasAdditionalFilters =
+    !!filterValue || !!filters.channel || hasTaskFilters
 
   return (
     <DataTableToolbar
@@ -195,6 +285,108 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
               onKeyDown={handleKeyDown}
               className={inputClass}
             />
+          )}
+          {props.logCategory === 'task' && (
+            <>
+              {isAdmin && (
+                <div className={inputClass}>
+                  <MultiSelect
+                    options={userOptions}
+                    selected={selectedUserValues}
+                    onChange={(values) =>
+                      handleChange('userIds', joinMultiValue(values))
+                    }
+                    placeholder={t('User Filter')}
+                    className='text-xs'
+                    dropdownClassName='z-100'
+                    maxVisible={1}
+                    keepSelectedOptionsVisible
+                    createOption={(value) => {
+                      const trimmed = value.trim()
+                      return trimmed ? { label: trimmed, value: trimmed } : null
+                    }}
+                  />
+                </div>
+              )}
+              {isAdmin && (
+                <div className={inputClass}>
+                  <MultiSelect
+                    options={modelOptions}
+                    selected={selectedModelValues}
+                    onChange={(values) =>
+                      handleChange('modelNames', joinMultiValue(values))
+                    }
+                    placeholder={t('Model Name')}
+                    className='text-xs'
+                    dropdownClassName='z-100'
+                    maxVisible={1}
+                    keepSelectedOptionsVisible
+                    createOption={(value) => {
+                      const trimmed = value.trim()
+                      return trimmed
+                        ? { label: trimmed, value: trimmed }
+                        : null
+                    }}
+                  />
+                </div>
+              )}
+              <Select
+                items={[
+                  { value: 'all', label: t('All Statuses') },
+                  ...taskStatusValues.map((status) => ({
+                    value: status,
+                    label: t(TASK_STATUS_MAPPINGS[status].label),
+                  })),
+                ]}
+                value={taskFilters.status || ''}
+                onValueChange={(value) => {
+                  handleChange(
+                    'status',
+                    value && value !== 'all' ? value : undefined
+                  )
+                }}
+              >
+                <SelectTrigger className={inputClass}>
+                  <SelectValue placeholder={t('Task Status')} />
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  <SelectGroup>
+                    <SelectItem value='all'>{t('All Statuses')}</SelectItem>
+                    {taskStatusValues.map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {t(TASK_STATUS_MAPPINGS[status].label)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              {isAdmin && (
+                <Select
+                  items={[
+                    { value: 'with', label: t('Has Video Reference') },
+                    { value: 'without', label: t('No Video Reference') },
+                  ]}
+                  value={taskFilters.reference || ''}
+                  onValueChange={(value) => {
+                    handleChange('reference', value || undefined)
+                  }}
+                >
+                  <SelectTrigger className={inputClass}>
+                    <SelectValue placeholder={t('Video Reference')} />
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectGroup>
+                      <SelectItem value='with'>
+                        {t('Has Video Reference')}
+                      </SelectItem>
+                      <SelectItem value='without'>
+                        {t('No Video Reference')}
+                      </SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              )}
+            </>
           )}
         </>
       }

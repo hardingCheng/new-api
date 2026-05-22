@@ -3826,6 +3826,14 @@
     "，": ", ",
     "、": ", ",
     "选择用户": "Select users",
-    "选择用户或输入用户名": "Select users or enter username"
+    "选择用户或输入用户名": "Select users or enter username",
+    "用户筛选": "User Filter",
+    "视频参考": "Video Reference",
+    "所有状态": "All Statuses",
+    "有视频参考": "Has Video Reference",
+    "无视频参考": "No Video Reference",
+    "退款额度": "Refund Quota",
+    "视频时长": "Video Duration",
+    "有": "Yes"
   }
 }

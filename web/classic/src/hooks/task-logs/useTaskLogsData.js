@@ -39,6 +39,10 @@ export const useTaskLogsData = () => {
     SUBMIT_TIME: 'submit_time',
     FINISH_TIME: 'finish_time',
     DURATION: 'duration',
+    CONSUMED_QUOTA: 'consumed_quota',
+    VIDEO_SECONDS: 'video_seconds',
+    REFUND_QUOTA: 'refund_quota',
+    VIDEO_REFERENCE: 'video_reference',
     CHANNEL: 'channel',
     USERNAME: 'username',
     PLATFORM: 'platform',
@@ -56,6 +60,8 @@ export const useTaskLogsData = () => {
   const [activePage, setActivePage] = useState(1);
   const [logCount, setLogCount] = useState(0);
   const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
+  const [userOptions, setUserOptions] = useState([]);
+  const [modelOptions, setModelOptions] = useState([]);
 
   // User and admin
   const isAdminUser = isAdmin();
@@ -88,6 +94,10 @@ export const useTaskLogsData = () => {
   const formInitValues = {
     channel_id: '',
     task_id: '',
+    user_ids: [],
+    model_names: [],
+    status: '',
+    reference: '',
     dateRange: [
       timestamp2string(zeroNow.getTime() / 1000),
       timestamp2string(now.getTime() / 1000 + 3600),
@@ -114,6 +124,10 @@ export const useTaskLogsData = () => {
         if (!isAdminUser) {
           merged[COLUMN_KEYS.CHANNEL] = false;
           merged[COLUMN_KEYS.USERNAME] = false;
+          merged[COLUMN_KEYS.CONSUMED_QUOTA] = false;
+          merged[COLUMN_KEYS.VIDEO_SECONDS] = false;
+          merged[COLUMN_KEYS.REFUND_QUOTA] = false;
+          merged[COLUMN_KEYS.VIDEO_REFERENCE] = false;
         }
         setVisibleColumns(merged);
       } catch (e) {
@@ -131,6 +145,10 @@ export const useTaskLogsData = () => {
       [COLUMN_KEYS.SUBMIT_TIME]: true,
       [COLUMN_KEYS.FINISH_TIME]: true,
       [COLUMN_KEYS.DURATION]: true,
+      [COLUMN_KEYS.CONSUMED_QUOTA]: isAdminUser,
+      [COLUMN_KEYS.VIDEO_SECONDS]: isAdminUser,
+      [COLUMN_KEYS.REFUND_QUOTA]: isAdminUser,
+      [COLUMN_KEYS.VIDEO_REFERENCE]: isAdminUser,
       [COLUMN_KEYS.CHANNEL]: isAdminUser,
       [COLUMN_KEYS.USERNAME]: isAdminUser,
       [COLUMN_KEYS.PLATFORM]: true,
@@ -163,7 +181,12 @@ export const useTaskLogsData = () => {
 
     allKeys.forEach((key) => {
       if (
-        (key === COLUMN_KEYS.CHANNEL || key === COLUMN_KEYS.USERNAME) &&
+        (key === COLUMN_KEYS.CHANNEL ||
+          key === COLUMN_KEYS.USERNAME ||
+          key === COLUMN_KEYS.CONSUMED_QUOTA ||
+          key === COLUMN_KEYS.VIDEO_SECONDS ||
+          key === COLUMN_KEYS.REFUND_QUOTA ||
+          key === COLUMN_KEYS.VIDEO_REFERENCE) &&
         !isAdminUser
       ) {
         updatedColumns[key] = false;
@@ -181,6 +204,57 @@ export const useTaskLogsData = () => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(visibleColumns));
     }
   }, [visibleColumns]);
+
+  const fetchUserOptions = async () => {
+    if (!isAdminUser) {
+      return;
+    }
+    try {
+      const res = await API.get(
+        '/api/user/search?keyword=&group=&p=1&page_size=100',
+      );
+      const { success, data } = res.data;
+      if (success) {
+        setUserOptions(
+          (data?.items || []).map((user) => ({
+            label: `${user.username} (#${user.id})`,
+            value: String(user.id),
+          })),
+        );
+      }
+    } catch (error) {
+      console.error('Failed to load task log filter users', error);
+    }
+  };
+
+  const fetchModelOptions = async () => {
+    if (!isAdminUser) {
+      return;
+    }
+    try {
+      const res = await API.get('/api/models');
+      const { success, data } = res.data;
+      if (!success || !data) {
+        return;
+      }
+      const models = Array.from(
+        new Set(
+          Object.values(data)
+            .flat()
+            .map((model) => String(model || '').trim())
+            .filter(Boolean),
+        ),
+      ).sort((a, b) => a.localeCompare(b));
+      setModelOptions(models.map((model) => ({ label: model, value: model })));
+    } catch (error) {
+      console.error('Failed to load task log filter models', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchUserOptions();
+    fetchModelOptions();
+  }, []);
 
   // Get form values helper function
   const getFormValues = () => {
@@ -202,6 +276,16 @@ export const useTaskLogsData = () => {
     return {
       channel_id: formValues.channel_id || '',
       task_id: formValues.task_id || '',
+      user_ids: Array.isArray(formValues.user_ids)
+        ? formValues.user_ids.map((value) => String(value).trim()).filter(Boolean)
+        : [],
+      model_names: Array.isArray(formValues.model_names)
+        ? formValues.model_names
+            .map((value) => String(value).trim())
+            .filter(Boolean)
+        : [],
+      status: formValues.status || '',
+      reference: formValues.reference || '',
       start_timestamp,
       end_timestamp,
     };
@@ -228,13 +312,40 @@ export const useTaskLogsData = () => {
   // Load logs function
   const loadLogs = async (page = 1, size = pageSize) => {
     setLoading(true);
-    const { channel_id, task_id, start_timestamp, end_timestamp } =
-      getFormValues();
+    const {
+      channel_id,
+      task_id,
+      user_ids,
+      model_names,
+      status,
+      reference,
+      start_timestamp,
+      end_timestamp,
+    } = getFormValues();
     let localStartTimestamp = parseInt(Date.parse(start_timestamp) / 1000);
     let localEndTimestamp = parseInt(Date.parse(end_timestamp) / 1000);
+    const queryParams = new URLSearchParams({
+      p: String(page),
+      page_size: String(size),
+      task_id,
+      model_names: model_names.join(','),
+      status,
+      reference,
+      start_timestamp: String(localStartTimestamp),
+      end_timestamp: String(localEndTimestamp),
+    });
+    if (isAdminUser) {
+      queryParams.set('channel_id', channel_id);
+      queryParams.set('user_ids', user_ids.join(','));
+      queryParams.set('model_names', model_names.join(','));
+      queryParams.set('reference', reference);
+    } else {
+      queryParams.delete('model_names');
+      queryParams.delete('reference');
+    }
     let url = isAdminUser
-      ? `/api/task/?p=${page}&page_size=${size}&channel_id=${channel_id}&task_id=${task_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`
-      : `/api/task/self?p=${page}&page_size=${size}&task_id=${task_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
+      ? `/api/task/?${queryParams.toString()}`
+      : `/api/task/self?${queryParams.toString()}`;
     const res = await API.get(url);
     const { success, message, data } = res.data;
     if (success) {
@@ -317,6 +428,8 @@ export const useTaskLogsData = () => {
     logCount,
     pageSize,
     isAdminUser,
+    userOptions,
+    modelOptions,
 
     // Modal state
     isModalOpen,

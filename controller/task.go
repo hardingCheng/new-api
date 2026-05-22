@@ -2,6 +2,7 @@ package controller
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -25,11 +26,18 @@ func GetAllTask(c *gin.Context) {
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	// 解析其他查询参数
+	referenceMode, referenceText := parseTaskReferenceQuery(c.Query("reference"))
 	queryParams := model.SyncTaskQueryParams{
 		Platform:       constant.TaskPlatform(c.Query("platform")),
 		TaskID:         c.Query("task_id"),
+		UserID:         c.Query("user_id"),
+		UserIDs:        parseTaskUserIDs(c.Query("user_ids")),
 		Status:         c.Query("status"),
 		Action:         c.Query("action"),
+		ModelName:      c.Query("model_name"),
+		ModelNames:     parseTaskStringList(c.Query("model_names")),
+		Reference:      referenceText,
+		ReferenceMode:  referenceMode,
 		StartTimestamp: startTimestamp,
 		EndTimestamp:   endTimestamp,
 		ChannelID:      c.Query("channel_id"),
@@ -66,6 +74,65 @@ func GetUserTask(c *gin.Context) {
 	common.ApiSuccess(c, pageInfo)
 }
 
+func parseTaskStringList(value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == '，' || r == '\n' || r == '\r' || r == '\t'
+	})
+	values := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		values = append(values, item)
+	}
+	return values
+}
+
+func parseTaskUserIDs(value string) []int {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == '，' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+	})
+	userIDs := make([]int, 0, len(parts))
+	seen := make(map[int]struct{}, len(parts))
+	for _, part := range parts {
+		userID, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || userID <= 0 {
+			continue
+		}
+		if _, ok := seen[userID]; ok {
+			continue
+		}
+		seen[userID] = struct{}{}
+		userIDs = append(userIDs, userID)
+	}
+	return userIDs
+}
+
+func parseTaskReferenceQuery(value string) (mode string, text string) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "with", "has", "yes":
+		return "with", ""
+	case "without", "none", "no":
+		return "without", ""
+	default:
+		return "", value
+	}
+}
+
 func tasksToDto(tasks []*model.Task, fillUser bool) []*dto.TaskDto {
 	var userIdMap map[int]*model.UserBase
 	if fillUser {
@@ -88,7 +155,11 @@ func tasksToDto(tasks []*model.Task, fillUser bool) []*dto.TaskDto {
 				task.Username = user.Username
 			}
 		}
-		result[i] = relay.TaskModel2Dto(task)
+		if fillUser {
+			result[i] = relay.TaskModel2AdminDto(task)
+		} else {
+			result[i] = relay.TaskModel2Dto(task)
+		}
 	}
 	return result
 }
