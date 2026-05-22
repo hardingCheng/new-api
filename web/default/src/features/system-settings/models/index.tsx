@@ -42,6 +42,12 @@ const defaultModelSettings: ModelSettings = {
   'claude.thinking_adapter_budget_tokens_percentage': 0.8,
   'grok.violation_deduction_enabled': true,
   'grok.violation_deduction_amount': 0.05,
+  'task_billing_setting.duration_billing_model_patterns':
+    '["sora-2*","seedance-*","doubao-seedance-*"]',
+  'task_billing_setting.duration_billing_exclude_model_patterns':
+    '["grok-imagine-video","grok-imagine-1.0-video"]',
+  'task_billing_setting.reference_video_billing_model_patterns':
+    '["seedance-*","doubao-seedance-*"]',
   ModelPrice: '',
   ModelRatio: '',
   CacheRatio: '',

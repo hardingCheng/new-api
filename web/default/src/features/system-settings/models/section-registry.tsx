@@ -24,6 +24,7 @@ import { ClaudeSettingsCard } from './claude-settings-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
+import { TaskBillingSettingsCard } from './task-billing-settings-card'
 
 function formatJsonForEditor(value: string, fallback: string) {
   const raw = (value ?? '').toString().trim()
@@ -120,6 +121,27 @@ const MODELS_SECTIONS = [
             settings['grok.violation_deduction_enabled'] ?? true,
           'grok.violation_deduction_amount':
             settings['grok.violation_deduction_amount'] ?? 0.05,
+        }}
+      />
+    ),
+  },
+  {
+    id: 'task-billing',
+    titleKey: 'Task Billing',
+    descriptionKey: 'Configure per-second billing rules for video task models',
+    build: (settings: ModelSettings) => (
+      <TaskBillingSettingsCard
+        defaultValues={{
+          'task_billing_setting.duration_billing_model_patterns':
+            settings['task_billing_setting.duration_billing_model_patterns'],
+          'task_billing_setting.duration_billing_exclude_model_patterns':
+            settings[
+              'task_billing_setting.duration_billing_exclude_model_patterns'
+            ],
+          'task_billing_setting.reference_video_billing_model_patterns':
+            settings[
+              'task_billing_setting.reference_video_billing_model_patterns'
+            ],
         }}
       />
     ),

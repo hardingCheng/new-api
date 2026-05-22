@@ -14,6 +14,11 @@ import (
 	"github.com/samber/lo"
 )
 
+const (
+	seedanceMinDurationSeconds = 4
+	seedanceMaxDurationSeconds = 15
+)
+
 type HasPrompt interface {
 	GetPrompt() string
 }
@@ -78,6 +83,68 @@ func validatePrompt(prompt string) *dto.TaskError {
 	return nil
 }
 
+func IsSeedanceTaskModel(modelName string) bool {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	return strings.HasPrefix(modelName, "seedance-") || strings.HasPrefix(modelName, "doubao-seedance-")
+}
+
+func resolveTaskDuration(req *TaskSubmitReq) (duration int, supplied bool, err error) {
+	if req == nil {
+		return 0, false, nil
+	}
+	if req.Duration != 0 {
+		return req.Duration, true, nil
+	}
+	secondsText := strings.TrimSpace(req.Seconds)
+	if secondsText == "" {
+		return 0, false, nil
+	}
+	duration, err = strconv.Atoi(secondsText)
+	if err != nil {
+		return 0, true, err
+	}
+	return duration, true, nil
+}
+
+func ClampSeedanceDuration(duration int) int {
+	if duration < seedanceMinDurationSeconds {
+		return seedanceMinDurationSeconds
+	}
+	if duration > seedanceMaxDurationSeconds {
+		return seedanceMaxDurationSeconds
+	}
+	return duration
+}
+
+func NormalizeSeedanceDuration(req *TaskSubmitReq, info *RelayInfo) *dto.TaskError {
+	if req == nil {
+		return nil
+	}
+	modelName := req.Model
+	if modelName == "" && info != nil {
+		modelName = info.OriginModelName
+	}
+	if modelName == "" && info != nil {
+		modelName = info.UpstreamModelName
+	}
+	if !IsSeedanceTaskModel(modelName) {
+		return nil
+	}
+
+	duration, supplied, err := resolveTaskDuration(req)
+	if err != nil {
+		return createTaskError(fmt.Errorf("seconds must be an integer"), "invalid_seconds", http.StatusBadRequest, true)
+	}
+	if !supplied {
+		return nil
+	}
+	duration = ClampSeedanceDuration(duration)
+
+	req.Duration = duration
+	req.Seconds = strconv.Itoa(duration)
+	return nil
+}
+
 func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string) (TaskSubmitReq, error) {
 	var req TaskSubmitReq
 	if _, err := c.MultipartForm(); err != nil {
@@ -94,7 +161,13 @@ func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string
 		Metadata: make(map[string]interface{}),
 	}
 
-	if durationStr := formData.Get("seconds"); durationStr != "" {
+	if durationStr := formData.Get("duration"); durationStr != "" {
+		req.Seconds = durationStr
+		if duration, err := strconv.Atoi(durationStr); err == nil {
+			req.Duration = duration
+		}
+	} else if durationStr := formData.Get("seconds"); durationStr != "" {
+		req.Seconds = durationStr
 		if duration, err := strconv.Atoi(durationStr); err == nil {
 			req.Duration = duration
 		}
@@ -152,6 +225,9 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 	if taskErr := validatePrompt(prompt); taskErr != nil {
 		return taskErr
 	}
+	if taskErr := NormalizeSeedanceDuration(&req, info); taskErr != nil {
+		return taskErr
+	}
 
 	action := constant.TaskActionTextGenerate
 	if hasInputReference {
@@ -189,6 +265,7 @@ func isKnownTaskField(field string) bool {
 		"image":           true,
 		"images":          true,
 		"size":            true,
+		"seconds":         true,
 		"duration":        true,
 		"input_reference": true, // Sora 特有字段
 	}
@@ -211,6 +288,9 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 	}
 
 	if taskErr := validatePrompt(req.Prompt); taskErr != nil {
+		return taskErr
+	}
+	if taskErr := NormalizeSeedanceDuration(&req, info); taskErr != nil {
 		return taskErr
 	}
 

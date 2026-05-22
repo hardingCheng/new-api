@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
+	"github.com/QuantumNous/new-api/relay/channel/task/taskbilling"
 	taskcommon "github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
@@ -68,6 +69,8 @@ type TaskAdaptor struct {
 	baseURL     string
 }
 
+const defaultSeedance2Duration = 15
+
 func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.ChannelType = info.ChannelType
 	a.baseURL = info.ChannelBaseUrl
@@ -82,6 +85,9 @@ func validateRemixRequest(c *gin.Context) *dto.TaskError {
 	if strings.TrimSpace(req.Prompt) == "" {
 		return service.TaskErrorWrapperLocal(fmt.Errorf("field prompt is required"), "invalid_request", http.StatusBadRequest)
 	}
+	if taskErr := relaycommon.NormalizeSeedanceDuration(&req, nil); taskErr != nil {
+		return taskErr
+	}
 	// 存储原始请求到 context，与 ValidateMultipartDirect 路径保持一致
 	c.Set("task_request", req)
 	return nil
@@ -89,9 +95,29 @@ func validateRemixRequest(c *gin.Context) *dto.TaskError {
 
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
 	if info.Action == constant.TaskActionRemix {
-		return validateRemixRequest(c)
+		if taskErr := validateRemixRequest(c); taskErr != nil {
+			return taskErr
+		}
+		return validateSeedanceReferenceVideoDuration(c, info)
 	}
-	return relaycommon.ValidateMultipartDirect(c, info)
+	if taskErr := relaycommon.ValidateMultipartDirect(c, info); taskErr != nil {
+		return taskErr
+	}
+	return validateSeedanceReferenceVideoDuration(c, info)
+}
+
+func validateSeedanceReferenceVideoDuration(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskError {
+	req, err := relaycommon.GetTaskRequest(c)
+	if err != nil {
+		return nil
+	}
+	if !taskcommon.IsTaskReferenceVideoBillingRequest(info, req.Model) {
+		return nil
+	}
+	if _, err := taskbilling.ResolveReferenceVideoSeconds(c); err != nil {
+		return service.TaskErrorWrapperLocal(err, "reference_video_duration_probe_failed", http.StatusBadRequest)
+	}
+	return nil
 }
 
 // EstimateBilling 根据用户请求的 seconds 和 size 计算 OtherRatios。
@@ -105,11 +131,32 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	if err != nil {
 		return nil
 	}
-
-	seconds, _ := strconv.Atoi(req.Seconds)
-	if seconds == 0 {
-		seconds = req.Duration
+	if !taskcommon.IsTaskDurationBillingRequest(info, req.Model) {
+		return nil
 	}
+
+	seconds := req.Duration
+	if seconds == 0 {
+		seconds, _ = strconv.Atoi(strings.TrimSpace(req.Seconds))
+	}
+
+	if isSeedanceModel(info.UpstreamModelName) || isSeedanceModel(info.OriginModelName) || isSeedanceModel(req.Model) {
+		if seconds <= 0 && isSeedance2Request(info, req.Model) {
+			seconds = defaultSeedance2Duration
+		}
+		if seconds <= 0 {
+			return nil
+		}
+		ratios := map[string]float64{
+			"seconds": float64(seconds),
+		}
+		if taskcommon.IsTaskReferenceVideoBillingRequest(info, req.Model) {
+			referenceSeconds := taskbilling.EstimateReferenceVideoSeconds(c)
+			ratios["seconds"] = float64(seconds + referenceSeconds)
+		}
+		return ratios
+	}
+
 	if seconds <= 0 {
 		seconds = 4
 	}
@@ -123,10 +170,63 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		"seconds": float64(seconds),
 		"size":    1,
 	}
+	if taskcommon.IsTaskReferenceVideoBillingRequest(info, req.Model) {
+		referenceSeconds := taskbilling.EstimateReferenceVideoSeconds(c)
+		ratios["seconds"] = float64(seconds + referenceSeconds)
+	}
 	if size == "1792x1024" || size == "1024x1792" {
 		ratios["size"] = 1.666667
 	}
 	return ratios
+}
+
+func isSeedanceModel(modelName string) bool {
+	return relaycommon.IsSeedanceTaskModel(modelName)
+}
+
+func isSeedance2Request(info *relaycommon.RelayInfo, requestModel string) bool {
+	if taskcommon.IsSeedance2Model(requestModel) {
+		return true
+	}
+	if info == nil {
+		return false
+	}
+	return taskcommon.IsSeedance2Model(info.UpstreamModelName) ||
+		taskcommon.IsSeedance2Model(info.OriginModelName)
+}
+
+func parseIntValue(v interface{}) (int, bool) {
+	switch value := v.(type) {
+	case int:
+		return value, true
+	case int32:
+		return int(value), true
+	case int64:
+		return int(value), true
+	case float64:
+		return int(value), true
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(value))
+		return n, err == nil
+	}
+	return 0, false
+}
+
+func normalizeSeedanceDuration(bodyMap map[string]interface{}, defaultDuration int) {
+	if bodyMap == nil {
+		return
+	}
+	if duration, ok := parseIntValue(bodyMap["duration"]); ok {
+		bodyMap["duration"] = relaycommon.ClampSeedanceDuration(duration)
+		delete(bodyMap, "seconds")
+		return
+	}
+	if seconds, ok := parseIntValue(bodyMap["seconds"]); ok {
+		bodyMap["duration"] = relaycommon.ClampSeedanceDuration(seconds)
+	} else if defaultDuration > 0 {
+		bodyMap["duration"] = defaultDuration
+	}
+	delete(bodyMap, "seconds")
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
@@ -158,6 +258,18 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		var bodyMap map[string]interface{}
 		if err := common.Unmarshal(cachedBody, &bodyMap); err == nil {
 			bodyMap["model"] = info.UpstreamModelName
+			if isSeedanceModel(info.UpstreamModelName) || isSeedanceModel(info.OriginModelName) {
+				if taskReq, err := relaycommon.GetTaskRequest(c); err == nil && taskReq.Duration > 0 {
+					bodyMap["duration"] = taskReq.Duration
+					delete(bodyMap, "seconds")
+				} else {
+					defaultDuration := 0
+					if isSeedance2Request(info, "") {
+						defaultDuration = defaultSeedance2Duration
+					}
+					normalizeSeedanceDuration(bodyMap, defaultDuration)
+				}
+			}
 			if newBody, err := common.Marshal(bodyMap); err == nil {
 				return bytes.NewReader(newBody), nil
 			}
@@ -173,13 +285,35 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		var buf bytes.Buffer
 		writer := multipart.NewWriter(&buf)
 		writer.WriteField("model", info.UpstreamModelName)
+		seedanceDuration := ""
+		if isSeedanceModel(info.UpstreamModelName) || isSeedanceModel(info.OriginModelName) {
+			if taskReq, err := relaycommon.GetTaskRequest(c); err == nil && taskReq.Duration > 0 {
+				seedanceDuration = strconv.Itoa(taskReq.Duration)
+			} else if values := formData.Value["duration"]; len(values) > 0 && strings.TrimSpace(values[0]) != "" {
+				if duration, err := strconv.Atoi(strings.TrimSpace(values[0])); err == nil {
+					seedanceDuration = strconv.Itoa(relaycommon.ClampSeedanceDuration(duration))
+				}
+			} else if values := formData.Value["seconds"]; len(values) > 0 && strings.TrimSpace(values[0]) != "" {
+				if duration, err := strconv.Atoi(strings.TrimSpace(values[0])); err == nil {
+					seedanceDuration = strconv.Itoa(relaycommon.ClampSeedanceDuration(duration))
+				}
+			} else if isSeedance2Request(info, "") {
+				seedanceDuration = strconv.Itoa(defaultSeedance2Duration)
+			}
+		}
 		for key, values := range formData.Value {
 			if key == "model" {
+				continue
+			}
+			if seedanceDuration != "" && (key == "seconds" || key == "duration") {
 				continue
 			}
 			for _, v := range values {
 				writer.WriteField(key, v)
 			}
+		}
+		if seedanceDuration != "" {
+			writer.WriteField("duration", seedanceDuration)
 		}
 		for fieldName, fileHeaders := range formData.File {
 			for _, fh := range fileHeaders {

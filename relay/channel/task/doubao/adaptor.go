@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -14,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
+	"github.com/QuantumNous/new-api/relay/channel/task/taskbilling"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
@@ -116,7 +118,16 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
 	// Accept only POST /v1/video/generations as "generate" action.
-	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate)
+	if taskErr := relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); taskErr != nil {
+		return taskErr
+	}
+	req, err := relaycommon.GetTaskRequest(c)
+	if err == nil && taskcommon.IsTaskReferenceVideoBillingRequest(info, req.Model) {
+		if _, err := taskbilling.ResolveReferenceVideoSeconds(c); err != nil {
+			return service.TaskErrorWrapperLocal(err, "reference_video_duration_probe_failed", http.StatusBadRequest)
+		}
+	}
+	return nil
 }
 
 // BuildRequestURL constructs the upstream URL.
@@ -132,11 +143,25 @@ func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *r
 	return nil
 }
 
-// EstimateBilling 检测请求 metadata 中是否包含视频输入，返回视频折扣 OtherRatio。
+// EstimateBilling 根据用户请求计算视频任务附加计费倍率。
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil
+	}
+	if taskcommon.IsTaskDurationBillingRequest(info, req.Model) {
+		seconds := req.Duration
+		if seconds <= 0 {
+			seconds, _ = strconv.Atoi(req.Seconds)
+		}
+		referenceSeconds := 0
+		if taskcommon.IsTaskReferenceVideoBillingRequest(info, req.Model) {
+			referenceSeconds = taskbilling.EstimateReferenceVideoSeconds(c)
+		}
+		if seconds <= 0 && referenceSeconds <= 0 {
+			return nil
+		}
+		return map[string]float64{"seconds": float64(seconds + referenceSeconds)}
 	}
 	if hasVideoInMetadata(req.Metadata) {
 		if ratio, ok := GetVideoInputRatio(info.OriginModelName); ok {
@@ -182,7 +207,7 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		return nil, err
 	}
 
-	body, err := a.convertToRequestPayload(&req)
+	body, err := a.convertToRequestPayload(c, &req)
 	if err != nil {
 		return nil, errors.Wrap(err, "convert request payload failed")
 	}
@@ -267,10 +292,18 @@ func (a *TaskAdaptor) GetChannelName() string {
 	return ChannelName
 }
 
-func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*requestPayload, error) {
+func (a *TaskAdaptor) convertToRequestPayload(c *gin.Context, req *relaycommon.TaskSubmitReq) (*requestPayload, error) {
 	r := requestPayload{
 		Model:   req.Model,
 		Content: []ContentItem{},
+	}
+	if storage, err := common.GetBodyStorage(c); err == nil {
+		if bodyBytes, err := storage.Bytes(); err == nil {
+			_ = common.Unmarshal(bodyBytes, &r)
+			if r.Model == "" {
+				r.Model = req.Model
+			}
+		}
 	}
 
 	// Add images if present
@@ -294,11 +327,15 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 		r.Duration = lo.ToPtr(dto.IntValue(sec))
 	}
 
-	r.Content = lo.Reject(r.Content, func(c ContentItem, _ int) bool { return c.Type == "text" })
-	r.Content = append(r.Content, ContentItem{
-		Type: "text",
-		Text: req.Prompt,
+	hasTextContent := lo.SomeBy(r.Content, func(c ContentItem) bool {
+		return c.Type == "text" && strings.TrimSpace(c.Text) != ""
 	})
+	if !hasTextContent {
+		r.Content = append(r.Content, ContentItem{
+			Type: "text",
+			Text: req.Prompt,
+		})
+	}
 
 	return &r, nil
 }

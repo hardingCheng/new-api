@@ -192,6 +192,9 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 			info.PriceData.AddOtherRatio(k, v)
 		}
 	}
+	if !taskcommon.IsTaskDurationBillingRequest(info, "") {
+		removeTaskDurationRatios(info.PriceData.OtherRatios)
+	}
 
 	// 6. 将 OtherRatios 应用到基础额度
 	if !common.StringsContains(constant.TaskPricePatches, modelName) {
@@ -276,6 +279,15 @@ func recalcQuotaFromRatios(info *relaycommon.RelayInfo, ratios map[string]float6
 		}
 	}
 	return int(result)
+}
+
+func removeTaskDurationRatios(ratios map[string]float64) {
+	if ratios == nil {
+		return
+	}
+	delete(ratios, "seconds")
+	delete(ratios, "size")
+	delete(ratios, "reference_video")
 }
 
 var fetchRespBuilders = map[int]func(c *gin.Context) (respBody []byte, taskResp *dto.TaskError){

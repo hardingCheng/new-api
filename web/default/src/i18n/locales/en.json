@@ -4501,6 +4501,15 @@
     "No Video Reference": "No Video Reference",
     "Consumed Quota": "Consumed Quota",
     "Refund Quota": "Refund Quota",
+    "Task Billing": "Task Billing",
+    "Configure per-second billing rules for video task models": "Configure per-second billing rules for video task models",
+    "Per-second billing models": "Per-second billing models",
+    "One model pattern per line. Use * as a wildcard.": "One model pattern per line. Use * as a wildcard.",
+    "Per-second billing exclusions": "Per-second billing exclusions",
+    "Excluded patterns take priority over billing patterns.": "Excluded patterns take priority over billing patterns.",
+    "Reference video billing models": "Reference video billing models",
+    "Models listed here add detected reference video seconds to the generated video duration.": "Models listed here add detected reference video seconds to the generated video duration.",
+    "Use recommended defaults": "Use recommended defaults",
     "Video Duration": "Video Duration"
   }
 }

@@ -37,6 +37,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
 	}
+	removedUnsupportedBackground := removeUnsupportedTransparentBackground(c, info, request)
 
 	adaptor := GetAdaptor(info.ApiType)
 	if adaptor == nil {
@@ -46,7 +47,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	var requestBody io.Reader
 
-	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
+	if !removedUnsupportedBackground && (model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled) {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
@@ -152,4 +153,89 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), logContent)
 	return nil
+}
+
+var gptImage2BackgroundUnsupportedModels = []string{
+	"gpt-image-2",
+	"gpt-image-2-pro",
+}
+
+func removeUnsupportedTransparentBackground(c *gin.Context, info *relaycommon.RelayInfo, request *dto.ImageRequest) bool {
+	if !isGPTImage2Request(info, request) {
+		return false
+	}
+	removedRequest := removeUnsupportedTransparentBackgroundForImageRequest(request)
+	removedForm := removeUnsupportedTransparentBackgroundFromMultipartForm(c)
+	return removedRequest || removedForm
+}
+
+func removeUnsupportedTransparentBackgroundForImageRequest(request *dto.ImageRequest) bool {
+	if request == nil || len(request.Background) == 0 {
+		return false
+	}
+
+	var background string
+	if err := common.Unmarshal(request.Background, &background); err != nil {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(background), "transparent") {
+		return false
+	}
+	request.Background = nil
+	return true
+}
+
+func removeUnsupportedTransparentBackgroundFromMultipartForm(c *gin.Context) bool {
+	if c == nil || !strings.Contains(strings.ToLower(c.GetHeader("Content-Type")), "multipart/form-data") {
+		return false
+	}
+	if c.Request.MultipartForm == nil {
+		if _, err := c.MultipartForm(); err != nil {
+			return false
+		}
+	}
+	if c.Request.MultipartForm == nil {
+		return false
+	}
+
+	values := c.Request.MultipartForm.Value["background"]
+	removed := false
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), "transparent") {
+			removed = true
+			break
+		}
+	}
+	if !removed {
+		return false
+	}
+
+	delete(c.Request.MultipartForm.Value, "background")
+	c.Request.PostForm.Del("background")
+	c.Request.Form.Del("background")
+	return true
+}
+
+func isGPTImage2Request(info *relaycommon.RelayInfo, request *dto.ImageRequest) bool {
+	if request != nil && isGPTImage2Model(request.Model) {
+		return true
+	}
+	if info == nil {
+		return false
+	}
+	return isGPTImage2Model(info.OriginModelName) ||
+		isGPTImage2Model(info.UpstreamModelName)
+}
+
+func isGPTImage2Model(modelName string) bool {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	if modelName == "" {
+		return false
+	}
+	for _, model := range gptImage2BackgroundUnsupportedModels {
+		if modelName == model {
+			return true
+		}
+	}
+	return false
 }

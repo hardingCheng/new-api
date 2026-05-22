@@ -155,6 +155,9 @@ export type ModelSettings = {
   'claude.thinking_adapter_budget_tokens_percentage': number
   'grok.violation_deduction_enabled': boolean
   'grok.violation_deduction_amount': number
+  'task_billing_setting.duration_billing_model_patterns': string
+  'task_billing_setting.duration_billing_exclude_model_patterns': string
+  'task_billing_setting.reference_video_billing_model_patterns': string
   ModelPrice: string
   ModelRatio: string
   CacheRatio: string

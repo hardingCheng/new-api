@@ -4501,6 +4501,15 @@
     "No Video Reference": "无视频参考",
     "Consumed Quota": "消耗额度",
     "Refund Quota": "退款额度",
+    "Task Billing": "任务计费",
+    "Configure per-second billing rules for video task models": "配置视频任务模型的按秒计费规则",
+    "Per-second billing models": "按秒计费模型",
+    "One model pattern per line. Use * as a wildcard.": "每行一个模型规则，可使用 * 作为通配符。",
+    "Per-second billing exclusions": "按秒计费排除项",
+    "Excluded patterns take priority over billing patterns.": "排除规则优先于计费规则。",
+    "Reference video billing models": "参考视频计费模型",
+    "Models listed here add detected reference video seconds to the generated video duration.": "这里配置的模型会把探测到的参考视频秒数累加到生成视频时长中。",
+    "Use recommended defaults": "使用推荐默认值",
     "Video Duration": "视频时长"
   }
 }
