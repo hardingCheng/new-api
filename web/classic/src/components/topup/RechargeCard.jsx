@@ -404,7 +404,9 @@ const RechargeCard = ({
                 <Form.Slot
                   label={
                     <div className='flex items-center gap-2'>
-                      <span>{t('选择充值额度')}</span>
+                      <span>
+                        {t('选择充值额度')} (1{t('元')}={priceRatio}{t('美元')})
+                      </span>
                       {(() => {
                         const { symbol, rate, type } = getCurrencyConfig();
                         if (type === 'USD') return null;

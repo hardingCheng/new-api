@@ -214,7 +214,7 @@ export function RechargeFormCard({
               {presetAmounts.length > 0 && (
                 <div className='space-y-2.5 sm:space-y-3'>
                   <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
-                    {t('Amount')}
+                    {t('Amount')} (1{t('CNY')}={priceRatio}{t('USD')})
                   </Label>
                   <div className='grid grid-cols-2 gap-1.5 sm:gap-3 md:grid-cols-4'>
                     {presetAmounts.map((preset, index) => {
