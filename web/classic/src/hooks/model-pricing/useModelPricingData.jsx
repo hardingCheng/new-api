@@ -99,9 +99,19 @@ export const useModelPricingData = () => {
     let result = models;
 
     // 分组筛选
-    if (filterGroup !== 'all') {
+    if (filterGroup === 'all') {
+      const userVisibleGroups = Object.keys(usableGroup || {}).filter(
+        (key) => key !== '',
+      );
+      result = result.filter((model) => {
+        const modelGroups = Array.isArray(model.enable_groups)
+          ? model.enable_groups
+          : [];
+        return modelGroups.some((group) => userVisibleGroups.includes(group));
+      });
+    } else {
       result = result.filter((model) =>
-        model.enable_groups.includes(filterGroup),
+        model.enable_groups?.includes(filterGroup),
       );
     }
 
@@ -166,6 +176,7 @@ export const useModelPricingData = () => {
     filterEndpointType,
     filterVendor,
     filterTag,
+    usableGroup,
   ]);
 
   const rowSelection = useMemo(
@@ -292,7 +303,7 @@ export const useModelPricingData = () => {
     setSelectedGroup(group);
     setFilterGroup(group);
     if (group === 'all') {
-      showInfo(t('已切换至最优倍率视图，每个模型使用其最低倍率分组'));
+      showInfo(t('展示全部模型'));
     } else {
       showInfo(
         t('当前查看的分组为：{{group}}，倍率为：{{ratio}}', {

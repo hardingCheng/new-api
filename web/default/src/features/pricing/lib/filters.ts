@@ -64,9 +64,15 @@ export function filterByVendor(
  */
 export function filterByGroup(
   models: PricingModel[],
-  group: string
+  group: string,
+  visibleGroups?: string[]
 ): PricingModel[] {
-  if (group === FILTER_ALL) return models
+  if (group === FILTER_ALL) {
+    if (!visibleGroups) return models
+    return models.filter((m) =>
+      m.enable_groups?.some((modelGroup) => visibleGroups.includes(modelGroup))
+    )
+  }
   return models.filter((m) => m.enable_groups?.includes(group))
 }
 
@@ -144,11 +150,12 @@ export function filterAndSortModels(
     endpointType: string
     tag: string
     sortBy: string
+    visibleGroups?: string[]
   }
 ): PricingModel[] {
   let result = filterBySearch(models, filters.search)
   result = filterByVendor(result, filters.vendor)
-  result = filterByGroup(result, filters.group)
+  result = filterByGroup(result, filters.group, filters.visibleGroups)
   result = filterByQuotaType(result, filters.quotaType)
   result = filterByEndpointType(result, filters.endpointType)
   result = filterByTag(result, filters.tag)

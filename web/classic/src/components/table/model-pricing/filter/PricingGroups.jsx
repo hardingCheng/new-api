@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import SelectableButtonGroup from '../../../common/ui/SelectableButtonGroup';
 
 /**
@@ -39,20 +39,17 @@ const PricingGroups = ({
   loading = false,
   t,
 }) => {
-  const groups = [
-    'all',
-    ...Object.keys(usableGroup).filter((key) => key !== ''),
-  ];
+  const userVisibleGroups = useMemo(
+    () => Object.keys(usableGroup).filter((key) => key !== ''),
+    [usableGroup],
+  );
+
+  const groups = ['all', ...userVisibleGroups];
 
   const items = groups.map((g) => {
-    const modelCount =
-      g === 'all'
-        ? models.length
-        : models.filter((m) => m.enable_groups && m.enable_groups.includes(g))
-            .length;
     let ratioDisplay = '';
     if (g === 'all') {
-      // ratioDisplay = t('全部');
+      ratioDisplay = '';
     } else {
       const ratio = groupRatio[g];
       if (ratio !== undefined && ratio !== null) {

@@ -81,12 +81,12 @@ function countBy(
   return models.reduce((count, model) => count + (predicate(model) ? 1 : 0), 0)
 }
 
-function formatGroupRatio(ratio: number | undefined): string | undefined {
-  if (ratio == null) return undefined
-  const formatted = Number.isInteger(ratio)
-    ? ratio.toString()
-    : ratio.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
-  return `x${formatted}`
+function formatGroupRatio(ratio: number | undefined): string {
+  const normalizedRatio = ratio ?? 1
+  const formatted = Number.isInteger(normalizedRatio)
+    ? normalizedRatio.toString()
+    : normalizedRatio.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
+  return `${formatted}x`
 }
 
 function FilterChip(props: {

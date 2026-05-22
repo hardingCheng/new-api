@@ -251,9 +251,11 @@ export const getPricingTableColumns = ({
 
   const columns = [...baseColumns];
   columns.push(endpointColumn);
-  if (showRatio) {
+  if (showRatio && selectedGroup !== 'all') {
     columns.push(ratioColumn);
   }
-  columns.push(priceColumn);
+  if (selectedGroup !== 'all') {
+    columns.push(priceColumn);
+  }
   return columns;
 };

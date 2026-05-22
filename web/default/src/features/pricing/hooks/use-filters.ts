@@ -50,7 +50,7 @@ function normalizeViewMode(value: unknown): ViewMode {
   return VIEW_MODES.CARD
 }
 
-export function useFilters(models: PricingModel[]) {
+export function useFilters(models: PricingModel[], visibleGroups?: string[]) {
   const search = useSearch({ from: '/pricing/' })
   const [filterState, setFilterState] = useState<FilterState>(() => ({
     search: search.search,
@@ -153,9 +153,11 @@ export function useFilters(models: PricingModel[]) {
       endpointType: endpointTypeFilter,
       tag: tagFilter,
       sortBy,
+      visibleGroups,
     })
   }, [
     models,
+    visibleGroups,
     searchInput,
     vendorFilter,
     groupFilter,

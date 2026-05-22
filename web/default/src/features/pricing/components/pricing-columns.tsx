@@ -50,6 +50,7 @@ export interface PricingColumnsOptions {
   priceRate?: number
   usdExchangeRate?: number
   showRechargePrice?: boolean
+  showPriceColumns?: boolean
 }
 
 function renderLimitedTags(
@@ -103,11 +104,12 @@ export function usePricingColumns(
     priceRate = 1,
     usdExchangeRate = 1,
     showRechargePrice = false,
+    showPriceColumns = true,
   } = options
 
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
 
-  return [
+  const columns: ColumnDef<PricingModel>[] = [
     // Model column
     {
       accessorKey: 'model_name',
@@ -469,4 +471,18 @@ export function usePricingColumns(
       enableSorting: false,
     },
   ]
+
+  if (showPriceColumns) {
+    return columns
+  }
+
+  return columns.filter((column) => {
+    const id =
+      'id' in column
+        ? column.id
+        : 'accessorKey' in column
+          ? column.accessorKey
+          : undefined
+    return id !== 'price' && id !== 'cached_price'
+  })
 }
