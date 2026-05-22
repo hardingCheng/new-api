@@ -343,38 +343,6 @@ export function CommonLogsFilterBar<TData>(
             className={inputClass}
           />
           {isAdmin && (
-            <div className='w-full sm:w-[220px] lg:w-[260px]'>
-              <MultiSelect
-                options={userOptions}
-                selected={selectedUserValues}
-                onChange={(values) => {
-                  const userIds = values.filter(
-                    (value) => !isUsernameFilter(value)
-                  )
-                  const username = findLastUsernameFilter(values)
-                  setFilters((prev) => ({
-                    ...prev,
-                    userIds: joinMultiValue(userIds),
-                    username: username ? decodeURIComponent(username) : '',
-                  }))
-                }}
-                placeholder={t('Select users or enter username...')}
-                className='text-xs'
-                dropdownClassName='z-100'
-                maxVisible={1}
-                createOption={(value) => ({
-                  label: value,
-                  value: encodeUsernameFilter(value),
-                })}
-                formatSelectedLabel={(value, option) =>
-                  isUsernameFilter(value)
-                    ? decodeUsernameFilter(value)
-                    : option?.label || value
-                }
-              />
-            </div>
-          )}
-          {isAdmin && (
             <Input
               placeholder={t('Channel ID')}
               value={filters.channelIds || ''}
@@ -397,6 +365,39 @@ export function CommonLogsFilterBar<TData>(
             onKeyDown={handleKeyDown}
             className={inputClass}
           />
+          {isAdmin && (
+            <div className='w-full sm:w-[220px] lg:w-[260px]'>
+              <MultiSelect
+                options={userOptions}
+                selected={selectedUserValues}
+                onChange={(values) => {
+                  const userIds = values.filter(
+                    (value) => !isUsernameFilter(value)
+                  )
+                  const username = findLastUsernameFilter(values)
+                  setFilters((prev) => ({
+                    ...prev,
+                    userIds: joinMultiValue(userIds),
+                    username: username ? decodeURIComponent(username) : '',
+                  }))
+                }}
+                placeholder={t('Select users or enter username...')}
+                className='text-xs'
+                dropdownClassName='z-100'
+                maxVisible={1}
+                keepSelectedOptionsVisible
+                createOption={(value) => ({
+                  label: value,
+                  value: encodeUsernameFilter(value),
+                })}
+                formatSelectedLabel={(value, option) =>
+                  isUsernameFilter(value)
+                    ? decodeUsernameFilter(value)
+                    : option?.label || value
+                }
+              />
+            </div>
+          )}
         </>
       }
       hasExpandedActiveFilters={hasExpandedFilters}

@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import * as React from 'react'
 import { Command as CommandPrimitive } from 'cmdk'
-import { X } from 'lucide-react'
+import { Check, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -38,6 +38,7 @@ interface MultiSelectProps {
   className?: string
   dropdownClassName?: string
   maxVisible?: number
+  keepSelectedOptionsVisible?: boolean
   createOption?: (inputValue: string) => Option | null
   formatSelectedLabel?: (value: string, option?: Option) => string
 }
@@ -50,6 +51,7 @@ export function MultiSelect({
   className,
   dropdownClassName,
   maxVisible,
+  keepSelectedOptionsVisible,
   createOption,
   formatSelectedLabel,
 }: MultiSelectProps) {
@@ -77,9 +79,19 @@ export function MultiSelect({
     }
   }
 
-  const selectables = options.filter(
-    (option) => !selected.includes(option.value)
-  )
+  const selectedOptions = React.useMemo(() => {
+    if (!keepSelectedOptionsVisible) return []
+    const existingValues = new Set(options.map((option) => option.value))
+    return selected
+      .filter((value) => !existingValues.has(value))
+      .map((value) => ({
+        value,
+        label: formatSelectedLabel ? formatSelectedLabel(value) : value,
+      }))
+  }, [formatSelectedLabel, keepSelectedOptionsVisible, options, selected])
+  const selectableOptions = keepSelectedOptionsVisible
+    ? [...options, ...selectedOptions]
+    : options.filter((option) => !selected.includes(option.value))
   const trimmedInputValue = inputValue.trim()
   const createdOption =
     trimmedInputValue.length > 0 && createOption
@@ -155,7 +167,7 @@ export function MultiSelect({
         </div>
       </div>
       <div className='relative'>
-        {open && (selectables.length > 0 || showCreatedOption) ? (
+        {open && (selectableOptions.length > 0 || showCreatedOption) ? (
           <div
             className={cn(
               'bg-popover text-popover-foreground animate-in absolute top-0 z-50 w-full rounded-md border shadow-md outline-none',
@@ -180,7 +192,8 @@ export function MultiSelect({
                   {createdOption.label}
                 </CommandItem>
               )}
-              {selectables.map((option) => {
+              {selectableOptions.map((option) => {
+                const isSelected = selected.includes(option.value)
                 return (
                   <CommandItem
                     key={option.value}
@@ -191,10 +204,22 @@ export function MultiSelect({
                     }}
                     onSelect={() => {
                       setInputValue('')
-                      onChange([...selected, option.value])
+                      onChange(
+                        isSelected
+                          ? selected.filter((value) => value !== option.value)
+                          : [...selected, option.value]
+                      )
                     }}
                     className='cursor-pointer'
                   >
+                    {keepSelectedOptionsVisible && (
+                      <Check
+                        className={cn(
+                          'mr-2 h-4 w-4',
+                          isSelected ? 'opacity-100' : 'opacity-0'
+                        )}
+                      />
+                    )}
                     {option.label}
                   </CommandItem>
                 )
