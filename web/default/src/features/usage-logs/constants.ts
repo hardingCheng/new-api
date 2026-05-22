@@ -193,6 +193,18 @@ export const TASK_PLATFORMS = {
   RUNWAY: 'runway',
   LUMA: 'luma',
   VIGGLE: 'viggle',
+  OPENAI: '1',
+  ALI: '17',
+  GEMINI: '24',
+  MINIMAX: '35',
+  SUNO_API: '36',
+  VERTEX_AI: '41',
+  VOLCENGINE: '45',
+  KLING_CHANNEL: '50',
+  JIMENG: '51',
+  VIDU: '52',
+  DOUBAO_VIDEO: '54',
+  SORA: '55',
 } as const
 
 // ============================================================================
@@ -308,6 +320,18 @@ export const TASK_PLATFORM_MAPPINGS: Record<string, StatusMapping> = {
   [TASK_PLATFORMS.RUNWAY]: { label: 'runway', variant: 'violet' },
   [TASK_PLATFORMS.LUMA]: { label: 'luma', variant: 'orange' },
   [TASK_PLATFORMS.VIGGLE]: { label: 'viggle', variant: 'pink' },
+  [TASK_PLATFORMS.OPENAI]: { label: 'OpenAI', variant: 'green' },
+  [TASK_PLATFORMS.ALI]: { label: 'Ali', variant: 'orange' },
+  [TASK_PLATFORMS.GEMINI]: { label: 'Gemini', variant: 'blue' },
+  [TASK_PLATFORMS.MINIMAX]: { label: 'MiniMax', variant: 'pink' },
+  [TASK_PLATFORMS.SUNO_API]: { label: 'SunoAPI', variant: 'green' },
+  [TASK_PLATFORMS.VERTEX_AI]: { label: 'Vertex AI', variant: 'blue' },
+  [TASK_PLATFORMS.VOLCENGINE]: { label: 'VolcEngine', variant: 'orange' },
+  [TASK_PLATFORMS.KLING_CHANNEL]: { label: 'Kling', variant: 'blue' },
+  [TASK_PLATFORMS.JIMENG]: { label: 'Jimeng', variant: 'violet' },
+  [TASK_PLATFORMS.VIDU]: { label: 'Vidu', variant: 'pink' },
+  [TASK_PLATFORMS.DOUBAO_VIDEO]: { label: 'DoubaoVideo', variant: 'orange' },
+  [TASK_PLATFORMS.SORA]: { label: 'Sora', variant: 'green' },
 }
 
 // ============================================================================
