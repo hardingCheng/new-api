@@ -360,6 +360,7 @@ export function CommonLogsFilterBar<TData>(
                 }}
                 placeholder={t('Select users or enter username...')}
                 className='text-xs'
+                dropdownClassName='z-100'
                 maxVisible={1}
                 createOption={(value) => ({
                   label: value,

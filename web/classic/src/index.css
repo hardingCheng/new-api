@@ -1003,6 +1003,10 @@ html.dark .with-pastel-balls::before {
   flex-wrap: nowrap;
 }
 
+.usage-log-user-filter-dropdown {
+  z-index: 2100 !important;
+}
+
 /* ==================== 自定义圆角样式 ==================== */
 .semi-radio,
 .semi-tagInput,

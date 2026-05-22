@@ -126,6 +126,8 @@ const LogsFilters = ({
                 maxTagCount={1}
                 showRestTagsPopover
                 className='usage-log-user-filter'
+                dropdownClassName='usage-log-user-filter-dropdown'
+                zIndex={2100}
               />
             </>
           )}

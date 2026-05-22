@@ -20,6 +20,7 @@ import * as React from 'react'
 import { Command as CommandPrimitive } from 'cmdk'
 import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Command, CommandGroup, CommandItem } from '@/components/ui/command'
@@ -35,6 +36,7 @@ interface MultiSelectProps {
   onChange: (values: string[]) => void
   placeholder?: string
   className?: string
+  dropdownClassName?: string
   maxVisible?: number
   createOption?: (inputValue: string) => Option | null
   formatSelectedLabel?: (value: string, option?: Option) => string
@@ -46,6 +48,7 @@ export function MultiSelect({
   onChange,
   placeholder,
   className,
+  dropdownClassName,
   maxVisible,
   createOption,
   formatSelectedLabel,
@@ -153,7 +156,12 @@ export function MultiSelect({
       </div>
       <div className='relative'>
         {open && (selectables.length > 0 || showCreatedOption) ? (
-          <div className='bg-popover text-popover-foreground animate-in absolute top-0 z-10 w-full rounded-md border shadow-md outline-none'>
+          <div
+            className={cn(
+              'bg-popover text-popover-foreground animate-in absolute top-0 z-50 w-full rounded-md border shadow-md outline-none',
+              dropdownClassName
+            )}
+          >
             <CommandGroup className='h-full max-h-60 overflow-auto'>
               {showCreatedOption && (
                 <CommandItem
