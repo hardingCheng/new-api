@@ -227,6 +227,13 @@ func (t *Task) GetVideoSeconds() string {
 	return extractTaskVideoSeconds(string(t.Data))
 }
 
+func (t *Task) GetModelName() string {
+	if t.Properties.OriginModelName != "" {
+		return t.Properties.OriginModelName
+	}
+	return t.Properties.UpstreamModelName
+}
+
 func (t *Task) GetRefundQuota() int {
 	return t.PrivateData.RefundQuota
 }

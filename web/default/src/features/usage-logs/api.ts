@@ -28,6 +28,13 @@ import type {
   UserInfo,
 } from './types'
 
+type BlobGetConfig = {
+  responseType: 'blob'
+  disableDuplicate?: boolean
+  skipBusinessError?: boolean
+  skipErrorHandler?: boolean
+}
+
 // ============================================================================
 // Generic API Helpers
 // ============================================================================
@@ -109,3 +116,35 @@ export const getAllTaskLogs = (params: GetTaskLogsParams) =>
 
 export const getUserTaskLogs = (params: GetTaskLogsParams) =>
   fetchLogs('/api/task', params, false)
+
+export async function exportAllTaskLogs(
+  params: GetTaskLogsParams
+): Promise<{ blob: Blob; filename?: string }> {
+  const queryParams = buildQueryParams(
+    params as unknown as Record<string, unknown>
+  )
+  const res = await api.get(`/api/task/export?${queryParams}`, {
+    responseType: 'blob',
+    disableDuplicate: true,
+    skipBusinessError: true,
+  } as BlobGetConfig)
+  const disposition = res.headers?.['content-disposition']
+  return {
+    blob: res.data as Blob,
+    filename:
+      typeof disposition === 'string'
+        ? getFilenameFromContentDisposition(disposition)
+        : undefined,
+  }
+}
+
+function getFilenameFromContentDisposition(
+  disposition: string
+): string | undefined {
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1].replace(/["']/g, ''))
+  }
+  const match = disposition.match(/filename="?([^";]+)"?/i)
+  return match?.[1]
+}

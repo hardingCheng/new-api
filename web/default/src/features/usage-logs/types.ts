@@ -246,6 +246,8 @@ export interface TaskLog {
   task_id: string
   action: string // MUSIC, LYRICS, GENERATE, TEXT_GENERATE, etc.
   channel_id: number
+  channel_name?: string
+  model_name?: string
   quota?: number
   consumed_quota?: number
   refund_quota?: number
@@ -336,6 +338,7 @@ export interface GetMidjourneyLogsParams {
 export interface GetTaskLogsParams {
   p?: number
   page_size?: number
+  limit?: number
   channel_id?: string
   task_id?: string
   user_ids?: string

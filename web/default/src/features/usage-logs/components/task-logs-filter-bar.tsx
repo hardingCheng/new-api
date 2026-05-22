@@ -20,9 +20,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useQueryClient, useIsFetching, useQuery } from '@tanstack/react-query'
 import { useNavigate, getRouteApi } from '@tanstack/react-router'
 import { type Table } from '@tanstack/react-table'
+import { Download, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { useIsAdmin } from '@/hooks/use-admin'
 import { api } from '@/lib/api'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -35,9 +38,10 @@ import {
 import { DataTableToolbar } from '@/components/data-table'
 import { MultiSelect, type Option } from '@/components/multi-select'
 import { searchUsers } from '@/features/users/api'
+import { exportAllTaskLogs } from '../api'
 import { TASK_STATUS, TASK_STATUS_MAPPINGS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
-import { getDefaultTimeRange } from '../lib/utils'
+import { buildBaseParams, getDefaultTimeRange } from '../lib/utils'
 import type { DrawingLogFilters, LogCategory, TaskLogFilters } from '../types'
 import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
 
@@ -114,6 +118,7 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
     const { start, end } = getDefaultTimeRange()
     return { startTime: start, endTime: end }
   })
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     const { start, end } = getDefaultTimeRange()
@@ -210,6 +215,43 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
     },
     [props.logCategory]
   )
+
+  const handleExport = useCallback(async () => {
+    if (!isAdmin || props.logCategory !== 'task') return
+
+    const filterParams = buildSearchParams(filters, 'task')
+    const baseParams = buildBaseParams({
+      page: 1,
+      pageSize: 50000,
+      searchParams: filterParams,
+      useMilliseconds: false,
+    })
+
+    setExporting(true)
+    try {
+      const { blob, filename } = await exportAllTaskLogs({
+        ...baseParams,
+        limit: 50000,
+        task_id: filterParams.filter as string | undefined,
+        user_ids: filterParams.userIds as string | undefined,
+        model_names: filterParams.modelNames as string | undefined,
+        status: filterParams.status as string | undefined,
+        reference: filterParams.reference as string | undefined,
+      })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename || 'task-bills.csv'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch {
+      toast.error(t('Export failed'))
+    } finally {
+      setExporting(false)
+    }
+  }, [filters, isAdmin, props.logCategory, t])
 
   const filterValue = getFilterValue(filters, props.logCategory)
   const taskFilters = filters as TaskLogFilters
@@ -391,6 +433,18 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
         </>
       }
       hasAdditionalFilters={hasAdditionalFilters}
+      preActions={
+        isAdmin && props.logCategory === 'task' ? (
+          <Button variant='outline' onClick={handleExport} disabled={exporting}>
+            {exporting ? (
+              <Loader2 className='animate-spin' />
+            ) : (
+              <Download />
+            )}
+            {t('Export Bill')}
+          </Button>
+        ) : undefined
+      }
       onSearch={handleApply}
       searchLoading={fetchingLogs > 0}
       onReset={handleReset}

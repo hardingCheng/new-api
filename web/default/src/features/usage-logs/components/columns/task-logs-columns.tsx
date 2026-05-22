@@ -135,6 +135,28 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
 
   if (isAdmin) {
     columns.push(createChannelColumn<TaskLog>({ headerLabel: t('Channel') }), {
+      accessorKey: 'channel_name',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Channel Name')} />
+      ),
+      cell: ({ row }) => {
+        const channelName = row.getValue('channel_name') as string | undefined
+        if (!channelName) {
+          return <span className='text-muted-foreground/60 text-xs'>-</span>
+        }
+        return (
+          <StatusBadge
+            label={channelName}
+            autoColor={channelName}
+            copyText={channelName}
+            size='sm'
+            showDot={false}
+            className='max-w-[180px] truncate'
+          />
+        )
+      },
+      meta: { label: t('Channel Name'), mobileHidden: true },
+    }, {
       id: 'user',
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('User')} />
@@ -222,6 +244,29 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
         )
       },
       meta: { label: t('Platform'), mobileHidden: true },
+    },
+    {
+      accessorKey: 'model_name',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Model')} />
+      ),
+      cell: ({ row }) => {
+        const modelName = row.getValue('model_name') as string | undefined
+        if (!modelName) {
+          return <span className='text-muted-foreground/60 text-xs'>-</span>
+        }
+        return (
+          <StatusBadge
+            label={modelName}
+            autoColor={modelName}
+            size='sm'
+            copyText={modelName}
+            showDot={false}
+            className='max-w-[180px] truncate'
+          />
+        )
+      },
+      meta: { label: t('Model'), mobileHidden: true },
     },
     {
       accessorKey: 'action',
