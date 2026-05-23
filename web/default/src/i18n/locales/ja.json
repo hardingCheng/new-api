@@ -4510,6 +4510,9 @@
     "Reference video billing models": "参照動画課金モデル",
     "Models listed here add detected reference video seconds to the generated video duration.": "ここに設定されたモデルは、検出した参照動画の秒数を生成動画の長さに加算します。",
     "Use recommended defaults": "推奨デフォルトを使用",
-    "Video Duration": "動画の長さ"
+    "Video Duration": "動画の長さ",
+    "Task Video Details": "タスク動画の詳細",
+    "Generated Video Duration": "生成動画の長さ",
+    "Reference Video Duration": "参照動画の長さ"
   }
 }

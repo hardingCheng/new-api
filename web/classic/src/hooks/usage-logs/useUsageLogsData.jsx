@@ -485,6 +485,22 @@ export const useLogsData = () => {
             value: other.reject_reason,
           });
         }
+        const generatedVideoSeconds = Number(
+          other?.generated_video_seconds || 0,
+        );
+        const referenceVideoSeconds = Number(
+          other?.reference_video_seconds || 0,
+        );
+        if (generatedVideoSeconds > 0 || referenceVideoSeconds > 0) {
+          expandDataLocal.push({
+            key: t('任务视频详情'),
+            value: `${t('生成视频时长')}：${
+              generatedVideoSeconds >= 0 ? `${generatedVideoSeconds}s` : '-'
+            }，${t('参考视频时长')}：${
+              referenceVideoSeconds >= 0 ? `${referenceVideoSeconds}s` : '-'
+            }`,
+          });
+        }
       }
       if (logs[i].type === 2) {
         let modelMapped =

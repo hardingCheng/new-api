@@ -221,6 +221,7 @@ export function buildApiParams(config: {
 
       switch (id) {
         case 'type':
+        case 'log_type':
           params.type = processType(value)
           break
         case 'model_name':

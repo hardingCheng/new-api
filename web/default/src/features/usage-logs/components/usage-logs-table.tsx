@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect } from 'react'
+import { useEffect, type CSSProperties } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import {
@@ -51,6 +51,39 @@ const logTypeRowTint: Record<number, string> = {
   [LOG_TYPE_ENUM.REFUND]: 'bg-blue-50/30 dark:bg-blue-950/15',
 }
 
+function getCommonStickyCellProps(
+  meta: ColumnDef<Record<string, unknown>, unknown>['meta'] | undefined,
+  tintClass: string
+): {
+  className?: string
+  style?: CSSProperties
+} {
+  if (!meta?.sticky) return {}
+
+  return {
+    className: cn(
+      'sticky z-30',
+      tintClass || 'bg-background',
+      meta.stickyBoundary === 'left-end' &&
+        'border-r shadow-[8px_0_10px_-10px_hsl(var(--foreground)/0.35)]',
+      meta.stickyBoundary === 'right-start' &&
+        'border-l shadow-[-8px_0_10px_-10px_hsl(var(--foreground)/0.35)]'
+    ),
+    style:
+      meta.sticky === 'left'
+        ? { left: meta.stickyOffset ?? 0 }
+        : { right: meta.stickyOffset ?? 0 },
+  }
+}
+
+function getCommonColumnSizeStyle(size: number): CSSProperties {
+  return {
+    width: size,
+    minWidth: size,
+    maxWidth: size,
+  }
+}
+
 interface UsageLogsTableProps {
   logCategory: LogCategory
 }
@@ -73,7 +106,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     pagination: { defaultPage: 1, defaultPageSize: isMobile ? 20 : 100 },
     globalFilter: { enabled: false },
     columnFilters: [
-      { columnId: 'created_at', searchKey: 'type', type: 'array' as const },
+      { columnId: 'log_type', searchKey: 'type', type: 'array' as const },
       { columnId: 'model_name', searchKey: 'model', type: 'string' as const },
       { columnId: 'token_name', searchKey: 'token', type: 'string' as const },
       { columnId: 'group', searchKey: 'group', type: 'string' as const },
@@ -173,7 +206,8 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
       )}
       skeletonKeyPrefix='usage-log-skeleton'
       tableClassName='max-h-[calc(100dvh-13rem)] overflow-auto sm:max-h-[calc(100dvh-14rem)]'
-      tableHeaderClassName='bg-muted/30 sticky top-0 z-10'
+      tableHeaderClassName='bg-muted sticky top-0 z-50'
+      applyHeaderSize={isCommon}
       toolbar={
         isCommon ? (
           <CommonLogsFilterBar table={table} />
@@ -190,11 +224,27 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
 
         return (
           <TableRow key={row.id} className={cn('transition-colors', tintClass)}>
-            {row.getVisibleCells().map((cell) => (
-              <TableCell key={cell.id} className={isCommon ? 'py-2' : 'py-3.5'}>
-                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-              </TableCell>
-            ))}
+            {row.getVisibleCells().map((cell) => {
+              const stickyProps = isCommon
+                ? getCommonStickyCellProps(cell.column.columnDef.meta, tintClass)
+                : {}
+              const sizeStyle = isCommon
+                ? getCommonColumnSizeStyle(cell.column.getSize())
+                : undefined
+
+              return (
+                <TableCell
+                  key={cell.id}
+                  className={cn(
+                    isCommon ? 'py-2' : 'py-3.5',
+                    stickyProps.className
+                  )}
+                  style={{ ...sizeStyle, ...stickyProps.style }}
+                >
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </TableCell>
+              )
+            })}
           </TableRow>
         )
       }}

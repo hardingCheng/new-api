@@ -19,6 +19,11 @@ const (
 	seedanceMaxDurationSeconds = 15
 )
 
+const (
+	TaskGeneratedVideoSecondsContextKey = "task_generated_video_seconds"
+	TaskReferenceVideoSecondsContextKey = "task_reference_video_seconds"
+)
+
 type HasPrompt interface {
 	GetPrompt() string
 }

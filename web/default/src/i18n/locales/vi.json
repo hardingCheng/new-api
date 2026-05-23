@@ -4510,6 +4510,9 @@
     "Reference video billing models": "Mô hình tính phí video tham chiếu",
     "Models listed here add detected reference video seconds to the generated video duration.": "Các mô hình trong danh sách này sẽ cộng số giây video tham chiếu phát hiện được vào thời lượng video tạo ra.",
     "Use recommended defaults": "Dùng giá trị mặc định khuyến nghị",
-    "Video Duration": "Thời lượng video"
+    "Video Duration": "Thời lượng video",
+    "Task Video Details": "Chi tiết video tác vụ",
+    "Generated Video Duration": "Thời lượng video tạo ra",
+    "Reference Video Duration": "Thời lượng video tham chiếu"
   }
 }

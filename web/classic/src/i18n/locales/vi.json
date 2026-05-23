@@ -4222,6 +4222,9 @@
     "无视频参考": "Không có tham chiếu video",
     "退款额度": "Hạn mức hoàn trả",
     "视频时长": "Thời lượng video",
-    "有": "Có"
+    "有": "Có",
+    "任务视频详情": "Chi tiết video tác vụ",
+    "生成视频时长": "Thời lượng video tạo ra",
+    "参考视频时长": "Thời lượng video tham chiếu"
   }
 }

@@ -3834,6 +3834,9 @@
     "无视频参考": "No Video Reference",
     "退款额度": "Refund Quota",
     "视频时长": "Video Duration",
-    "有": "Yes"
+    "有": "Yes",
+    "任务视频详情": "Task Video Details",
+    "生成视频时长": "Generated Video Duration",
+    "参考视频时长": "Reference Video Duration"
   }
 }

@@ -161,6 +161,12 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		if seconds <= 0 && referenceSeconds <= 0 {
 			return nil
 		}
+		if seconds > 0 {
+			c.Set(relaycommon.TaskGeneratedVideoSecondsContextKey, seconds)
+		}
+		if referenceSeconds > 0 {
+			c.Set(relaycommon.TaskReferenceVideoSecondsContextKey, referenceSeconds)
+		}
 		return map[string]float64{"seconds": float64(seconds + referenceSeconds)}
 	}
 	if hasVideoInMetadata(req.Metadata) {

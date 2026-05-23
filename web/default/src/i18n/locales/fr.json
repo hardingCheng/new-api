@@ -4510,6 +4510,9 @@
     "Reference video billing models": "Modèles facturés avec vidéo de référence",
     "Models listed here add detected reference video seconds to the generated video duration.": "Les modèles listés ici ajoutent les secondes détectées de la vidéo de référence à la durée de la vidéo générée.",
     "Use recommended defaults": "Utiliser les valeurs recommandées",
-    "Video Duration": "Durée vidéo"
+    "Video Duration": "Durée vidéo",
+    "Task Video Details": "Détails vidéo de la tâche",
+    "Generated Video Duration": "Durée de la vidéo générée",
+    "Reference Video Duration": "Durée de la vidéo de référence"
   }
 }

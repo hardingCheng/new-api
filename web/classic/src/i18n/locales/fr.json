@@ -3689,6 +3689,9 @@
     "无视频参考": "Sans référence vidéo",
     "退款额度": "Quota remboursé",
     "视频时长": "Durée vidéo",
-    "有": "Oui"
+    "有": "Oui",
+    "任务视频详情": "Détails vidéo de la tâche",
+    "生成视频时长": "Durée de la vidéo générée",
+    "参考视频时长": "Durée de la vidéo de référence"
   }
 }

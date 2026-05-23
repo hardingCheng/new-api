@@ -135,6 +135,11 @@ function formatRatio(ratio: number | undefined): string {
   return ratio.toFixed(4)
 }
 
+function formatTaskSeconds(seconds: number | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return '-'
+  return `${seconds}s`
+}
+
 function BillingBreakdown(props: {
   log: UsageLog
   other: LogOtherData
@@ -483,6 +488,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const useChannel = other?.admin_info?.use_channel
   const channelChain =
     useChannel && useChannel.length > 0 ? useChannel.join(' → ') : undefined
+  const generatedVideoSeconds = Number(other?.generated_video_seconds || 0)
+  const referenceVideoSeconds = Number(other?.reference_video_seconds || 0)
+  const showTaskVideoSeconds =
+    generatedVideoSeconds > 0 || referenceVideoSeconds > 0
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
@@ -706,6 +715,22 @@ export function DetailsDialog(props: DetailsDialogProps) {
                 {other.reason && (
                   <DetailRow label={t('Reason')} value={other.reason} />
                 )}
+              </DetailSection>
+            )}
+
+            {/* Task video duration details */}
+            {showTaskVideoSeconds && (
+              <DetailSection label={t('Task Video Details')}>
+                <DetailRow
+                  label={t('Generated Video Duration')}
+                  value={formatTaskSeconds(generatedVideoSeconds)}
+                  mono
+                />
+                <DetailRow
+                  label={t('Reference Video Duration')}
+                  value={formatTaskSeconds(referenceVideoSeconds)}
+                  mono
+                />
               </DetailSection>
             )}
 

@@ -308,28 +308,42 @@ function renderDesktop<TData>(
         props.tableClassName
       )}
     >
-      <Table>
+      <Table
+        className={props.applyHeaderSize ? 'min-w-full table-fixed' : undefined}
+        style={
+          props.applyHeaderSize
+            ? { width: props.table.getTotalSize() }
+            : undefined
+        }
+      >
         <TableHeader className={props.tableHeaderClassName}>
           {props.table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <TableHead
-                  key={header.id}
-                  colSpan={header.colSpan}
-                  style={
-                    props.applyHeaderSize
-                      ? { width: header.getSize() }
-                      : undefined
-                  }
-                >
-                  {header.isPlaceholder
-                    ? null
-                    : flexRender(
-                        header.column.columnDef.header,
-                        header.getContext()
-                      )}
-                </TableHead>
-              ))}
+              {headerGroup.headers.map((header) => {
+                const stickyProps = getStickyColumnProps(
+                  header.column.columnDef.meta,
+                  true
+                )
+                const sizeStyle = props.applyHeaderSize
+                  ? getColumnSizeStyle(header.getSize())
+                  : undefined
+
+                return (
+                  <TableHead
+                    key={header.id}
+                    colSpan={header.colSpan}
+                    className={stickyProps.className}
+                    style={{ ...sizeStyle, ...stickyProps.style }}
+                  >
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
+                  </TableHead>
+                )
+              })}
             </TableRow>
           ))}
         </TableHeader>
@@ -366,6 +380,39 @@ function renderDesktop<TData>(
       </Table>
     </div>
   )
+}
+
+function getStickyColumnProps(
+  meta: ColumnDef<unknown, unknown>['meta'] | undefined,
+  isHeader = false
+): {
+  className?: string
+  style?: React.CSSProperties
+} {
+  if (!meta?.sticky) return {}
+
+  return {
+    className: cn(
+      'sticky',
+      isHeader ? 'z-50 bg-muted' : 'z-30 bg-background',
+      meta.stickyBoundary === 'left-end' &&
+        'border-r shadow-[8px_0_10px_-10px_hsl(var(--foreground)/0.35)]',
+      meta.stickyBoundary === 'right-start' &&
+        'border-l shadow-[-8px_0_10px_-10px_hsl(var(--foreground)/0.35)]'
+    ),
+    style:
+      meta.sticky === 'left'
+        ? { left: meta.stickyOffset ?? 0 }
+        : { right: meta.stickyOffset ?? 0 },
+  }
+}
+
+function getColumnSizeStyle(size: number): React.CSSProperties {
+  return {
+    width: size,
+    minWidth: size,
+    maxWidth: size,
+  }
 }
 
 function DefaultRow<TData>({

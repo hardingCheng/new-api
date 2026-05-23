@@ -29,5 +29,9 @@ declare module '@tanstack/react-table' {
     sortable?: boolean
     // Custom CSS classes to apply to the column cells
     className?: string
+    // Optional sticky positioning for wide tables
+    sticky?: 'left' | 'right'
+    stickyOffset?: number
+    stickyBoundary?: 'left-end' | 'right-start'
   }
 }

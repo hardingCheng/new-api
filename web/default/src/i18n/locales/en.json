@@ -4510,6 +4510,9 @@
     "Reference video billing models": "Reference video billing models",
     "Models listed here add detected reference video seconds to the generated video duration.": "Models listed here add detected reference video seconds to the generated video duration.",
     "Use recommended defaults": "Use recommended defaults",
-    "Video Duration": "Video Duration"
+    "Video Duration": "Video Duration",
+    "Task Video Details": "Task Video Details",
+    "Generated Video Duration": "Generated Video Duration",
+    "Reference Video Duration": "Reference Video Duration"
   }
 }

@@ -150,8 +150,12 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		ratios := map[string]float64{
 			"seconds": float64(seconds),
 		}
+		c.Set(relaycommon.TaskGeneratedVideoSecondsContextKey, seconds)
 		if taskcommon.IsTaskReferenceVideoBillingRequest(info, req.Model) {
 			referenceSeconds := taskbilling.EstimateReferenceVideoSeconds(c)
+			if referenceSeconds > 0 {
+				c.Set(relaycommon.TaskReferenceVideoSecondsContextKey, referenceSeconds)
+			}
 			ratios["seconds"] = float64(seconds + referenceSeconds)
 		}
 		return ratios
@@ -170,8 +174,12 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		"seconds": float64(seconds),
 		"size":    1,
 	}
+	c.Set(relaycommon.TaskGeneratedVideoSecondsContextKey, seconds)
 	if taskcommon.IsTaskReferenceVideoBillingRequest(info, req.Model) {
 		referenceSeconds := taskbilling.EstimateReferenceVideoSeconds(c)
+		if referenceSeconds > 0 {
+			c.Set(relaycommon.TaskReferenceVideoSecondsContextKey, referenceSeconds)
+		}
 		ratios["seconds"] = float64(seconds + referenceSeconds)
 	}
 	if size == "1792x1024" || size == "1024x1792" {

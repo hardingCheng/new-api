@@ -50,6 +50,12 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = info.UpstreamModelName
 	}
+	if seconds := c.GetInt(relaycommon.TaskGeneratedVideoSecondsContextKey); seconds > 0 {
+		other["generated_video_seconds"] = seconds
+	}
+	if seconds := c.GetInt(relaycommon.TaskReferenceVideoSecondsContextKey); seconds > 0 {
+		other["reference_video_seconds"] = seconds
+	}
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 		ChannelId: info.ChannelId,
 		ModelName: info.OriginModelName,
@@ -129,6 +135,12 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 			for k, v := range bc.OtherRatios {
 				other[k] = v
 			}
+		}
+		if bc.GeneratedVideoSeconds > 0 {
+			other["generated_video_seconds"] = bc.GeneratedVideoSeconds
+		}
+		if bc.ReferenceVideoSeconds > 0 {
+			other["reference_video_seconds"] = bc.ReferenceVideoSeconds
 		}
 	}
 	props := task.Properties

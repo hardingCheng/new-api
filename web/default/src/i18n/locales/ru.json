@@ -4510,6 +4510,9 @@
     "Reference video billing models": "Модели с тарификацией видео-референса",
     "Models listed here add detected reference video seconds to the generated video duration.": "Для моделей из этого списка найденные секунды видео-референса добавляются к длительности сгенерированного видео.",
     "Use recommended defaults": "Использовать рекомендуемые значения",
-    "Video Duration": "Длительность видео"
+    "Video Duration": "Длительность видео",
+    "Task Video Details": "Сведения о видео задачи",
+    "Generated Video Duration": "Длительность сгенерированного видео",
+    "Reference Video Duration": "Длительность референсного видео"
   }
 }

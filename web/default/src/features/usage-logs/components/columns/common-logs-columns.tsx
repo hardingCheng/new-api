@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
 import { CircleAlert, Sparkles, KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -35,6 +35,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { DataTableColumnHeader } from '@/components/data-table'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import type { UsageLog } from '../../data/schema'
@@ -64,6 +65,11 @@ interface DetailSegment {
   danger?: boolean
 }
 
+const COMMON_LOGS_TIME_COLUMN_WIDTH = 180
+const COMMON_LOGS_STATUS_COLUMN_WIDTH = 120
+const COMMON_LOGS_DETAILS_COLUMN_WIDTH = 220
+const COMMON_LOGS_COST_COLUMN_WIDTH = 150
+
 function formatRatioCompact(ratio: number | undefined): string {
   if (ratio == null || !Number.isFinite(ratio)) return '-'
   return ratio % 1 === 0
@@ -87,6 +93,36 @@ function getGroupRatioText(other: LogOtherData | null): string | null {
   }
 
   return null
+}
+
+function InlineTag(props: {
+  children: ReactNode
+  className?: string
+  mono?: boolean
+  copyText?: string
+}) {
+  const { copyToClipboard } = useCopyToClipboard({ notify: false })
+  const copyable = props.copyText != null && props.copyText !== ''
+
+  return (
+    <span
+      className={cn(
+        'border-border/70 bg-muted/45 text-foreground inline-flex min-h-6 max-w-full items-center rounded-md border px-1.5 py-0.5 text-xs font-medium whitespace-nowrap',
+        props.mono && 'font-mono tabular-nums',
+        copyable &&
+          'cursor-pointer transition-opacity hover:opacity-70 active:scale-95',
+        props.className
+      )}
+      onClick={(event) => {
+        if (!copyable) return
+        event.stopPropagation()
+        copyToClipboard(props.copyText!)
+      }}
+      title={copyable ? `Click to copy: ${props.copyText}` : undefined}
+    >
+      {props.children}
+    </span>
+  )
 }
 
 function buildDetailSegments(
@@ -262,22 +298,33 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         <DataTableColumnHeader column={column} title={t('Time')} />
       ),
       cell: ({ row }) => {
-        const log = row.original
         const timestamp = row.getValue('created_at') as number
-        const config = getLogTypeConfig(log.type)
 
         return (
-          <div className='flex flex-col gap-0.5'>
-            <span className='font-mono text-xs tabular-nums'>
-              {formatTimestampToDate(timestamp)}
-            </span>
-            <StatusBadge
-              label={t(config.label)}
-              variant={config.color as StatusBadgeProps['variant']}
-              size='sm'
-              copyable={false}
-            />
-          </div>
+          <span className='font-mono text-xs tabular-nums'>
+            {formatTimestampToDate(timestamp)}
+          </span>
+        )
+      },
+      enableHiding: false,
+      meta: { label: t('Time'), sticky: 'left', stickyOffset: 0 },
+      size: COMMON_LOGS_TIME_COLUMN_WIDTH,
+    },
+    {
+      id: 'log_type',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Status')} />
+      ),
+      cell: ({ row }) => {
+        const config = getLogTypeConfig(row.original.type)
+        return (
+          <StatusBadge
+            label={t(config.label)}
+            variant={config.color as StatusBadgeProps['variant']}
+            size='sm'
+            copyText={t(config.label)}
+            className='rounded-md border border-current/20 px-1.5 py-0.5'
+          />
         )
       },
       filterFn: (row, _id, value) => {
@@ -285,7 +332,13 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         return value.includes(String(row.original.type))
       },
       enableHiding: false,
-      meta: { label: t('Time') },
+      meta: {
+        label: t('Status'),
+        sticky: 'left',
+        stickyOffset: COMMON_LOGS_TIME_COLUMN_WIDTH,
+        stickyBoundary: 'left-end',
+      },
+      size: COMMON_LOGS_STATUS_COLUMN_WIDTH,
     },
   ]
 
@@ -471,18 +524,14 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       let group = log.group
       if (!group) group = other?.group || ''
 
-      const metaParts: string[] = []
       const groupRatioText = getGroupRatioText(other)
-      if (group) {
-        metaParts.push(sensitiveVisible ? group : '••••')
-      }
-      if (groupRatioText) metaParts.push(groupRatioText)
+      const groupDisplay = group ? (sensitiveVisible ? group : '••••') : ''
 
       return (
-        <div className='flex max-w-[200px] flex-col gap-0.5'>
+        <div className='flex min-w-[300px] max-w-[420px] flex-nowrap items-center gap-1'>
           <TooltipProvider delay={300}>
             <Tooltip>
-              <TooltipTrigger render={<div className='max-w-full' />}>
+              <TooltipTrigger render={<div className='min-w-0 max-w-full' />}>
                 <StatusBadge
                   label={displayName}
                   icon={KeyRound}
@@ -499,16 +548,28 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
               )}
             </Tooltip>
           </TooltipProvider>
-          {metaParts.length > 0 && (
-            <span className='text-muted-foreground/60 truncate text-[11px]'>
-              {metaParts.join(' · ')}
-            </span>
+          {groupDisplay && (
+            <InlineTag
+              className='text-muted-foreground bg-muted/35'
+              copyText={sensitiveVisible ? group : undefined}
+            >
+              {groupDisplay}
+            </InlineTag>
+          )}
+          {groupRatioText && (
+            <InlineTag
+              mono
+              className='text-muted-foreground bg-muted/35'
+              copyText={groupRatioText}
+            >
+              {groupRatioText}
+            </InlineTag>
           )}
         </div>
       )
     },
     meta: { label: t('Token') },
-    size: 160,
+    size: 330,
   })
 
   columns.push(
@@ -524,7 +585,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const modelInfo = formatModelName(log)
 
         return (
-          <div className='flex max-w-[220px] flex-col gap-0.5'>
+          <div className='flex min-w-[220px] max-w-[320px] flex-col gap-0.5'>
             <ModelBadge
               modelName={modelInfo.name}
               actualModel={isAdmin ? modelInfo.actualModel : undefined}
@@ -533,6 +594,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         )
       },
       meta: { label: t('Model'), mobileTitle: true },
+      size: 260,
     },
 
     {
@@ -574,84 +636,89 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         }
 
         return (
-          <div className='flex flex-col gap-1'>
-            <div className='flex items-center gap-1.5'>
+          <div className='flex min-w-[360px] max-w-[520px] flex-nowrap items-center gap-1'>
+            <InlineTag
+              copyText={formatUseTime(useTime)}
+              className={cn(
+                pillBg[timeVariant],
+                pillText[timeVariant]
+              )}
+              mono
+            >
               <span
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-xs font-medium',
-                  pillBg[timeVariant],
-                  pillText[timeVariant]
+                  'size-1.5 shrink-0 rounded-full',
+                  pillDot[timeVariant]
                 )}
-              >
-                <span
+                aria-hidden='true'
+              />
+              {formatUseTime(useTime)}
+            </InlineTag>
+            {log.is_stream &&
+              (frt != null && frt > 0 ? (
+                <InlineTag
+                  copyText={formatUseTime(frt / 1000)}
                   className={cn(
-                    'size-1.5 shrink-0 rounded-full',
-                    pillDot[timeVariant]
+                    pillBg[frtVariant!],
+                    pillText[frtVariant!]
                   )}
-                  aria-hidden='true'
-                />
-                {formatUseTime(useTime)}
-              </span>
-              {log.is_stream &&
-                (frt != null && frt > 0 ? (
-                  <span
-                    className={cn(
-                      'inline-flex items-center rounded-md px-1.5 py-0.5 font-mono text-xs font-medium',
-                      pillBg[frtVariant!],
-                      pillText[frtVariant!]
-                    )}
-                  >
-                    {formatUseTime(frt / 1000)}
-                  </span>
-                ) : (
-                  <span className='border-border/60 text-muted-foreground/50 inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px]'>
-                    N/A
-                  </span>
-                ))}
-            </div>
-            <div className='flex items-center gap-1 text-[11px]'>
-              <span className='text-muted-foreground/60'>
-                {log.is_stream ? t('Stream') : t('Non-stream')}
-                {tokensPerSecond != null && (
-                  <>
-                    {' · '}
-                    <span className='font-mono tabular-nums'>
-                      {Math.round(tokensPerSecond)}
-                    </span>
-                    {' t/s'}
-                  </>
-                )}
-              </span>
-              {log.is_stream &&
-                other?.stream_status &&
-                other.stream_status.status !== 'ok' && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={<CircleAlert className='size-3 text-red-500' />}
-                      ></TooltipTrigger>
-                      <TooltipContent>
-                        <div className='space-y-0.5 text-xs'>
+                  mono
+                >
+                  FRT {formatUseTime(frt / 1000)}
+                </InlineTag>
+              ) : (
+                <InlineTag className='text-muted-foreground/60' copyText='FRT N/A'>
+                  FRT N/A
+                </InlineTag>
+              ))}
+            <InlineTag
+              className='text-muted-foreground bg-muted/35'
+              copyText={log.is_stream ? t('Stream') : t('Non-stream')}
+            >
+              {log.is_stream ? t('Stream') : t('Non-stream')}
+            </InlineTag>
+            {tokensPerSecond != null && (
+              <InlineTag
+                mono
+                className='text-muted-foreground bg-muted/35'
+                copyText={`${Math.round(tokensPerSecond)} t/s`}
+              >
+                {Math.round(tokensPerSecond)} t/s
+              </InlineTag>
+            )}
+            {log.is_stream &&
+              other?.stream_status &&
+              other.stream_status.status !== 'ok' && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <span className='inline-flex min-h-6 items-center rounded-md border border-red-200 bg-red-50 px-1.5 py-0.5 text-red-600 dark:border-red-900 dark:bg-red-950/30'>
+                          <CircleAlert className='size-3' />
+                        </span>
+                      }
+                    ></TooltipTrigger>
+                    <TooltipContent>
+                      <div className='space-y-0.5 text-xs'>
+                        <p>
+                          {t('Stream Status')}: {t('Error')}
+                        </p>
+                        <p>{other.stream_status.end_reason || 'unknown'}</p>
+                        {(other.stream_status.error_count ?? 0) > 0 && (
                           <p>
-                            {t('Stream Status')}: {t('Error')}
+                            {t('Soft Errors')}: {other.stream_status.error_count}
                           </p>
-                          <p>{other.stream_status.end_reason || 'unknown'}</p>
-                          {(other.stream_status.error_count ?? 0) > 0 && (
-                            <p>
-                              {t('Soft Errors')}:{' '}
-                              {other.stream_status.error_count}
-                            </p>
-                          )}
-                        </div>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-            </div>
+                        )}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
           </div>
         )
       },
       meta: { label: t('Timing'), mobileHidden: true },
+      size: 390,
     },
 
     {
@@ -680,29 +747,36 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           : other?.cache_creation_tokens || 0
 
         return (
-          <div className='flex flex-col gap-0.5'>
-            <span className='font-mono text-xs font-medium tabular-nums'>
-              {promptTokens.toLocaleString()} /{' '}
-              {completionTokens.toLocaleString()}
-            </span>
-            {(cacheReadTokens > 0 || cacheWriteTokens > 0) && (
-              <div className='flex items-center gap-1 text-[11px]'>
-                {cacheReadTokens > 0 && (
-                  <span className='text-muted-foreground/60'>
-                    {t('Cache')}↓ {cacheReadTokens.toLocaleString()}
-                  </span>
-                )}
-                {cacheWriteTokens > 0 && (
-                  <span className='text-muted-foreground/60'>
-                    ↑ {cacheWriteTokens.toLocaleString()}
-                  </span>
-                )}
-              </div>
+          <div className='flex min-w-[340px] max-w-[520px] flex-nowrap items-center gap-1'>
+            <InlineTag mono copyText={String(promptTokens)}>
+              {t('Input')} {promptTokens.toLocaleString()}
+            </InlineTag>
+            <InlineTag mono copyText={String(completionTokens)}>
+              {t('Output')} {completionTokens.toLocaleString()}
+            </InlineTag>
+            {cacheReadTokens > 0 && (
+              <InlineTag
+                mono
+                className='text-muted-foreground bg-muted/35'
+                copyText={String(cacheReadTokens)}
+              >
+                {t('Cache')}↓ {cacheReadTokens.toLocaleString()}
+              </InlineTag>
+            )}
+            {cacheWriteTokens > 0 && (
+              <InlineTag
+                mono
+                className='text-muted-foreground bg-muted/35'
+                copyText={String(cacheWriteTokens)}
+              >
+                {t('Cache')}↑ {cacheWriteTokens.toLocaleString()}
+              </InlineTag>
             )}
           </div>
         )
       },
       meta: { label: 'Tokens', mobileHidden: true },
+      size: 370,
     },
 
     {
@@ -753,7 +827,13 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </div>
         )
       },
-      meta: { label: t('Cost') },
+      meta: {
+        label: t('Cost'),
+        sticky: 'right',
+        stickyOffset: COMMON_LOGS_DETAILS_COLUMN_WIDTH,
+        stickyBoundary: 'right-start',
+      },
+      size: COMMON_LOGS_COST_COLUMN_WIDTH,
     },
 
     {
@@ -772,7 +852,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           <>
             <button
               type='button'
-              className='group flex max-w-[200px] items-center gap-1 text-left text-xs'
+              className='group flex max-w-[220px] items-center gap-1 text-left text-xs'
               onClick={() => setDialogOpen(true)}
               title={t('Click to view full details')}
             >
@@ -811,9 +891,13 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </>
         )
       },
-      meta: { label: t('Details') },
-      size: 180,
-      maxSize: 200,
+      meta: {
+        label: t('Details'),
+        sticky: 'right',
+        stickyOffset: 0,
+      },
+      size: COMMON_LOGS_DETAILS_COLUMN_WIDTH,
+      maxSize: 240,
     }
   )
 

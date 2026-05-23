@@ -186,6 +186,8 @@ export interface LogOtherData {
   is_task?: boolean
   task_id?: string
   reason?: string
+  generated_video_seconds?: number
+  reference_video_seconds?: number
   // Subscription billing fields
   subscription_plan_id?: string
   subscription_plan_title?: string

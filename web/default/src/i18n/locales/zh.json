@@ -4510,6 +4510,9 @@
     "Reference video billing models": "参考视频计费模型",
     "Models listed here add detected reference video seconds to the generated video duration.": "这里配置的模型会把探测到的参考视频秒数累加到生成视频时长中。",
     "Use recommended defaults": "使用推荐默认值",
-    "Video Duration": "视频时长"
+    "Video Duration": "视频时长",
+    "Task Video Details": "任务视频详情",
+    "Generated Video Duration": "生成视频时长",
+    "Reference Video Duration": "参考视频时长"
   }
 }
