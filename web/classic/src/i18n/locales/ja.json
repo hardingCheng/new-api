@@ -3648,6 +3648,9 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "有余额": "残高あり",
+    "有余额用户": "残高のあるユーザー",
+    "用户名称精确筛选": "ユーザー名の完全一致フィルター"
   }
 }

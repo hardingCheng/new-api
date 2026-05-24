@@ -74,6 +74,9 @@ export const useLogsData = () => {
   const [logCount, setLogCount] = useState(0);
   const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
   const [logType, setLogType] = useState(0);
+  const [positiveQuotaUsers, setPositiveQuotaUsers] = useState([]);
+  const [positiveQuotaUsersLoading, setPositiveQuotaUsersLoading] =
+    useState(false);
 
   // User and admin
   const isAdminUser = isAdmin();
@@ -96,6 +99,7 @@ export const useLogsData = () => {
   let now = new Date();
   const formInitValues = {
     username: '',
+    usernames: [],
     token_name: '',
     model_name: '',
     channel: '',
@@ -250,6 +254,9 @@ export const useLogsData = () => {
 
     return {
       username: formValues.username || '',
+      usernames: Array.isArray(formValues.usernames)
+        ? formValues.usernames.filter(Boolean)
+        : [],
       token_name: formValues.token_name || '',
       model_name: formValues.model_name || '',
       start_timestamp,
@@ -259,6 +266,38 @@ export const useLogsData = () => {
       request_id: formValues.request_id || '',
       logType: formValues.logType ? parseInt(formValues.logType) : 0,
     };
+  };
+
+  const loadPositiveQuotaUsers = async (keyword = '') => {
+    if (!isAdminUser) {
+      return;
+    }
+    setPositiveQuotaUsersLoading(true);
+    try {
+      const params = new URLSearchParams({
+        keyword,
+        group: '',
+        p: '1',
+        page_size: '1000',
+        positive_quota: 'true',
+      });
+      const res = await API.get(`/api/user/search?${params.toString()}`);
+      const { success, message, data } = res.data;
+      if (success) {
+        const items = Array.isArray(data?.items) ? data.items : [];
+        setPositiveQuotaUsers(
+          items.map((user) => ({
+            label: user.username,
+            value: user.username,
+            quota: user.quota,
+          })),
+        );
+      } else {
+        showError(message);
+      }
+    } finally {
+      setPositiveQuotaUsersLoading(false);
+    }
   };
 
   // Statistics functions
@@ -288,6 +327,7 @@ export const useLogsData = () => {
   const getLogStat = async () => {
     const {
       username,
+      usernames,
       token_name,
       model_name,
       start_timestamp,
@@ -299,7 +339,8 @@ export const useLogsData = () => {
     const currentLogType = formLogType !== undefined ? formLogType : logType;
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
-    let url = `/api/log/stat?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
+    const usernameQuery = usernames.length > 0 ? '' : username;
+    let url = `/api/log/stat?type=${currentLogType}&username=${usernameQuery}&usernames=${usernames.join(',')}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
     url = encodeURI(url);
     let res = await API.get(url);
     const { success, message, data } = res.data;
@@ -381,6 +422,11 @@ export const useLogsData = () => {
       logs[i].timestamp2string = timestamp2string(logs[i].created_at);
       logs[i].key = logs[i].id;
       let other = getLogOther(logs[i].other);
+      if (!isAdminUser) {
+        other = { ...other };
+        delete other.is_model_mapped;
+        delete other.upstream_model_name;
+      }
       let expandDataLocal = [];
 
       if (isAdminUser && (logs[i].type === 0 || logs[i].type === 2 || logs[i].type === 6)) {
@@ -449,6 +495,7 @@ export const useLogsData = () => {
       }
       if (logs[i].type === 2) {
         let modelMapped =
+          isAdminUser &&
           other?.is_model_mapped &&
           other?.upstream_model_name &&
           other?.upstream_model_name !== '';
@@ -732,6 +779,7 @@ export const useLogsData = () => {
     let url = '';
     const {
       username,
+      usernames,
       token_name,
       model_name,
       start_timestamp,
@@ -752,7 +800,8 @@ export const useLogsData = () => {
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
     if (isAdminUser) {
-      url = `/api/log/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}&request_id=${request_id}`;
+      const usernameQuery = usernames.length > 0 ? '' : username;
+      url = `/api/log/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${usernameQuery}&usernames=${usernames.join(',')}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}&request_id=${request_id}`;
     } else {
       url = `/api/log/self/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}&request_id=${request_id}`;
     }
@@ -825,6 +874,10 @@ export const useLogsData = () => {
     }
   }, [formApi]);
 
+  useEffect(() => {
+    loadPositiveQuotaUsers();
+  }, []);
+
   // Check if any record has expandable content
   const hasExpandableRows = () => {
     return logs.some(
@@ -843,6 +896,8 @@ export const useLogsData = () => {
     logCount,
     pageSize,
     logType,
+    positiveQuotaUsers,
+    positiveQuotaUsersLoading,
     stat,
     isAdminUser,
 
@@ -892,6 +947,7 @@ export const useLogsData = () => {
     setLogsFormat,
     hasExpandableRows,
     setLogType,
+    loadPositiveQuotaUsers,
     openParamOverrideModal,
 
     // Translation

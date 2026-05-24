@@ -3825,6 +3825,9 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "有余额": "Has balance",
+    "有余额用户": "Users with balance",
+    "用户名称精确筛选": "Exact username filter"
   }
 }

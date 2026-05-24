@@ -32,6 +32,9 @@ const LogsFilters = ({
   setLogType,
   loading,
   isAdminUser,
+  positiveQuotaUsers,
+  positiveQuotaUsersLoading,
+  loadPositiveQuotaUsers,
   t,
 }) => {
   return (
@@ -112,10 +115,31 @@ const LogsFilters = ({
                 pure
                 size='small'
               />
+              <Form.Select
+                field='usernames'
+                multiple
+                filter
+                remote
+                prefix={<IconSearch />}
+                placeholder={t('有余额用户')}
+                optionList={positiveQuotaUsers}
+                loading={positiveQuotaUsersLoading}
+                maxTagCount={3}
+                showRestTagsPopover
+                expandRestTagsOnClick
+                showClear
+                pure
+                size='small'
+                onSearch={(value) => loadPositiveQuotaUsers(value)}
+                renderSelectedItem={(optionNode) => ({
+                  isRenderInTag: true,
+                  content: optionNode.value,
+                })}
+              />
               <Form.Input
                 field='username'
                 prefix={<IconSearch />}
-                placeholder={t('用户名称')}
+                placeholder={t('用户名称精确筛选')}
                 showClear
                 pure
                 size='small'
