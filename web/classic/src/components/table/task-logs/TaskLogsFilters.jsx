@@ -76,14 +76,64 @@ const TaskLogsFilters = ({
 
           {/* 渠道 ID - 仅管理员可见 */}
           {isAdminUser && (
-            <Form.Input
-              field='channel_id'
-              prefix={<IconSearch />}
-              placeholder={t('渠道 ID')}
-              showClear
-              pure
-              size='small'
-            />
+            <>
+              <Form.Select
+                field='status'
+                placeholder={t('任务状态')}
+                showClear
+                pure
+                size='small'
+              >
+                <Form.Select.Option value='NOT_START'>
+                  {t('未启动')}
+                </Form.Select.Option>
+                <Form.Select.Option value='SUBMITTED'>
+                  {t('已提交')}
+                </Form.Select.Option>
+                <Form.Select.Option value='QUEUED'>
+                  {t('排队中')}
+                </Form.Select.Option>
+                <Form.Select.Option value='IN_PROGRESS'>
+                  {t('执行中')}
+                </Form.Select.Option>
+                <Form.Select.Option value='SUCCESS'>
+                  {t('成功')}
+                </Form.Select.Option>
+                <Form.Select.Option value='FAILURE'>
+                  {t('失败')}
+                </Form.Select.Option>
+                <Form.Select.Option value='UNKNOWN'>
+                  {t('未知')}
+                </Form.Select.Option>
+              </Form.Select>
+
+              <Form.Input
+                field='username'
+                prefix={<IconSearch />}
+                placeholder={t('用户名称')}
+                showClear
+                pure
+                size='small'
+              />
+
+              <Form.Input
+                field='model_name'
+                prefix={<IconSearch />}
+                placeholder={t('模型名称')}
+                showClear
+                pure
+                size='small'
+              />
+
+              <Form.Input
+                field='channel_id'
+                prefix={<IconSearch />}
+                placeholder={t('渠道 ID')}
+                showClear
+                pure
+                size='small'
+              />
+            </>
           )}
         </div>
 

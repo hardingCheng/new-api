@@ -299,6 +299,23 @@ func SearchUsers(keyword string, group string, startIdx int, num int, positiveQu
 	return users, total, nil
 }
 
+func SearchUserIDsByUsername(username string, limit int) ([]int, error) {
+	var ids []int
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return ids, nil
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	err := DB.Unscoped().
+		Model(&User{}).
+		Where("username LIKE ?", "%"+username+"%").
+		Limit(limit).
+		Pluck("id", &ids).Error
+	return ids, err
+}
+
 func GetUserById(id int, selectAll bool) (*User, error) {
 	if id == 0 {
 		return nil, errors.New("id 为空！")

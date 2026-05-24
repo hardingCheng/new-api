@@ -43,6 +43,7 @@ import {
 } from '../../../constants/common.constant';
 import { CHANNEL_OPTIONS } from '../../../constants/channel.constants';
 import { stringToColor } from '../../../helpers/render';
+import { quotaToDisplayAmount } from '../../../helpers/quota';
 import { Avatar, Space } from '@douyinfe/semi-ui';
 
 const colors = [
@@ -89,6 +90,53 @@ function renderDuration(submit_time, finishTime) {
     </Tag>
   );
 }
+
+const getTaskModelName = (record) => {
+  return (
+    record?.properties?.origin_model_name ||
+    record?.properties?.upstream_model_name ||
+    record?.data?.model ||
+    '-'
+  );
+};
+
+const getVideoDurationSeconds = (record) => {
+  const data = record?.data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return null;
+  }
+  const raw =
+    data.duration ??
+    data.seconds ??
+    data.metadata?.duration ??
+    data.metadata?.seconds ??
+    data.metadata?.durationSeconds;
+  if (raw === undefined || raw === null || raw === '') {
+    return null;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
+
+const formatSeconds = (seconds, t) => {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value <= 0) {
+    return '-';
+  }
+  return `${Number.isInteger(value) ? value : value.toFixed(1)} ${t('秒')}`;
+};
+
+const formatQuotaAmount = (quota) => {
+  const amount = quotaToDisplayAmount(quota);
+  if (!Number.isFinite(amount)) {
+    return '0';
+  }
+  const fixed = amount.toFixed(2).replace(/\.?0+$/, '');
+  if (fixed === '0' && amount > 0) {
+    return '0.01';
+  }
+  return fixed;
+};
 
 const renderType = (type, t) => {
   switch (type) {
@@ -268,23 +316,46 @@ export const getTaskLogsColumns = ({
       },
     },
     {
-      key: COLUMN_KEYS.CHANNEL,
-      title: t('渠道'),
-      dataIndex: 'channel_id',
+      key: COLUMN_KEYS.CHANNEL_NAME,
+      title: t('渠道名称'),
+      dataIndex: 'channel_name',
       render: (text, record, index) => {
         return isAdminUser ? (
-          <div>
+          text ? (
             <Tag
-              color={colors[parseInt(text) % colors.length]}
-              size='large'
+              color={colors[parseInt(record.channel_id || 0) % colors.length]}
               shape='circle'
+              className='cursor-pointer'
               onClick={() => {
                 copyText(text);
               }}
             >
               {text}
             </Tag>
-          </div>
+          ) : (
+            '-'
+          )
+        ) : (
+          <></>
+        );
+      },
+    },
+    {
+      key: COLUMN_KEYS.CHANNEL_ID,
+      title: t('渠道 ID'),
+      dataIndex: 'channel_id',
+      render: (text, record, index) => {
+        return isAdminUser ? (
+          <Tag
+            color={colors[parseInt(text || 0) % colors.length]}
+            shape='circle'
+            className='cursor-pointer'
+            onClick={() => {
+              copyText(text);
+            }}
+          >
+            {text}
+          </Tag>
         ) : (
           <></>
         );
@@ -320,6 +391,65 @@ export const getTaskLogsColumns = ({
       dataIndex: 'platform',
       render: (text, record, index) => {
         return <div>{renderPlatform(text, t)}</div>;
+      },
+    },
+    {
+      key: COLUMN_KEYS.MODEL,
+      title: t('模型'),
+      dataIndex: 'properties',
+      render: (text, record) => {
+        const modelName = getTaskModelName(record);
+        return modelName && modelName !== '-' ? (
+          <Tag
+            color='blue'
+            shape='circle'
+            className='cursor-pointer'
+            onClick={() => {
+              copyText(modelName);
+            }}
+          >
+            {modelName}
+          </Tag>
+        ) : (
+          '-'
+        );
+      },
+    },
+    {
+      key: COLUMN_KEYS.QUOTA,
+      title: t('消耗额度'),
+      dataIndex: 'quota',
+      render: (text) => {
+        return <Tag color='violet'>{formatQuotaAmount(text || 0)}</Tag>;
+      },
+    },
+    {
+      key: COLUMN_KEYS.REFUND_QUOTA,
+      title: t('退款额度'),
+      dataIndex: 'refund_quota',
+      render: (text, record) => {
+        const refundQuota =
+          text || (record.status === 'FAILURE' ? record.quota || 0 : 0);
+        return refundQuota > 0 ? (
+          <Tag color='green'>{formatQuotaAmount(refundQuota)}</Tag>
+        ) : (
+          '-'
+        );
+      },
+    },
+    {
+      key: COLUMN_KEYS.VIDEO_DURATION,
+      title: t('视频时长'),
+      dataIndex: 'data',
+      render: (text, record) => {
+        const duration = getVideoDurationSeconds(record);
+        return duration ? (
+          <Tag color='cyan' shape='circle'>
+            {formatSeconds(duration, t)}
+          </Tag>
+        ) : (
+          '-'
+        );
       },
     },
     {

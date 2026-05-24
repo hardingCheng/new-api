@@ -2,6 +2,7 @@ package controller
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -30,9 +31,24 @@ func GetAllTask(c *gin.Context) {
 		TaskID:         c.Query("task_id"),
 		Status:         c.Query("status"),
 		Action:         c.Query("action"),
+		ModelName:      strings.TrimSpace(c.Query("model_name")),
 		StartTimestamp: startTimestamp,
 		EndTimestamp:   endTimestamp,
 		ChannelID:      c.Query("channel_id"),
+	}
+	if username := strings.TrimSpace(c.Query("username")); username != "" {
+		userIDs, err := model.SearchUserIDsByUsername(username, 1000)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		queryParams.UserIDs = userIDs
+		if len(userIDs) == 0 {
+			pageInfo.SetTotal(0)
+			pageInfo.SetItems([]*dto.TaskDto{})
+			common.ApiSuccess(c, pageInfo)
+			return
+		}
 	}
 
 	items := model.TaskGetAllTasks(pageInfo.GetStartIdx(), pageInfo.GetPageSize(), queryParams)
@@ -53,7 +69,6 @@ func GetUserTask(c *gin.Context) {
 	queryParams := model.SyncTaskQueryParams{
 		Platform:       constant.TaskPlatform(c.Query("platform")),
 		TaskID:         c.Query("task_id"),
-		Status:         c.Query("status"),
 		Action:         c.Query("action"),
 		StartTimestamp: startTimestamp,
 		EndTimestamp:   endTimestamp,
@@ -68,6 +83,7 @@ func GetUserTask(c *gin.Context) {
 
 func tasksToDto(tasks []*model.Task, fillUser bool) []*dto.TaskDto {
 	var userIdMap map[int]*model.UserBase
+	channelIdMap := make(map[int]string)
 	if fillUser {
 		userIdMap = make(map[int]*model.UserBase)
 		userIds := types.NewSet[int]()
@@ -81,12 +97,27 @@ func tasksToDto(tasks []*model.Task, fillUser bool) []*dto.TaskDto {
 			}
 		}
 	}
+	channelIds := types.NewSet[int]()
+	for _, task := range tasks {
+		if task.ChannelId != 0 {
+			channelIds.Add(task.ChannelId)
+		}
+	}
+	for _, channelId := range channelIds.Items() {
+		channel, err := model.CacheGetChannel(channelId)
+		if err == nil && channel != nil {
+			channelIdMap[channelId] = channel.Name
+		}
+	}
 	result := make([]*dto.TaskDto, len(tasks))
 	for i, task := range tasks {
 		if fillUser {
 			if user, ok := userIdMap[task.UserId]; ok {
 				task.Username = user.Username
 			}
+		}
+		if channelName, ok := channelIdMap[task.ChannelId]; ok {
+			task.ChannelName = channelName
 		}
 		result[i] = relay.TaskModel2Dto(task)
 	}

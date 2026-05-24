@@ -39,9 +39,14 @@ export const useTaskLogsData = () => {
     SUBMIT_TIME: 'submit_time',
     FINISH_TIME: 'finish_time',
     DURATION: 'duration',
-    CHANNEL: 'channel',
+    CHANNEL_NAME: 'channel_name',
+    CHANNEL_ID: 'channel_id',
     USERNAME: 'username',
     PLATFORM: 'platform',
+    MODEL: 'model',
+    QUOTA: 'quota',
+    REFUND_QUOTA: 'refund_quota',
+    VIDEO_DURATION: 'video_duration',
     TYPE: 'type',
     TASK_ID: 'task_id',
     TASK_STATUS: 'task_status',
@@ -88,6 +93,9 @@ export const useTaskLogsData = () => {
   const formInitValues = {
     channel_id: '',
     task_id: '',
+    status: '',
+    username: '',
+    model_name: '',
     dateRange: [
       timestamp2string(zeroNow.getTime() / 1000),
       timestamp2string(now.getTime() / 1000 + 3600),
@@ -112,7 +120,8 @@ export const useTaskLogsData = () => {
 
         // For non-admin users, force-hide admin-only columns (does not touch admin settings)
         if (!isAdminUser) {
-          merged[COLUMN_KEYS.CHANNEL] = false;
+          merged[COLUMN_KEYS.CHANNEL_NAME] = false;
+          merged[COLUMN_KEYS.CHANNEL_ID] = false;
           merged[COLUMN_KEYS.USERNAME] = false;
         }
         setVisibleColumns(merged);
@@ -131,9 +140,14 @@ export const useTaskLogsData = () => {
       [COLUMN_KEYS.SUBMIT_TIME]: true,
       [COLUMN_KEYS.FINISH_TIME]: true,
       [COLUMN_KEYS.DURATION]: true,
-      [COLUMN_KEYS.CHANNEL]: isAdminUser,
+      [COLUMN_KEYS.CHANNEL_NAME]: isAdminUser,
+      [COLUMN_KEYS.CHANNEL_ID]: isAdminUser,
       [COLUMN_KEYS.USERNAME]: isAdminUser,
       [COLUMN_KEYS.PLATFORM]: true,
+      [COLUMN_KEYS.MODEL]: true,
+      [COLUMN_KEYS.QUOTA]: true,
+      [COLUMN_KEYS.REFUND_QUOTA]: true,
+      [COLUMN_KEYS.VIDEO_DURATION]: true,
       [COLUMN_KEYS.TYPE]: true,
       [COLUMN_KEYS.TASK_ID]: true,
       [COLUMN_KEYS.TASK_STATUS]: true,
@@ -163,7 +177,9 @@ export const useTaskLogsData = () => {
 
     allKeys.forEach((key) => {
       if (
-        (key === COLUMN_KEYS.CHANNEL || key === COLUMN_KEYS.USERNAME) &&
+        (key === COLUMN_KEYS.CHANNEL_NAME ||
+          key === COLUMN_KEYS.CHANNEL_ID ||
+          key === COLUMN_KEYS.USERNAME) &&
         !isAdminUser
       ) {
         updatedColumns[key] = false;
@@ -202,6 +218,9 @@ export const useTaskLogsData = () => {
     return {
       channel_id: formValues.channel_id || '',
       task_id: formValues.task_id || '',
+      status: formValues.status || '',
+      username: formValues.username || '',
+      model_name: formValues.model_name || '',
       start_timestamp,
       end_timestamp,
     };
@@ -228,13 +247,34 @@ export const useTaskLogsData = () => {
   // Load logs function
   const loadLogs = async (page = 1, size = pageSize) => {
     setLoading(true);
-    const { channel_id, task_id, start_timestamp, end_timestamp } =
+    const {
+      channel_id,
+      task_id,
+      status,
+      username,
+      model_name,
+      start_timestamp,
+      end_timestamp,
+    } =
       getFormValues();
     let localStartTimestamp = parseInt(Date.parse(start_timestamp) / 1000);
     let localEndTimestamp = parseInt(Date.parse(end_timestamp) / 1000);
-    let url = isAdminUser
-      ? `/api/task/?p=${page}&page_size=${size}&channel_id=${channel_id}&task_id=${task_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`
-      : `/api/task/self?p=${page}&page_size=${size}&task_id=${task_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
+    const params = new URLSearchParams({
+      p: String(page),
+      page_size: String(size),
+      task_id,
+      start_timestamp: String(localStartTimestamp),
+      end_timestamp: String(localEndTimestamp),
+    });
+    if (isAdminUser) {
+      params.set('channel_id', channel_id);
+      params.set('status', status);
+      params.set('username', username);
+      params.set('model_name', model_name);
+    }
+    const url = isAdminUser
+      ? `/api/task/?${params.toString()}`
+      : `/api/task/self?${params.toString()}`;
     const res = await API.get(url);
     const { success, message, data } = res.data;
     if (success) {
