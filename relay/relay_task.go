@@ -2,19 +2,19 @@ package relay
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/relay/channel"
-	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -384,23 +384,12 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 		return
 	}
 
-	// OpenAI Video API 格式: 走各 adaptor 的 ConvertToOpenAIVideo
+	// /v1/videos/:task_id returns the task record with direct URL fields for compatibility.
 	if isOpenAIVideoAPI {
-		adaptor := GetTaskAdaptor(originTask.Platform)
-		if adaptor == nil {
-			taskResp = service.TaskErrorWrapperLocal(fmt.Errorf("invalid channel id: %d", originTask.ChannelId), "invalid_channel_id", http.StatusBadRequest)
-			return
+		respBody, err = common.Marshal(TaskModel2Dto(originTask))
+		if err != nil {
+			taskResp = service.TaskErrorWrapper(err, "marshal_response_failed", http.StatusInternalServerError)
 		}
-		if converter, ok := adaptor.(channel.OpenAIVideoConverter); ok {
-			openAIVideoData, err := converter.ConvertToOpenAIVideo(originTask)
-			if err != nil {
-				taskResp = service.TaskErrorWrapper(err, "convert_to_openai_video_failed", http.StatusInternalServerError)
-				return
-			}
-			respBody = openAIVideoData
-			return
-		}
-		taskResp = service.TaskErrorWrapperLocal(fmt.Errorf("not_implemented:%s", originTask.Platform), "not_implemented", http.StatusNotImplemented)
 		return
 	}
 
@@ -468,9 +457,6 @@ func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
 		// data: URI — kept in Data, not ResultURL
 	} else if ti.Url != "" {
 		task.PrivateData.ResultURL = ti.Url
-	} else if task.Status == model.TaskStatusSuccess {
-		// No URL from adaptor — construct proxy URL using public task ID
-		task.PrivateData.ResultURL = taskcommon.BuildProxyURL(task.TaskID)
 	}
 
 	if !snap.Equal(task.Snapshot()) {
@@ -539,28 +525,186 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 }
 
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
+	resultURL := taskPublicResultURL(task)
 	return &dto.TaskDto{
-		ID:          task.ID,
-		CreatedAt:   task.CreatedAt,
-		UpdatedAt:   task.UpdatedAt,
-		TaskID:      task.TaskID,
-		Platform:    string(task.Platform),
-		UserId:      task.UserId,
-		Group:       task.Group,
-		ChannelId:   task.ChannelId,
-		ChannelName: task.ChannelName,
-		Quota:       task.Quota,
-		RefundQuota: task.PrivateData.RefundQuota,
-		Action:      task.Action,
-		Status:      string(task.Status),
-		FailReason:  task.FailReason,
-		ResultURL:   task.GetResultURL(),
-		SubmitTime:  task.SubmitTime,
-		StartTime:   task.StartTime,
-		FinishTime:  task.FinishTime,
-		Progress:    task.Progress,
-		Properties:  task.Properties,
-		Username:    task.Username,
-		Data:        task.Data,
+		ID:               task.ID,
+		CreatedAt:        task.CreatedAt,
+		UpdatedAt:        task.UpdatedAt,
+		TaskID:           task.TaskID,
+		Platform:         string(task.Platform),
+		UserId:           task.UserId,
+		Group:            task.Group,
+		ChannelId:        task.ChannelId,
+		ChannelName:      task.ChannelName,
+		Quota:            task.Quota,
+		RefundQuota:      task.PrivateData.RefundQuota,
+		Action:           task.Action,
+		Status:           string(task.Status),
+		FailReason:       task.FailReason,
+		ResultURL:        resultURL,
+		URL:              resultURL,
+		VideoURL:         resultURL,
+		SubmitTime:       task.SubmitTime,
+		StartTime:        task.StartTime,
+		FinishTime:       task.FinishTime,
+		Progress:         task.Progress,
+		Properties:       task.Properties,
+		Username:         task.Username,
+		ModelName:        taskModelName(task),
+		VideoDuration:    taskVideoDuration(task),
+		Data:             taskDataWithResultURL(task.Data, resultURL, task.TaskID),
+		Timestamp2String: taskTimestampString(task.CreatedAt),
+		Key:              strconv.FormatInt(task.ID, 10),
 	}
+}
+
+func taskPublicResultURL(task *model.Task) string {
+	if directURL := extractTaskDirectVideoURL(task.Data, task.TaskID); directURL != "" {
+		return directURL
+	}
+	resultURL := strings.TrimSpace(task.GetResultURL())
+	if resultURL == "" || !isTaskProxyContentURL(resultURL, task.TaskID) {
+		return resultURL
+	}
+	return ""
+}
+
+func taskDataWithResultURL(data json.RawMessage, resultURL string, taskID string) json.RawMessage {
+	out := map[string]any{}
+	if len(data) > 0 {
+		if err := common.Unmarshal(data, &out); err != nil {
+			if resultURL == "" {
+				return data
+			}
+			out = map[string]any{}
+		}
+	}
+	if out == nil {
+		out = map[string]any{}
+	}
+	if resultURL == "" {
+		for _, key := range []string{"video_url", "result_url", "url"} {
+			if value, ok := out[key].(string); ok && !isUsableVideoURL(value, taskID) {
+				delete(out, key)
+			}
+		}
+		if len(out) == 0 {
+			return data
+		}
+		b, err := common.Marshal(out)
+		if err != nil {
+			return data
+		}
+		return json.RawMessage(b)
+	}
+	out["result_url"] = resultURL
+	out["url"] = resultURL
+	out["video_url"] = resultURL
+	b, err := common.Marshal(out)
+	if err != nil {
+		return data
+	}
+	return json.RawMessage(b)
+}
+
+func taskModelName(task *model.Task) string {
+	if task.Properties.OriginModelName != "" {
+		return task.Properties.OriginModelName
+	}
+	if task.Properties.UpstreamModelName != "" {
+		return task.Properties.UpstreamModelName
+	}
+	var data map[string]any
+	if err := common.Unmarshal(task.Data, &data); err != nil {
+		return ""
+	}
+	if modelName, ok := data["model"].(string); ok {
+		return modelName
+	}
+	return ""
+}
+
+func taskVideoDuration(task *model.Task) int {
+	var data map[string]any
+	if err := common.Unmarshal(task.Data, &data); err != nil {
+		return 0
+	}
+	for _, key := range []string{"video_duration", "duration", "seconds"} {
+		if duration := intFromAny(data[key]); duration > 0 {
+			return duration
+		}
+	}
+	return 0
+}
+
+func intFromAny(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	case string:
+		i, _ := strconv.Atoi(strings.TrimSpace(n))
+		return i
+	default:
+		return 0
+	}
+}
+
+func taskTimestampString(ts int64) string {
+	if ts <= 0 {
+		return ""
+	}
+	return time.Unix(ts, 0).Format("2006-01-02 15:04:05")
+}
+
+func extractTaskDirectVideoURL(data []byte, taskID string) string {
+	if len(data) == 0 {
+		return ""
+	}
+	var payload any
+	if err := common.Unmarshal(data, &payload); err != nil {
+		return ""
+	}
+	return findVideoURL(payload, taskID)
+}
+
+func findVideoURL(v any, taskID string) string {
+	switch x := v.(type) {
+	case map[string]any:
+		for _, key := range []string{"video_url", "result_url", "url", "download_url", "file_url"} {
+			if value, ok := x[key].(string); ok && isUsableVideoURL(value, taskID) {
+				return strings.TrimSpace(value)
+			}
+		}
+		for _, value := range x {
+			if url := findVideoURL(value, taskID); url != "" {
+				return url
+			}
+		}
+	case []any:
+		for _, value := range x {
+			if url := findVideoURL(value, taskID); url != "" {
+				return url
+			}
+		}
+	}
+	return ""
+}
+
+func isUsableVideoURL(value string, taskID string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || isTaskProxyContentURL(value, taskID) || strings.HasSuffix(strings.TrimRight(value, "/"), "/content") {
+		return false
+	}
+	return strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://") || strings.HasPrefix(value, "data:")
+}
+
+func isTaskProxyContentURL(value string, taskID string) bool {
+	if strings.TrimSpace(value) == "" || strings.TrimSpace(taskID) == "" {
+		return false
+	}
+	return strings.Contains(value, "/v1/videos/"+taskID+"/content")
 }
