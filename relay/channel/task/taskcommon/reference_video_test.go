@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -52,6 +53,18 @@ func TestSummarizeReferenceVideoDurations(t *testing.T) {
 	require.Equal(t, "mock", summary.Details[0].ProbeMethod)
 	require.InDelta(t, 3.46, summary.Details[0].Duration, 0.0001)
 	require.InDelta(t, 5.56, summary.Details[1].Duration, 0.0001)
+}
+
+func TestGrokImagineVideoIsNotPerCallTaskBillingModel(t *testing.T) {
+	original := constant.TaskPricePatches
+	constant.TaskPricePatches = []string{"grok-imagine-video", "sora-2"}
+	t.Cleanup(func() {
+		constant.TaskPricePatches = original
+	})
+
+	require.False(t, IsPerCallTaskBillingModel("grok-imagine-video"))
+	require.False(t, IsPerCallTaskBillingModel("grok-imagine-1.0-video"))
+	require.True(t, IsPerCallTaskBillingModel("sora-2"))
 }
 
 func TestBuildSeedanceReferenceVideoBillingRatiosLegacyMode(t *testing.T) {

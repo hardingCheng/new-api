@@ -42,3 +42,9 @@ func TestNormalizeSeedanceDurationKeepsBoundaryValues(t *testing.T) {
 		}())
 	}
 }
+
+func TestTaskDurationSecondsUsesMaxSecondsAndDuration(t *testing.T) {
+	require.Equal(t, 10, TaskDurationSeconds(TaskSubmitReq{Seconds: "6", Duration: 10}))
+	require.Equal(t, 12, TaskDurationSeconds(TaskSubmitReq{Seconds: "12", Duration: 8}))
+	require.Equal(t, 5, TaskDurationSeconds(TaskSubmitReq{Duration: 5}))
+}

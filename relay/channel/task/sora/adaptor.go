@@ -117,7 +117,11 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	if taskcommon.IsGrokImagineVideoModel(info.UpstreamModelName) ||
 		taskcommon.IsGrokImagineVideoModel(info.OriginModelName) ||
 		taskcommon.IsGrokImagineVideoModel(req.Model) {
-		return nil
+		seconds := relaycommon.TaskDurationSeconds(req)
+		if seconds <= 0 {
+			return nil
+		}
+		return map[string]float64{"seconds": float64(seconds)}
 	}
 
 	seconds := req.Duration

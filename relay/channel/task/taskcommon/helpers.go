@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/system_setting"
@@ -183,6 +184,10 @@ func IsSeedance2Model(modelName string) bool {
 func IsGrokImagineVideoModel(modelName string) bool {
 	m := strings.ToLower(strings.TrimSpace(modelName))
 	return m == "grok-imagine-video" || m == "grok-imagine-1.0-video"
+}
+
+func IsPerCallTaskBillingModel(modelName string) bool {
+	return common.StringsContains(constant.TaskPricePatches, modelName) && !IsGrokImagineVideoModel(modelName)
 }
 
 // ---------------------------------------------------------------------------

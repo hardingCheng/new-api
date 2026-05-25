@@ -92,18 +92,30 @@ func resolveTaskDuration(req *TaskSubmitReq) (duration int, supplied bool, err e
 	if req == nil {
 		return 0, false, nil
 	}
-	if req.Duration != 0 {
-		return req.Duration, true, nil
-	}
+	duration = req.Duration
 	secondsText := strings.TrimSpace(req.Seconds)
 	if secondsText == "" {
+		if duration != 0 {
+			return duration, true, nil
+		}
 		return 0, false, nil
 	}
-	duration, err = strconv.Atoi(secondsText)
+	seconds, err := strconv.Atoi(secondsText)
 	if err != nil {
 		return 0, true, err
 	}
+	if seconds > duration {
+		duration = seconds
+	}
 	return duration, true, nil
+}
+
+func TaskDurationSeconds(req TaskSubmitReq) int {
+	duration, _, err := resolveTaskDuration(&req)
+	if err != nil {
+		return 0
+	}
+	return duration
 }
 
 func ClampSeedanceDuration(duration int) int {

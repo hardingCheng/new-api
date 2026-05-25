@@ -593,7 +593,7 @@ func RelayTask(c *gin.Context) {
 			ModelRatio:       relayInfo.PriceData.ModelRatio,
 			OtherRatios:      relayInfo.PriceData.OtherRatios,
 			OriginModelName:  relayInfo.OriginModelName,
-			PerCallBilling:   common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName),
+			PerCallBilling:   taskcommon.IsPerCallTaskBillingModel(relayInfo.OriginModelName),
 			GeneratedSeconds: generatedSeconds,
 		}
 		if effectiveReferenceVideoMode != "" {

@@ -6,8 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	taskcommon "github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
@@ -31,7 +29,7 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		referenceVideoSeconds = referenceVideoSummary.TotalSeconds
 	}
 	// 支持任务仅按次计费
-	if common.StringsContains(constant.TaskPricePatches, info.OriginModelName) {
+	if taskcommon.IsPerCallTaskBillingModel(info.OriginModelName) {
 		logContent = fmt.Sprintf("%s，按次计费", logContent)
 	} else {
 		if ratioContent := taskRatioLogContent(info.PriceData.OtherRatios, generatedSeconds, referenceVideoSeconds, hasReferenceVideo); ratioContent != "" {

@@ -196,12 +196,8 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 			info.PriceData.AddOtherRatio(k, v)
 		}
 	}
-	if taskcommon.IsGrokImagineVideoModel(info.OriginModelName) || taskcommon.IsGrokImagineVideoModel(info.UpstreamModelName) {
-		info.PriceData.OtherRatios = nil
-	}
-
 	// 6. 将 OtherRatios 应用到基础额度
-	if !common.StringsContains(constant.TaskPricePatches, modelName) {
+	if !taskcommon.IsPerCallTaskBillingModel(modelName) {
 		for _, ra := range info.PriceData.OtherRatios {
 			if ra != 1.0 {
 				info.PriceData.Quota = int(float64(info.PriceData.Quota) * ra)
