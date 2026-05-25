@@ -128,6 +128,9 @@ export interface LogOtherData {
   model_price?: number
   group_ratio?: number
   user_group_ratio?: number
+  generated_video_seconds?: number
+  reference_video_seconds?: number
+  billable_video_seconds?: number
   cache_ratio?: number
   cache_creation_ratio?: number
   cache_creation_ratio_5m?: number

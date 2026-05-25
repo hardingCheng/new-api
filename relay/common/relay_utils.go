@@ -3,6 +3,7 @@ package common
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -78,7 +79,7 @@ func validatePrompt(prompt string) *dto.TaskError {
 	return nil
 }
 
-func isSeedanceVideoModel(model string) bool {
+func IsSeedanceVideoModel(model string) bool {
 	model = strings.ToLower(strings.TrimSpace(model))
 	return strings.HasPrefix(model, "seedance-") || strings.HasPrefix(model, "doubao-seedance-")
 }
@@ -114,13 +115,108 @@ func normalizeTaskDuration(req *TaskSubmitReq) {
 }
 
 func applySeedanceDurationBounds(req *TaskSubmitReq) {
-	if req == nil || !isSeedanceVideoModel(req.Model) {
+	if req == nil || !IsSeedanceVideoModel(req.Model) {
 		return
 	}
 	seconds := EffectiveTaskDuration(*req)
 	seconds = clampSeedanceDuration(seconds)
 	req.Duration = seconds
 	req.Seconds = strconv.Itoa(seconds)
+}
+
+func ExtractReferenceVideoURLs(req TaskSubmitReq) []string {
+	urls := make([]string, 0)
+	seen := make(map[string]bool)
+	appendURL := func(raw string) {
+		url := strings.TrimSpace(raw)
+		if url == "" || seen[url] {
+			return
+		}
+		seen[url] = true
+		urls = append(urls, url)
+	}
+	for _, item := range req.Content {
+		if item.VideoURL != nil && strings.TrimSpace(item.VideoURL.URL) != "" {
+			appendURL(item.VideoURL.URL)
+		}
+		if item.ImageURL != nil && isReferenceVideoCandidate(item.Type, item.Role, item.ImageURL.URL) {
+			appendURL(item.ImageURL.URL)
+		}
+		if item.AudioURL != nil && isReferenceVideoCandidate(item.Type, item.Role, item.AudioURL.URL) {
+			appendURL(item.AudioURL.URL)
+		}
+	}
+	if req.Metadata != nil {
+		if contentRaw, ok := req.Metadata["content"]; ok {
+			if contentItems, ok := contentRaw.([]interface{}); ok {
+				for _, raw := range contentItems {
+					item, ok := raw.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					if url := extractVideoURLFromMap(item); url != "" {
+						appendURL(url)
+					}
+				}
+			}
+		}
+	}
+	return urls
+}
+
+func extractVideoURLFromMap(item map[string]interface{}) string {
+	videoRaw, ok := item["video_url"]
+	if ok {
+		if url := mediaURLFromRaw(videoRaw); url != "" {
+			return url
+		}
+	}
+	itemType, _ := item["type"].(string)
+	role, _ := item["role"].(string)
+	for _, key := range []string{"image_url", "audio_url"} {
+		url := mediaURLFromRaw(item[key])
+		if isReferenceVideoCandidate(itemType, role, url) {
+			return url
+		}
+	}
+	return ""
+}
+
+func mediaURLFromRaw(raw interface{}) string {
+	switch v := raw.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case map[string]interface{}:
+		if url, ok := v["url"].(string); ok {
+			return strings.TrimSpace(url)
+		}
+	}
+	return ""
+}
+
+func isReferenceVideoCandidate(itemType string, role string, rawURL string) bool {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return false
+	}
+	itemType = strings.ToLower(strings.TrimSpace(itemType))
+	role = strings.ToLower(strings.TrimSpace(role))
+	if itemType == "video_url" || role == "reference_video" {
+		return true
+	}
+	if strings.HasPrefix(strings.ToLower(rawURL), "data:video/") {
+		return true
+	}
+	lowerURL := strings.ToLower(rawURL)
+	if u, err := url.Parse(lowerURL); err == nil {
+		lowerURL = u.Path
+	}
+	for _, ext := range []string{".mp4", ".mov", ".m4v", ".webm", ".ogg", ".ogv", ".avi", ".mkv"} {
+		if strings.HasSuffix(lowerURL, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string) (TaskSubmitReq, error) {
@@ -140,6 +236,12 @@ func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string
 	}
 
 	if durationStr := formData.Get("seconds"); durationStr != "" {
+		if duration, err := strconv.Atoi(durationStr); err == nil {
+			req.Seconds = durationStr
+			req.Duration = duration
+		}
+	}
+	if durationStr := formData.Get("duration"); durationStr != "" {
 		if duration, err := strconv.Atoi(durationStr); err == nil {
 			req.Duration = duration
 		}
@@ -233,6 +335,7 @@ func isKnownTaskField(field string) bool {
 		"image":           true,
 		"images":          true,
 		"size":            true,
+		"seconds":         true,
 		"duration":        true,
 		"input_reference": true, // Sora 特有字段
 	}

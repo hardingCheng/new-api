@@ -5,6 +5,11 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/abema/go-mp4"
 	"github.com/go-audio/aiff"
@@ -16,8 +21,9 @@ import (
 	"github.com/yapingcat/gomedia/go-codec"
 )
 
-// GetAudioDuration 使用纯 Go 库获取音频文件的时长（秒）。
-// 它不再依赖外部的 ffmpeg 或 ffprobe 程序。
+// GetAudioDuration first uses pure Go parsers, then falls back to ffprobe when
+// available. The ffprobe path improves coverage for unusual video containers
+// without making ffprobe a hard runtime dependency.
 func GetAudioDuration(ctx context.Context, f io.ReadSeeker, ext string) (duration float64, err error) {
 	SysLog(fmt.Sprintf("GetAudioDuration: ext=%s", ext))
 	// 根据文件扩展名选择解析器
@@ -42,10 +48,76 @@ func GetAudioDuration(ctx context.Context, f io.ReadSeeker, ext string) (duratio
 	case ".aac":
 		duration, err = getAACDuration(f)
 	default:
-		return 0, fmt.Errorf("unsupported audio format: %s", ext)
+		err = fmt.Errorf("unsupported audio format: %s", ext)
+	}
+	if err != nil || duration <= 0 {
+		pureGoErr := err
+		if _, seekErr := f.Seek(0, io.SeekStart); seekErr != nil {
+			if pureGoErr != nil {
+				return 0, errors.Wrapf(pureGoErr, "ffprobe fallback unavailable: failed to seek input: %v", seekErr)
+			}
+			return 0, errors.Wrap(seekErr, "ffprobe fallback unavailable: failed to seek input")
+		}
+		ffprobeDuration, ffprobeErr := getFFProbeDuration(ctx, f, ext)
+		if ffprobeErr == nil && ffprobeDuration > 0 {
+			duration = ffprobeDuration
+			err = nil
+		} else if pureGoErr != nil {
+			return 0, errors.Wrapf(pureGoErr, "ffprobe fallback failed: %v", ffprobeErr)
+		} else {
+			return 0, fmt.Errorf("duration not found; ffprobe fallback failed: %w", ffprobeErr)
+		}
 	}
 	SysLog(fmt.Sprintf("GetAudioDuration: duration=%f", duration))
 	return duration, err
+}
+
+func getFFProbeDuration(ctx context.Context, r io.Reader, ext string) (float64, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+	}
+	ext = strings.TrimSpace(ext)
+	if ext == "" || !strings.HasPrefix(ext, ".") {
+		ext = ".bin"
+	}
+	tmp, err := os.CreateTemp("", "new-api-media-*"+ext)
+	if err != nil {
+		return 0, err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	if _, err := io.Copy(tmp, r); err != nil {
+		_ = tmp.Close()
+		return 0, err
+	}
+	if err := tmp.Close(); err != nil {
+		return 0, err
+	}
+
+	cmd := exec.CommandContext(ctx, "ffprobe",
+		"-v", "error",
+		"-show_entries", "format=duration",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		tmpName,
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, err
+	}
+	duration, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
+	if err != nil {
+		return 0, err
+	}
+	if duration <= 0 {
+		return 0, fmt.Errorf("ffprobe returned non-positive duration: %f", duration)
+	}
+	return duration, nil
 }
 
 // getMP3Duration 解析 MP3 文件以获取时长。

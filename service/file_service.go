@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
@@ -10,7 +11,10 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"math"
 	"net/http"
+	"net/url"
+	"path/filepath"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -425,6 +429,100 @@ func GetBase64Data(c *gin.Context, source types.FileSource, reason ...string) (s
 		return "", "", fmt.Errorf("failed to get base64 data: %w", err)
 	}
 	return base64Str, cachedData.MimeType, nil
+}
+
+// GetVideoDurationSeconds loads a URL or base64/data URL video and returns its
+// duration rounded up to whole seconds for billing.
+func GetVideoDurationSeconds(c *gin.Context, data string) (int, error) {
+	duration, err := getVideoDuration(c, data)
+	if err != nil {
+		return 0, err
+	}
+	if duration <= 0 {
+		return 0, nil
+	}
+	return int(math.Ceil(duration)), nil
+}
+
+func getVideoDuration(c *gin.Context, data string) (float64, error) {
+	data = strings.TrimSpace(data)
+	if data == "" {
+		return 0, nil
+	}
+
+	mimeType := ""
+	if strings.HasPrefix(data, "data:") {
+		if comma := strings.Index(data, ","); comma > 0 {
+			header := data[:comma]
+			if semi := strings.Index(header, ";"); semi > len("data:") {
+				mimeType = header[len("data:"):semi]
+			}
+		}
+	}
+
+	source := types.NewFileSourceFromData(data, mimeType)
+	cachedData, err := LoadFileSource(c, source, "reference_video_duration")
+	if err != nil {
+		return 0, err
+	}
+
+	base64Str, err := cachedData.GetBase64Data()
+	if err != nil {
+		return 0, err
+	}
+	videoBytes, err := base64.StdEncoding.DecodeString(base64Str)
+	if err != nil {
+		return 0, err
+	}
+
+	ext := videoDurationExt(data, cachedData.MimeType)
+	ctx := context.Background()
+	if c == nil || c.Request == nil {
+		ctx = context.Background()
+	} else {
+		ctx = c.Request.Context()
+	}
+	duration, err := common.GetAudioDuration(ctx, bytes.NewReader(videoBytes), ext)
+	if err != nil {
+		return 0, err
+	}
+	return duration, nil
+}
+
+func SumReferenceVideoDurationSeconds(c *gin.Context, urls []string) int {
+	total := 0.0
+	for _, videoURL := range urls {
+		duration, err := getVideoDuration(c, videoURL)
+		if err != nil {
+			logger.LogWarn(c, fmt.Sprintf("failed to get reference video duration: %v", err))
+			continue
+		}
+		total += duration
+	}
+	if total <= 0 {
+		return 0
+	}
+	return int(math.Ceil(total))
+}
+
+func videoDurationExt(raw string, mimeType string) string {
+	switch strings.ToLower(strings.TrimSpace(mimeType)) {
+	case "video/mp4", "audio/mp4", "video/quicktime":
+		return ".mp4"
+	case "video/webm", "audio/webm":
+		return ".webm"
+	case "video/ogg", "audio/ogg":
+		return ".ogg"
+	}
+	if u, err := url.Parse(raw); err == nil {
+		if ext := strings.ToLower(filepath.Ext(u.Path)); ext != "" {
+			if ext == ".mov" {
+				return ".mp4"
+			}
+			return ext
+		}
+	}
+	return ".mp4"
 }
 
 // GetMimeType 获取文件的 MIME 类型

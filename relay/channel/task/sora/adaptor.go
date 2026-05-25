@@ -110,6 +110,14 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	if seconds <= 0 {
 		seconds = 4
 	}
+	referenceSeconds := 0
+	if relaycommon.IsSeedanceVideoModel(req.Model) || relaycommon.IsSeedanceVideoModel(info.OriginModelName) {
+		referenceSeconds = service.SumReferenceVideoDurationSeconds(c, relaycommon.ExtractReferenceVideoURLs(req))
+	}
+	billableSeconds := seconds + referenceSeconds
+	c.Set("generated_video_seconds", seconds)
+	c.Set("reference_video_seconds", referenceSeconds)
+	c.Set("billable_video_seconds", billableSeconds)
 
 	size := req.Size
 	if size == "" {
@@ -117,7 +125,9 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	}
 
 	ratios := map[string]float64{
-		"seconds": float64(seconds),
+		// Only billing uses generated + reference seconds. BuildRequestBody sends
+		// req.Seconds/req.Duration, i.e. the generated video duration only.
+		"seconds": float64(billableSeconds),
 		"size":    1,
 	}
 	return ratios

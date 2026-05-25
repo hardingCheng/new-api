@@ -687,11 +687,43 @@ type TaskSubmitReq struct {
 	Mode           string                 `json:"mode,omitempty"`
 	Image          string                 `json:"image,omitempty"`
 	Images         []string               `json:"images,omitempty"`
+	Content        []TaskContentItem      `json:"content,omitempty"`
 	Size           string                 `json:"size,omitempty"`
 	Duration       int                    `json:"duration,omitempty"`
 	Seconds        string                 `json:"seconds,omitempty"`
 	InputReference string                 `json:"input_reference,omitempty"`
+	GenerateAudio  *dto.BoolValue         `json:"generate_audio,omitempty"`
+	Ratio          string                 `json:"ratio,omitempty"`
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+}
+
+type TaskMediaURL struct {
+	URL string `json:"url,omitempty"`
+}
+
+func (t *TaskMediaURL) UnmarshalJSON(data []byte) error {
+	var url string
+	if err := common.Unmarshal(data, &url); err == nil {
+		t.URL = url
+		return nil
+	}
+	type Alias TaskMediaURL
+	var aux Alias
+	if err := common.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	*t = TaskMediaURL(aux)
+	return nil
+}
+
+type TaskContentItem struct {
+	Type        string        `json:"type,omitempty"`
+	Text        string        `json:"text,omitempty"`
+	ImageURL    *TaskMediaURL `json:"image_url,omitempty"`
+	VideoURL    *TaskMediaURL `json:"video_url,omitempty"`
+	AudioURL    *TaskMediaURL `json:"audio_url,omitempty"`
+	Role        string        `json:"role,omitempty"`
+	SubjectType string        `json:"subject_type,omitempty"`
 }
 
 func (t *TaskSubmitReq) GetPrompt() string {

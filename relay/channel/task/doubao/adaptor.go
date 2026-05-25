@@ -27,12 +27,13 @@ import (
 // ============================
 
 type ContentItem struct {
-	Type     string    `json:"type,omitempty"`
-	Text     string    `json:"text,omitempty"`
-	ImageURL *MediaURL `json:"image_url,omitempty"`
-	VideoURL *MediaURL `json:"video_url,omitempty"`
-	AudioURL *MediaURL `json:"audio_url,omitempty"`
-	Role     string    `json:"role,omitempty"`
+	Type        string    `json:"type,omitempty"`
+	Text        string    `json:"text,omitempty"`
+	ImageURL    *MediaURL `json:"image_url,omitempty"`
+	VideoURL    *MediaURL `json:"video_url,omitempty"`
+	AudioURL    *MediaURL `json:"audio_url,omitempty"`
+	Role        string    `json:"role,omitempty"`
+	SubjectType string    `json:"subject_type,omitempty"`
 }
 
 type MediaURL struct {
@@ -131,47 +132,26 @@ func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *r
 	return nil
 }
 
-// EstimateBilling 检测请求 metadata 中是否包含视频输入，返回视频折扣 OtherRatio。
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil
 	}
-	if hasVideoInMetadata(req.Metadata) {
-		if ratio, ok := GetVideoInputRatio(info.OriginModelName); ok {
-			return map[string]float64{"video_input": ratio}
-		}
+	if !relaycommon.IsSeedanceVideoModel(info.OriginModelName) && !relaycommon.IsSeedanceVideoModel(req.Model) {
+		return nil
 	}
-	return nil
-}
-
-// hasVideoInMetadata 直接检查 metadata 的 content 数组是否包含 video_url 条目，
-// 避免构建完整的上游 requestPayload。
-func hasVideoInMetadata(metadata map[string]interface{}) bool {
-	if metadata == nil {
-		return false
+	generatedSeconds := relaycommon.EffectiveTaskDuration(req)
+	referenceSeconds := service.SumReferenceVideoDurationSeconds(c, relaycommon.ExtractReferenceVideoURLs(req))
+	billableSeconds := generatedSeconds + referenceSeconds
+	if billableSeconds <= 0 {
+		return nil
 	}
-	contentRaw, ok := metadata["content"]
-	if !ok {
-		return false
-	}
-	contentSlice, ok := contentRaw.([]interface{})
-	if !ok {
-		return false
-	}
-	for _, item := range contentSlice {
-		itemMap, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if itemMap["type"] == "video_url" {
-			return true
-		}
-		if _, has := itemMap["video_url"]; has {
-			return true
-		}
-	}
-	return false
+	c.Set("generated_video_seconds", generatedSeconds)
+	c.Set("reference_video_seconds", referenceSeconds)
+	c.Set("billable_video_seconds", billableSeconds)
+	// Only billing uses generated + reference seconds. Upstream payload keeps
+	// req.Duration as the user's generated video duration.
+	return map[string]float64{"seconds": float64(billableSeconds)}
 }
 
 // BuildRequestBody converts request into Doubao specific format.
@@ -287,6 +267,21 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 	metadata := req.Metadata
 	if err := taskcommon.UnmarshalMetadata(metadata, &r); err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
+	}
+	if len(req.Content) > 0 {
+		contentBytes, err := common.Marshal(req.Content)
+		if err != nil {
+			return nil, errors.Wrap(err, "marshal content failed")
+		}
+		if err := common.Unmarshal(contentBytes, &r.Content); err != nil {
+			return nil, errors.Wrap(err, "unmarshal content failed")
+		}
+	}
+	if req.Ratio != "" {
+		r.Ratio = req.Ratio
+	}
+	if req.GenerateAudio != nil {
+		r.GenerateAudio = req.GenerateAudio
 	}
 
 	sec := relaycommon.EffectiveTaskDuration(*req)

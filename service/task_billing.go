@@ -50,6 +50,20 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = info.UpstreamModelName
 	}
+	if len(info.PriceData.OtherRatios) > 0 {
+		for k, v := range info.PriceData.OtherRatios {
+			other[k] = v
+		}
+	}
+	if generatedSeconds := c.GetInt("generated_video_seconds"); generatedSeconds > 0 {
+		other["generated_video_seconds"] = generatedSeconds
+	}
+	if referenceSeconds := c.GetInt("reference_video_seconds"); referenceSeconds > 0 {
+		other["reference_video_seconds"] = referenceSeconds
+	}
+	if billableSeconds := c.GetInt("billable_video_seconds"); billableSeconds > 0 {
+		other["billable_video_seconds"] = billableSeconds
+	}
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 		ChannelId: info.ChannelId,
 		ModelName: info.OriginModelName,
