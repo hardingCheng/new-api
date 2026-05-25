@@ -78,6 +78,51 @@ func validatePrompt(prompt string) *dto.TaskError {
 	return nil
 }
 
+func isSeedanceVideoModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "seedance-") || strings.HasPrefix(model, "doubao-seedance-")
+}
+
+func clampSeedanceDuration(seconds int) int {
+	if seconds < 4 {
+		return 4
+	}
+	if seconds > 15 {
+		return 15
+	}
+	return seconds
+}
+
+func EffectiveTaskDuration(req TaskSubmitReq) int {
+	seconds, _ := strconv.Atoi(req.Seconds)
+	if req.Duration > seconds {
+		return req.Duration
+	}
+	return seconds
+}
+
+func normalizeTaskDuration(req *TaskSubmitReq) {
+	if req == nil {
+		return
+	}
+	seconds := EffectiveTaskDuration(*req)
+	if seconds <= 0 {
+		return
+	}
+	req.Duration = seconds
+	req.Seconds = strconv.Itoa(seconds)
+}
+
+func applySeedanceDurationBounds(req *TaskSubmitReq) {
+	if req == nil || !isSeedanceVideoModel(req.Model) {
+		return
+	}
+	seconds := EffectiveTaskDuration(*req)
+	seconds = clampSeedanceDuration(seconds)
+	req.Duration = seconds
+	req.Seconds = strconv.Itoa(seconds)
+}
+
 func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string) (TaskSubmitReq, error) {
 	var req TaskSubmitReq
 	if _, err := c.MultipartForm(); err != nil {
@@ -133,10 +178,7 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 	prompt = req.Prompt
 	model = req.Model
 	size = req.Size
-	seconds, _ = strconv.Atoi(req.Seconds)
-	if seconds == 0 {
-		seconds = req.Duration
-	}
+	seconds = EffectiveTaskDuration(req)
 	if req.InputReference != "" {
 		req.Images = []string{req.InputReference}
 	}
@@ -176,6 +218,8 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 		// OtherRatios 已移到 Sora adaptor 的 EstimateBilling 中设置
 	}
 
+	normalizeTaskDuration(&req)
+	applySeedanceDurationBounds(&req)
 	storeTaskRequest(c, info, action, req)
 
 	return nil
@@ -219,6 +263,8 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 		req.Images = []string{req.Image}
 	}
 
+	normalizeTaskDuration(&req)
+	applySeedanceDurationBounds(&req)
 	storeTaskRequest(c, info, action, req)
 	return nil
 }

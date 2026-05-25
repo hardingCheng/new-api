@@ -629,12 +629,13 @@ func taskVideoDuration(task *model.Task) int {
 	if err := common.Unmarshal(task.Data, &data); err != nil {
 		return 0
 	}
+	var maxDuration int
 	for _, key := range []string{"video_duration", "duration", "seconds"} {
-		if duration := intFromAny(data[key]); duration > 0 {
-			return duration
+		if duration := intFromAny(data[key]); duration > maxDuration {
+			maxDuration = duration
 		}
 	}
-	return 0
+	return maxDuration
 }
 
 func intFromAny(v any) int {

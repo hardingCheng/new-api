@@ -45,7 +45,7 @@ func ParseVeoResolution(metadata map[string]any) string {
 }
 
 // ResolveVeoDuration returns the effective duration in seconds.
-// Priority: metadata["durationSeconds"] > stdDuration > stdSeconds > default (8).
+// Priority: metadata["durationSeconds"] > max(stdDuration, stdSeconds) > default (8).
 func ResolveVeoDuration(metadata map[string]any, stdDuration int, stdSeconds string) int {
 	if metadata != nil {
 		if _, exists := metadata["durationSeconds"]; exists {
@@ -54,11 +54,12 @@ func ResolveVeoDuration(metadata map[string]any, stdDuration int, stdSeconds str
 			}
 		}
 	}
-	if stdDuration > 0 {
+	seconds, _ := strconv.Atoi(stdSeconds)
+	if stdDuration > seconds {
 		return stdDuration
 	}
-	if s, err := strconv.Atoi(stdSeconds); err == nil && s > 0 {
-		return s
+	if seconds > 0 {
+		return seconds
 	}
 	return 8
 }
@@ -118,21 +119,7 @@ func SizeToVeoAspectRatio(size string) string {
 }
 
 // VeoResolutionRatio returns the pricing multiplier for the given resolution.
-// Standard resolutions (720p, 1080p) return 1.0.
-// 4K returns a model-specific multiplier based on Google's official pricing.
+// Resolution no longer changes task billing, so all resolutions return 1.0.
 func VeoResolutionRatio(modelName, resolution string) float64 {
-	if resolution != "4k" {
-		return 1.0
-	}
-	// 4K multipliers derived from Vertex AI official pricing (video+audio base):
-	//   veo-3.1-generate:      $0.60 / $0.40 = 1.5
-	//   veo-3.1-fast-generate: $0.35 / $0.15 ≈ 2.333
-	// Veo 3.0 models do not support 4K; return 1.0 as fallback.
-	if strings.Contains(modelName, "3.1-fast-generate") {
-		return 2.333333
-	}
-	if strings.Contains(modelName, "3.1-generate") || strings.Contains(modelName, "3.1") {
-		return 1.5
-	}
 	return 1.0
 }

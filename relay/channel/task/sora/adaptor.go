@@ -106,10 +106,7 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		return nil
 	}
 
-	seconds, _ := strconv.Atoi(req.Seconds)
-	if seconds == 0 {
-		seconds = req.Duration
-	}
+	seconds := relaycommon.EffectiveTaskDuration(req)
 	if seconds <= 0 {
 		seconds = 4
 	}
@@ -122,9 +119,6 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	ratios := map[string]float64{
 		"seconds": float64(seconds),
 		"size":    1,
-	}
-	if size == "1792x1024" || size == "1024x1792" {
-		ratios["size"] = 1.666667
 	}
 	return ratios
 }
@@ -158,6 +152,12 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		var bodyMap map[string]interface{}
 		if err := common.Unmarshal(cachedBody, &bodyMap); err == nil {
 			bodyMap["model"] = info.UpstreamModelName
+			if req, err := relaycommon.GetTaskRequest(c); err == nil && relaycommon.EffectiveTaskDuration(req) > 0 {
+				bodyMap["seconds"] = req.Seconds
+				if _, exists := bodyMap["duration"]; exists {
+					bodyMap["duration"] = req.Duration
+				}
+			}
 			if newBody, err := common.Marshal(bodyMap); err == nil {
 				return bytes.NewReader(newBody), nil
 			}
@@ -173,12 +173,23 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		var buf bytes.Buffer
 		writer := multipart.NewWriter(&buf)
 		writer.WriteField("model", info.UpstreamModelName)
+		taskReq, _ := relaycommon.GetTaskRequest(c)
+		hasDuration := relaycommon.EffectiveTaskDuration(taskReq) > 0
 		for key, values := range formData.Value {
 			if key == "model" {
 				continue
 			}
+			if hasDuration && (key == "seconds" || key == "duration") {
+				continue
+			}
 			for _, v := range values {
 				writer.WriteField(key, v)
+			}
+		}
+		if hasDuration {
+			writer.WriteField("seconds", taskReq.Seconds)
+			if _, exists := formData.Value["duration"]; exists {
+				writer.WriteField("duration", strconv.Itoa(taskReq.Duration))
 			}
 		}
 		for fieldName, fileHeaders := range formData.File {
