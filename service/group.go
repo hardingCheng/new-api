@@ -10,16 +10,18 @@ import (
 )
 
 type UserPricingContext struct {
-	User   UserPricingContextUser    `json:"user"`
-	Groups []UserPricingContextGroup `json:"groups"`
-	Models []string                  `json:"models"`
+	User        UserPricingContextUser                 `json:"user"`
+	Groups      []UserPricingContextGroup              `json:"groups"`
+	Models      []string                               `json:"models"`
+	ModelPrices map[string]UserPricingContextModelInfo `json:"model_prices"`
 }
 
 type UserPricingContextUser struct {
-	ID          int    `json:"id"`
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name,omitempty"`
-	Group       string `json:"group"`
+	ID                int     `json:"id"`
+	Username          string  `json:"username"`
+	DisplayName       string  `json:"display_name,omitempty"`
+	Group             string  `json:"group"`
+	CurrentGroupRatio float64 `json:"current_group_ratio"`
 }
 
 type UserPricingContextGroup struct {
@@ -27,6 +29,13 @@ type UserPricingContextGroup struct {
 	Desc   string   `json:"desc"`
 	Ratio  float64  `json:"ratio"`
 	Models []string `json:"models"`
+}
+
+type UserPricingContextModelInfo struct {
+	UsePrice bool    `json:"use_price"`
+	Price    float64 `json:"price,omitempty"`
+	Ratio    float64 `json:"ratio,omitempty"`
+	Exists   bool    `json:"exists"`
 }
 
 func GetUserUsableGroups(userGroup string) map[string]string {
@@ -111,14 +120,30 @@ func GetUserPricingContext(user *model.User) UserPricingContext {
 		models = append(models, modelName)
 	}
 	sort.Strings(models)
+	modelPrices := make(map[string]UserPricingContextModelInfo, len(models))
+	for _, modelName := range models {
+		price, usePrice, exists := ratio_setting.GetModelRatioOrPrice(modelName)
+		info := UserPricingContextModelInfo{
+			UsePrice: usePrice,
+			Exists:   exists,
+		}
+		if usePrice {
+			info.Price = price
+		} else {
+			info.Ratio = price
+		}
+		modelPrices[modelName] = info
+	}
 	return UserPricingContext{
 		User: UserPricingContextUser{
-			ID:          user.Id,
-			Username:    user.Username,
-			DisplayName: user.DisplayName,
-			Group:       user.Group,
+			ID:                user.Id,
+			Username:          user.Username,
+			DisplayName:       user.DisplayName,
+			Group:             user.Group,
+			CurrentGroupRatio: GetUserGroupRatio(user.Group, user.Group),
 		},
-		Groups: groups,
-		Models: models,
+		Groups:      groups,
+		Models:      models,
+		ModelPrices: modelPrices,
 	}
 }

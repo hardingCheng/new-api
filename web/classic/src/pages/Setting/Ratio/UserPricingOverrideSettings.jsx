@@ -111,6 +111,70 @@ const emptyRule = {
   disabled: false,
 };
 
+const optionKey = (value) => String(value ?? '');
+
+const uniqueBy = (items, getKey) => {
+  const seen = new Set();
+  const result = [];
+  for (const item of items) {
+    const key = getKey(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
+};
+
+const priceLabel = (info, t) => {
+  if (!info || !info.exists) return t('未配置价格');
+  return info.use_price ? `${t('固定单价')} ${info.price}` : `${t('按量倍率')} ${info.ratio}`;
+};
+
+const valuesDiffer = (values) => new Set(values.map((value) => String(value))).size > 1;
+
+const formatNumber = (value) => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '-';
+  return Number(num.toFixed(6)).toString();
+};
+
+const getContextGroupRatio = (context, groupName) => {
+  if (!context) return undefined;
+  if (!groupName) return context.user?.current_group_ratio;
+  return (context.groups || []).find((group) => group.name === groupName)?.ratio;
+};
+
+const buildEffectivePrice = (modelInfo, groupRatio, t) => {
+  if (!modelInfo || !modelInfo.exists) {
+    return {
+      kind: t('未配置价格'),
+      base: '-',
+      groupRatio: formatNumber(groupRatio),
+      final: '-',
+    };
+  }
+  const base = modelInfo.use_price ? modelInfo.price : modelInfo.ratio;
+  const final = Number.isFinite(Number(base)) && Number.isFinite(Number(groupRatio))
+    ? Number(base) * Number(groupRatio)
+    : undefined;
+  return {
+    kind: modelInfo.use_price ? t('固定单价') : t('按量倍率'),
+    base: formatNumber(base),
+    groupRatio: formatNumber(groupRatio),
+    final: formatNumber(final),
+  };
+};
+
+const buildOverrideModelInfo = (originalInfo, rule) => {
+  if (rule.type === TYPE_MODEL_PRICE) {
+    return { exists: true, use_price: true, price: Number(rule.value) || 0 };
+  }
+  if (rule.type === TYPE_MODEL_RATIO) {
+    return { exists: true, use_price: false, ratio: Number(rule.value) || 0 };
+  }
+  return originalInfo;
+};
+
 const inferScenario = (rule) => {
   if (rule.type === TYPE_MODEL_PRICE) return SCENARIO_MODEL_FIXED_PRICE;
   if (rule.type === TYPE_MODEL_RATIO) return SCENARIO_MODEL_RATIO;
@@ -173,7 +237,9 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
   const [ruleForm, setRuleForm] = useState(emptyRule);
   const [scenario, setScenario] = useState(SCENARIO_GROUP_DISCOUNT);
   const [userOptions, setUserOptions] = useState([]);
-  const [userContext, setUserContext] = useState(null);
+  const [selectedUsers, setSelectedUsers] = useState([]);
+  const [selectedModels, setSelectedModels] = useState([]);
+  const [userContexts, setUserContexts] = useState([]);
   const [contextLoading, setContextLoading] = useState(false);
 
   useEffect(() => {
@@ -182,6 +248,122 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
   }, [options.UserPricingOverride]);
 
   const rawValue = useMemo(() => buildRawValue(rules), [rules]);
+  const selectedUserOptions = useMemo(
+    () => uniqueBy(
+      [
+        ...userOptions,
+        ...userContexts.map((context) => ({
+          id: context.user?.id,
+          username: context.user?.username,
+          group: context.user?.group,
+        })),
+      ].filter((user) => user.id),
+      (user) => user.id,
+    ),
+    [userOptions, userContexts],
+  );
+  const groupOptions = useMemo(
+    () => uniqueBy(
+      userContexts.flatMap((context) => context.groups || []),
+      (group) => group.name,
+    ).sort((a, b) => a.name.localeCompare(b.name)),
+    [userContexts],
+  );
+  const modelOptions = useMemo(() => {
+    const models = ruleForm.group_pattern
+      ? userContexts.flatMap((context) =>
+        (context.groups || []).find((group) => group.name === ruleForm.group_pattern)?.models || [],
+      )
+      : userContexts.flatMap((context) => context.models || []);
+    return [...new Set(models)].sort((a, b) => a.localeCompare(b));
+  }, [ruleForm.group_pattern, userContexts]);
+  const selectedGroupRatios = useMemo(() => {
+    if (userContexts.length === 0) return [];
+    if (!ruleForm.group_pattern) {
+      return userContexts.map((context) => ({
+        user: context.user,
+        ratio: context.user?.current_group_ratio,
+      }));
+    }
+    return userContexts.map((context) => ({
+      user: context.user,
+      ratio: (context.groups || []).find((group) => group.name === ruleForm.group_pattern)?.ratio,
+    }));
+  }, [ruleForm.group_pattern, userContexts]);
+  const selectedModelPriceLabels = useMemo(() => {
+    const models =
+      selectedModels.length > 0
+        ? selectedModels
+        : ruleForm.model_pattern
+          ? [ruleForm.model_pattern]
+          : [];
+    return models.map((modelName) => {
+      const labels = userContexts.map((context) => priceLabel(context.model_prices?.[modelName], t));
+      return {
+        modelName,
+        labels: [...new Set(labels)],
+      };
+    });
+  }, [ruleForm.model_pattern, selectedModels, t, userContexts]);
+  const batchPreview = useMemo(() => {
+    const userCount = selectedUsers.length || (ruleForm.user_id ? 1 : 0);
+    const modelCount =
+      scenario === SCENARIO_MODEL_FIXED_PRICE || scenario === SCENARIO_MODEL_RATIO
+        ? selectedModels.length || (ruleForm.model_pattern ? 1 : 0)
+        : 1;
+    const ruleCount = userCount * modelCount;
+    if (ruleCount <= 1) {
+      return ruleSummary(ruleForm, t);
+    }
+    return t('批量预览：将生成 {{count}} 条用户价格规则。', { count: ruleCount });
+  }, [ruleForm, scenario, selectedModels.length, selectedUsers.length, t]);
+  const priceComparisonRows = useMemo(() => {
+    if (userContexts.length === 0) return [];
+    const models =
+      scenario === SCENARIO_MODEL_FIXED_PRICE || scenario === SCENARIO_MODEL_RATIO
+        ? selectedModels.length > 0
+          ? selectedModels
+          : ruleForm.model_pattern
+            ? [ruleForm.model_pattern]
+            : []
+        : [''];
+    return userContexts.flatMap((context) => {
+      const groupRatio = getContextGroupRatio(context, ruleForm.group_pattern);
+      return models.map((modelName) => {
+        const originalInfo = modelName ? context.model_prices?.[modelName] : null;
+        const original = modelName
+          ? buildEffectivePrice(originalInfo, groupRatio, t)
+          : {
+            kind: t('整体倍率'),
+            base: '-',
+            groupRatio: formatNumber(groupRatio),
+            final: formatNumber(groupRatio),
+          };
+        const overrideGroupRatio = ruleForm.type === TYPE_RATIO ? Number(ruleForm.value) || 0 : groupRatio;
+        const overrideInfo = modelName ? buildOverrideModelInfo(originalInfo, ruleForm) : null;
+        const override = modelName
+          ? buildEffectivePrice(overrideInfo, overrideGroupRatio, t)
+          : {
+            kind: t('整体倍率'),
+            base: '-',
+            groupRatio: formatNumber(overrideGroupRatio),
+            final: formatNumber(overrideGroupRatio),
+          };
+        return {
+          key: `${context.user?.id}-${modelName || 'all'}`,
+          user: `${context.user?.id} / ${context.user?.username} / ${context.user?.group}`,
+          group: ruleForm.group_pattern || t('当前用户分组'),
+          model: modelName || t('全部模型'),
+          original,
+          override,
+        };
+      });
+    });
+  }, [ruleForm, scenario, selectedModels, t, userContexts]);
+  const hasPriceComparisonDifference = useMemo(
+    () => priceComparisonRows.some((row) => row.original.final !== row.override.final || row.original.kind !== row.override.kind),
+    [priceComparisonRows],
+  );
 
   const searchUsers = async (keyword = '') => {
     const params = new URLSearchParams({
@@ -199,28 +381,36 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
     setUserOptions(users);
   };
 
-  const loadUserContext = async (userId) => {
-    if (!userId) {
-      setUserContext(null);
+  const loadUserContexts = async (userIds) => {
+    const ids = [...new Set((userIds || []).filter(Boolean))];
+    if (ids.length === 0) {
+      setUserContexts([]);
       return;
     }
     setContextLoading(true);
     try {
-      const res = await API.get(`/api/user/${userId}/pricing_context`);
-      if (!res?.data?.success) {
-        throw new Error(res?.data?.message || t('获取用户价格上下文失败'));
+      const results = await Promise.all(
+        ids.map(async (userId) => {
+          const res = await API.get(`/api/user/${userId}/pricing_context`);
+          if (!res?.data?.success) {
+            throw new Error(res?.data?.message || t('获取用户价格上下文失败'));
+          }
+          return res.data.data;
+        }),
+      );
+      setUserContexts(results);
+      if (results.length === 1) {
+        const context = results[0];
+        setRuleForm((previous) => ({
+          ...previous,
+          user_id: context.user?.id || previous.user_id,
+          username: context.user?.username || previous.username,
+          user_group: context.user?.group || previous.user_group,
+        }));
       }
-      const context = res.data.data;
-      setUserContext(context);
-      setRuleForm((previous) => ({
-        ...previous,
-        user_id: context.user?.id || previous.user_id,
-        username: context.user?.username || previous.username,
-        user_group: context.user?.group || previous.user_group,
-      }));
     } catch (error) {
       showError(error.message || t('获取用户价格上下文失败'));
-      setUserContext(null);
+      setUserContexts([]);
     } finally {
       setContextLoading(false);
     }
@@ -230,9 +420,11 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
     setEditingRuleId(rule?.id || '');
     setRuleForm(rule || emptyRule);
     setScenario(inferScenario(rule || emptyRule));
-    setUserContext(null);
+    setSelectedUsers(rule?.user_id ? [rule.user_id] : []);
+    setSelectedModels(rule?.model_pattern ? [rule.model_pattern] : []);
+    setUserContexts([]);
     if (rule?.user_id) {
-      await loadUserContext(rule.user_id);
+      await loadUserContexts([rule.user_id]);
     } else {
       await searchUsers();
     }
@@ -240,24 +432,50 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
   };
 
   const saveRule = () => {
-    if (!Number(ruleForm.user_id)) {
-      showError(t('请填写用户 ID'));
+    if (selectedUsers.length === 0 && !Number(ruleForm.user_id)) {
+      showError(t('请选择用户'));
       return;
     }
-    const nextRule = {
-      ...ruleForm,
-      id: editingRuleId || `rule-${Date.now()}`,
-      user_id: Number(ruleForm.user_id),
-      username: String(ruleForm.username || '').trim(),
-      user_group: String(ruleForm.user_group || '').trim(),
-      group_pattern: String(ruleForm.group_pattern || '').trim(),
-      model_pattern: String(ruleForm.model_pattern || '').trim(),
-      value: Number(ruleForm.value) || 0,
-    };
+    if (
+      (scenario === SCENARIO_MODEL_FIXED_PRICE || scenario === SCENARIO_MODEL_RATIO) &&
+      selectedModels.length === 0 &&
+      !String(ruleForm.model_pattern || '').trim()
+    ) {
+      showError(t('请选择模型或填写模型通配符'));
+      return;
+    }
+    const targetUsers = userContexts.length > 0
+      ? userContexts.map((context) => context.user)
+      : [{
+        id: Number(ruleForm.user_id),
+        username: String(ruleForm.username || '').trim(),
+        group: String(ruleForm.user_group || '').trim(),
+      }];
+    const targetModels =
+      scenario === SCENARIO_MODEL_FIXED_PRICE || scenario === SCENARIO_MODEL_RATIO
+        ? selectedModels.length > 0
+          ? selectedModels
+          : [String(ruleForm.model_pattern || '').trim()]
+        : [''];
+    const nextRules = [];
+    for (const user of targetUsers) {
+      for (const modelPattern of targetModels) {
+        nextRules.push({
+          ...ruleForm,
+          id: editingRuleId && targetUsers.length === 1 && targetModels.length === 1 ? editingRuleId : `rule-${Date.now()}-${user.id}-${modelPattern || 'all'}`,
+          user_id: Number(user.id),
+          username: String(user.username || '').trim(),
+          user_group: String(user.group || '').trim(),
+          group_pattern: String(ruleForm.group_pattern || '').trim(),
+          model_pattern: String(modelPattern || '').trim(),
+          value: Number(ruleForm.value) || 0,
+        });
+      }
+    }
     setRules((previous) =>
       editingRuleId
-        ? previous.map((item) => (item.id === editingRuleId ? nextRule : item))
-        : [...previous, nextRule],
+        ? [...previous.filter((item) => item.id !== editingRuleId), ...nextRules]
+        : [...previous, ...nextRules],
     );
     setModalVisible(false);
   };
@@ -371,6 +589,7 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
       <Modal
         title={editingRuleId ? t('编辑用户价格规则') : t('新增用户价格规则')}
         visible={modalVisible}
+        width={1200}
         onOk={saveRule}
         onCancel={() => setModalVisible(false)}
       >
@@ -395,42 +614,42 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
             <Select
               filter
               remote
+              multiple
               showClear
-              value={ruleForm.user_id || undefined}
+              maxTagCount={3}
+              showRestTagsPopover
+              value={selectedUsers}
               placeholder={t('搜索并选择用户')}
               style={{ width: '100%', marginBottom: 12 }}
               onSearch={searchUsers}
               onChange={(value) => {
-                const selected = userOptions.find((user) => user.id === value);
+                const ids = Array.isArray(value) ? value : [];
+                const selected = selectedUserOptions.find((user) => user.id === ids[0]);
+                setSelectedUsers(ids);
                 setRuleForm({
                   ...ruleForm,
-                  user_id: value || 0,
+                  user_id: selected?.id || 0,
                   username: selected?.username || '',
                   user_group: selected?.group || '',
                   group_pattern: '',
                   model_pattern: '',
                 });
-                if (value) {
-                  loadUserContext(value);
+                if (ids.length > 0) {
+                  loadUserContexts(ids);
                 } else {
-                  setUserContext(null);
+                  setUserContexts([]);
                 }
               }}
             >
-              {userOptions.map((user) => (
+              {selectedUserOptions.map((user) => (
                 <Select.Option key={user.id} value={user.id}>
                   {user.id} / {user.username} / {user.group}
                 </Select.Option>
               ))}
-              {ruleForm.user_id && !userOptions.some((user) => user.id === ruleForm.user_id) ? (
-                <Select.Option value={ruleForm.user_id}>
-                  {ruleForm.user_id} / {ruleForm.username || '-'} / {ruleForm.user_group || '-'}
-                </Select.Option>
-              ) : null}
             </Select>
-            {userContext?.user ? (
+            {userContexts.length > 0 ? (
               <div className='mb-3 text-sm text-gray-500'>
-                {t('已选择')}：{userContext.user.id} / {userContext.user.username} / {userContext.user.group}
+                {t('已选择')}：{userContexts.map((context) => `${context.user.id} / ${context.user.username} / ${context.user.group}`).join('，')}
               </div>
             ) : null}
             {scenario !== SCENARIO_ALL_DISCOUNT ? (
@@ -442,9 +661,12 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
                   value={ruleForm.group_pattern || undefined}
                   placeholder={t('全部分组')}
                   style={{ width: '100%', marginBottom: 16 }}
-                  onChange={(value) => setRuleForm({ ...ruleForm, group_pattern: value || '', model_pattern: '' })}
+                  onChange={(value) => {
+                    setSelectedModels([]);
+                    setRuleForm({ ...ruleForm, group_pattern: value || '', model_pattern: '' });
+                  }}
                 >
-                  {(userContext?.groups || []).map((group) => (
+                  {groupOptions.map((group) => (
                     <Select.Option key={group.name} value={group.name}>
                       {group.name}{group.desc ? ` / ${group.desc}` : ''} / {group.models?.length || 0} {t('个模型')}
                     </Select.Option>
@@ -457,15 +679,20 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
                 <div className='mb-2 font-medium text-gray-700'>{t('适用模型')}</div>
                 <Select
                   filter
+                  multiple
                   showClear
-                  value={ruleForm.model_pattern || undefined}
+                  maxTagCount={3}
+                  showRestTagsPopover
+                  value={selectedModels}
                   placeholder={t('全部模型')}
                   style={{ width: '100%', marginBottom: 16 }}
-                  onChange={(value) => setRuleForm({ ...ruleForm, model_pattern: value || '' })}
+                  onChange={(value) => {
+                    const models = Array.isArray(value) ? value : [];
+                    setSelectedModels(models);
+                    setRuleForm({ ...ruleForm, model_pattern: models[0] || '' });
+                  }}
                 >
-                  {((ruleForm.group_pattern
-                    ? userContext?.groups?.find((group) => group.name === ruleForm.group_pattern)?.models
-                    : userContext?.models) || []).map((modelName) => (
+                  {modelOptions.map((modelName) => (
                     <Select.Option key={modelName} value={modelName}>
                       {modelName}
                     </Select.Option>
@@ -476,7 +703,10 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
                   value={ruleForm.model_pattern}
                   placeholder='seedance-*'
                   style={{ marginBottom: 16 }}
-                  onChange={(value) => setRuleForm({ ...ruleForm, model_pattern: value })}
+                  onChange={(value) => {
+                    setSelectedModels(value ? [value] : []);
+                    setRuleForm({ ...ruleForm, model_pattern: value });
+                  }}
                 />
               </>
             ) : null}
@@ -495,8 +725,73 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
                 ? t('固定单价会直接替换模型原来的固定价格。')
                 : t('倍率填写 0.8 表示八折，1 表示原价，0 表示免费。')}
             </div>
+            {selectedGroupRatios.length > 1 && valuesDiffer(selectedGroupRatios.map((item) => item.ratio)) ? (
+              <Card className='mt-4' bodyStyle={{ padding: 12 }}>
+                <div className='mb-2 font-medium text-red-600'>{t('分组倍率不一致')}</div>
+                <div className='text-sm text-gray-600'>
+                  {selectedGroupRatios.map((item) => (
+                    <div key={item.user?.id}>
+                      {item.user?.id} / {item.user?.username} / {item.user?.group}：{item.ratio ?? '-'}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            ) : null}
+            {selectedModelPriceLabels.length > 1 && valuesDiffer(selectedModelPriceLabels.flatMap((item) => item.labels)) ? (
+              <Card className='mt-4' bodyStyle={{ padding: 12 }}>
+                <div className='mb-2 font-medium text-red-600'>{t('模型原始价格不一致')}</div>
+                <div className='text-sm text-gray-600'>
+                  {selectedModelPriceLabels.map((item) => (
+                    <div key={item.modelName}>
+                      {item.modelName}：{item.labels.join(' / ')}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            ) : null}
+            {priceComparisonRows.length > 0 ? (
+              <Card className='mt-4' bodyStyle={{ padding: 12 }}>
+                <div className={`mb-2 font-medium ${hasPriceComparisonDifference ? 'text-red-600' : 'text-gray-700'}`}>
+                  {t('覆盖前后价格对比')}
+                </div>
+                <Table
+                  size='small'
+                  pagination={false}
+                  rowKey='key'
+                  dataSource={priceComparisonRows}
+                  scroll={{ x: 1120 }}
+                  columns={[
+                    {
+                      title: t('用户'),
+                      dataIndex: 'user',
+                      width: 260,
+                    },
+                    {
+                      title: t('分组'),
+                      dataIndex: 'group',
+                      width: 160,
+                    },
+                    {
+                      title: t('模型'),
+                      dataIndex: 'model',
+                      width: 260,
+                    },
+                    {
+                      title: t('原计费'),
+                      width: 220,
+                      render: (_, row) => `${row.original.kind} ${row.original.base} × ${row.original.groupRatio} = ${row.original.final}`,
+                    },
+                    {
+                      title: t('覆盖后'),
+                      width: 220,
+                      render: (_, row) => `${row.override.kind} ${row.override.base} × ${row.override.groupRatio} = ${row.override.final}`,
+                    },
+                  ]}
+                />
+              </Card>
+            ) : null}
             <Card className='mt-4' bodyStyle={{ padding: 12 }}>
-              {ruleSummary(ruleForm, t)}
+              {batchPreview}
             </Card>
           </Form>
         </Spin>
