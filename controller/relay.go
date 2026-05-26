@@ -23,6 +23,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -582,12 +583,13 @@ func RelayTask(c *gin.Context) {
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
 		task.PrivateData.TokenId = relayInfo.TokenId
 		task.PrivateData.BillingContext = &model.TaskBillingContext{
-			ModelPrice:      relayInfo.PriceData.ModelPrice,
-			GroupRatio:      relayInfo.PriceData.GroupRatioInfo.GroupRatio,
-			ModelRatio:      relayInfo.PriceData.ModelRatio,
-			OtherRatios:     relayInfo.PriceData.OtherRatios,
-			OriginModelName: relayInfo.OriginModelName,
-			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+			ModelPrice:       relayInfo.PriceData.ModelPrice,
+			GroupRatio:       relayInfo.PriceData.GroupRatioInfo.GroupRatio,
+			ModelRatio:       relayInfo.PriceData.ModelRatio,
+			OtherRatios:      relayInfo.PriceData.OtherRatios,
+			OriginModelName:  relayInfo.OriginModelName,
+			VideoBillingMode: ratio_setting.GetVideoBillingMode(relayInfo.OriginModelName),
+			PerCallBilling:   ratio_setting.IsVideoBillingPerCall(relayInfo.OriginModelName) || (relayInfo.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(relayInfo.OriginModelName)),
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData

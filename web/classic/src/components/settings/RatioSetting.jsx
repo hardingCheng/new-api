@@ -20,17 +20,20 @@ For commercial licensing, please contact support@quantumnous.com
 import React, { useEffect, useState } from 'react';
 import { Card, Spin, Tabs } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 
 import ModelPricingCombined from '../../pages/Setting/Ratio/ModelPricingCombined';
 import GroupRatioSettings from '../../pages/Setting/Ratio/GroupRatioSettings';
 import ModelRatioNotSetEditor from '../../pages/Setting/Ratio/ModelRationNotSetEditor';
 import UpstreamRatioSync from '../../pages/Setting/Ratio/UpstreamRatioSync';
 import ToolPriceSettings from '../../pages/Setting/Ratio/ToolPriceSettings';
+import VideoBillingModeSettings from '../../pages/Setting/Ratio/VideoBillingModeSettings';
 
 import { API, showError, toBoolean } from '../../helpers';
 
 const RatioSetting = () => {
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   let [inputs, setInputs] = useState({
     ModelPrice: '',
@@ -51,6 +54,17 @@ const RatioSetting = () => {
   });
 
   const [loading, setLoading] = useState(false);
+  const [activeInnerTab, setActiveInnerTab] = useState(
+    searchParams.get('ratio_tab') || 'pricing',
+  );
+
+  const handleInnerTabChange = (key) => {
+    setActiveInnerTab(key);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', 'ratio');
+    nextParams.set('ratio_tab', key);
+    setSearchParams(nextParams, { replace: true });
+  };
 
   const getOptions = async () => {
     const res = await API.get('/api/option/');
@@ -96,7 +110,11 @@ const RatioSetting = () => {
   return (
     <Spin spinning={loading} size='large'>
       <Card style={{ marginTop: '10px' }}>
-        <Tabs type='card' defaultActiveKey='pricing'>
+        <Tabs
+          type='card'
+          activeKey={activeInnerTab}
+          onChange={handleInnerTabChange}
+        >
           <Tabs.TabPane tab={t('模型定价设置')} itemKey='pricing'>
             <ModelPricingCombined options={inputs} refresh={onRefresh} />
           </Tabs.TabPane>
@@ -111,6 +129,9 @@ const RatioSetting = () => {
           </Tabs.TabPane>
           <Tabs.TabPane tab={t('工具调用定价')} itemKey='tool_price'>
             <ToolPriceSettings options={inputs} />
+          </Tabs.TabPane>
+          <Tabs.TabPane tab={t('视频计费模式')} itemKey='video_billing_mode'>
+            <VideoBillingModeSettings options={inputs} refresh={onRefresh} />
           </Tabs.TabPane>
         </Tabs>
       </Card>

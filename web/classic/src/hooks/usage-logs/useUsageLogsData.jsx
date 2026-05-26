@@ -43,6 +43,16 @@ import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
 import ParamOverrideEntry from '../../components/table/usage-logs/components/ParamOverrideEntry';
 
+const getVideoBillingModeText = (mode, t) => {
+  if (mode === 'per_second') {
+    return t('按秒计费');
+  }
+  if (mode === 'per_call') {
+    return t('按次计费');
+  }
+  return mode;
+};
+
 export const useLogsData = () => {
   const { t } = useTranslation();
 
@@ -490,6 +500,12 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('拦截原因'),
             value: other.reject_reason,
+          });
+        }
+        if (isAdminUser && other?.video_billing_mode) {
+          expandDataLocal.push({
+            key: t('视频计费模式'),
+            value: getVideoBillingModeText(other.video_billing_mode, t),
           });
         }
       }

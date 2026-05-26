@@ -181,7 +181,12 @@ const Setting = () => {
   }
   const onChangeTab = (key) => {
     setTabActiveKey(key);
-    navigate(`?tab=${key}`);
+    const searchParams = new URLSearchParams(window.location.search);
+    searchParams.set('tab', key);
+    if (key !== 'ratio') {
+      searchParams.delete('ratio_tab');
+    }
+    navigate(`?${searchParams.toString()}`);
   };
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);

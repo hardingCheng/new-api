@@ -259,6 +259,15 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "VideoBillingMode":
+		err = ratio_setting.UpdateVideoBillingModeByJSONString(option.Value.(string))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "视频计费模式设置失败: " + err.Error(),
+			})
+			return
+		}
 	case "CreateCacheRatio":
 		err = ratio_setting.UpdateCreateCacheRatioByJSONString(option.Value.(string))
 		if err != nil {
