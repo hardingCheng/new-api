@@ -6,6 +6,8 @@ type GroupRatioInfo struct {
 	GroupRatio        float64
 	GroupSpecialRatio float64
 	HasSpecialRatio   bool
+	UserOverrideRatio float64
+	HasUserOverride   bool
 }
 
 type PriceData struct {

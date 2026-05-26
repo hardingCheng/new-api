@@ -50,6 +50,9 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = info.UpstreamModelName
 	}
+	if len(info.UserPricingOverrides) > 0 {
+		other["user_pricing_overrides"] = info.UserPricingOverrides
+	}
 	if len(info.PriceData.OtherRatios) > 0 {
 		for k, v := range info.PriceData.OtherRatios {
 			other[k] = v
@@ -142,6 +145,9 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 			other["model_ratio"] = bc.ModelRatio
 		}
 		other["group_ratio"] = bc.GroupRatio
+		if len(bc.UserPricingOverrides) > 0 {
+			other["user_pricing_overrides"] = bc.UserPricingOverrides
+		}
 		if len(bc.OtherRatios) > 0 {
 			for k, v := range bc.OtherRatios {
 				other[k] = v

@@ -583,13 +583,14 @@ func RelayTask(c *gin.Context) {
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
 		task.PrivateData.TokenId = relayInfo.TokenId
 		task.PrivateData.BillingContext = &model.TaskBillingContext{
-			ModelPrice:       relayInfo.PriceData.ModelPrice,
-			GroupRatio:       relayInfo.PriceData.GroupRatioInfo.GroupRatio,
-			ModelRatio:       relayInfo.PriceData.ModelRatio,
-			OtherRatios:      relayInfo.PriceData.OtherRatios,
-			OriginModelName:  relayInfo.OriginModelName,
-			VideoBillingMode: ratio_setting.GetVideoBillingMode(relayInfo.OriginModelName),
-			PerCallBilling:   ratio_setting.IsVideoBillingPerCall(relayInfo.OriginModelName) || (relayInfo.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(relayInfo.OriginModelName)),
+			ModelPrice:           relayInfo.PriceData.ModelPrice,
+			GroupRatio:           relayInfo.PriceData.GroupRatioInfo.GroupRatio,
+			ModelRatio:           relayInfo.PriceData.ModelRatio,
+			OtherRatios:          relayInfo.PriceData.OtherRatios,
+			OriginModelName:      relayInfo.OriginModelName,
+			VideoBillingMode:     ratio_setting.GetVideoBillingMode(relayInfo.OriginModelName),
+			UserPricingOverrides: relayInfo.UserPricingOverrides,
+			PerCallBilling:       ratio_setting.IsVideoBillingPerCall(relayInfo.OriginModelName) || (relayInfo.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(relayInfo.OriginModelName)),
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData

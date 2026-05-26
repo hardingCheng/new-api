@@ -53,6 +53,32 @@ const getVideoBillingModeText = (mode, t) => {
   return mode;
 };
 
+const renderUserPricingOverrides = (overrides, t) => {
+  if (!Array.isArray(overrides) || overrides.length === 0) {
+    return '';
+  }
+  return (
+    <div style={{ maxWidth: 680, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.6 }}>
+      {overrides.map((item, index) => {
+        const rule = item?.rule || {};
+        const type =
+          rule.type === 'model_price'
+            ? t('固定价格')
+            : rule.type === 'model_ratio'
+              ? t('模型倍率')
+              : t('倍率');
+        const group = rule.group_pattern || t('全部分组');
+        const model = rule.model_pattern || t('全部模型');
+        return (
+          <div key={`${rule.user_id}-${rule.group_pattern}-${rule.model_pattern}-${index}`}>
+            {t('分组')} {group} / {t('模型')} {model}：{type} {rule.value}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 export const useLogsData = () => {
   const { t } = useTranslation();
 
@@ -506,6 +532,12 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('视频计费模式'),
             value: getVideoBillingModeText(other.video_billing_mode, t),
+          });
+        }
+        if (isAdminUser && Array.isArray(other?.user_pricing_overrides) && other.user_pricing_overrides.length > 0) {
+          expandDataLocal.push({
+            key: t('用户价格覆盖'),
+            value: renderUserPricingOverrides(other.user_pricing_overrides, t),
           });
         }
       }

@@ -1,11 +1,33 @@
 package service
 
 import (
+	"sort"
 	"strings"
 
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
+
+type UserPricingContext struct {
+	User   UserPricingContextUser    `json:"user"`
+	Groups []UserPricingContextGroup `json:"groups"`
+	Models []string                  `json:"models"`
+}
+
+type UserPricingContextUser struct {
+	ID          int    `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name,omitempty"`
+	Group       string `json:"group"`
+}
+
+type UserPricingContextGroup struct {
+	Name   string   `json:"name"`
+	Desc   string   `json:"desc"`
+	Ratio  float64  `json:"ratio"`
+	Models []string `json:"models"`
+}
 
 func GetUserUsableGroups(userGroup string) map[string]string {
 	groupsCopy := setting.GetUserUsableGroupsCopy()
@@ -62,4 +84,41 @@ func GetUserGroupRatio(userGroup, group string) float64 {
 		return ratio
 	}
 	return ratio_setting.GetGroupRatio(group)
+}
+
+func GetUserPricingContext(user *model.User) UserPricingContext {
+	usableGroups := GetUserUsableGroups(user.Group)
+	groups := make([]UserPricingContextGroup, 0, len(usableGroups))
+	allModels := make(map[string]bool)
+	for groupName, desc := range usableGroups {
+		models := model.GetGroupEnabledModels(groupName)
+		sort.Strings(models)
+		for _, modelName := range models {
+			allModels[modelName] = true
+		}
+		groups = append(groups, UserPricingContextGroup{
+			Name:   groupName,
+			Desc:   desc,
+			Ratio:  GetUserGroupRatio(user.Group, groupName),
+			Models: models,
+		})
+	}
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].Name < groups[j].Name
+	})
+	models := make([]string, 0, len(allModels))
+	for modelName := range allModels {
+		models = append(models, modelName)
+	}
+	sort.Strings(models)
+	return UserPricingContext{
+		User: UserPricingContextUser{
+			ID:          user.Id,
+			Username:    user.Username,
+			DisplayName: user.DisplayName,
+			Group:       user.Group,
+		},
+		Groups: groups,
+		Models: models,
+	}
 }

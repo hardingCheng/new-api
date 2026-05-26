@@ -64,6 +64,52 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 	return groupRatioInfo
 }
 
+func applyUserPricingOverridesToPriceData(info *relaycommon.RelayInfo, priceData *types.PriceData) {
+	if info == nil || priceData == nil {
+		return
+	}
+	modelNames := []string{info.OriginModelName}
+	if info.IsModelMapped && info.UpstreamModelName != "" {
+		modelNames = append(modelNames, info.UpstreamModelName)
+	}
+	if info.ChannelMeta != nil && info.ChannelMeta.UpstreamModelName != "" {
+		modelNames = append(modelNames, info.ChannelMeta.UpstreamModelName)
+	}
+	var (
+		usePrice   bool
+		modelPrice float64
+		modelRatio float64
+		groupRatio float64
+		matches    []ratio_setting.UserPricingOverrideMatch
+	)
+	for _, modelName := range modelNames {
+		usePrice, modelPrice, modelRatio, groupRatio, matches = ratio_setting.ApplyUserPricingOverrides(
+			info.UserId,
+			info.UserEmail,
+			info.UserGroup,
+			info.UsingGroup,
+			modelName,
+			priceData.UsePrice,
+			priceData.ModelPrice,
+			priceData.ModelRatio,
+			priceData.GroupRatioInfo.GroupRatio,
+		)
+		if len(matches) > 0 {
+			break
+		}
+	}
+	if len(matches) == 0 {
+		return
+	}
+	priceData.UsePrice = usePrice
+	priceData.ModelPrice = modelPrice
+	priceData.ModelRatio = modelRatio
+	priceData.GroupRatioInfo.GroupRatio = groupRatio
+	priceData.GroupRatioInfo.UserOverrideRatio = groupRatio
+	priceData.GroupRatioInfo.HasUserOverride = true
+	info.UserPricingOverrides = matches
+}
+
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
 
@@ -85,11 +131,11 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	var audioRatio float64
 	var audioCompletionRatio float64
 	var freeModel bool
+	preConsumedTokens := common.Max(promptTokens, common.PreConsumedQuota)
+	if meta.MaxTokens != 0 {
+		preConsumedTokens += meta.MaxTokens
+	}
 	if !usePrice {
-		preConsumedTokens := common.Max(promptTokens, common.PreConsumedQuota)
-		if meta.MaxTokens != 0 {
-			preConsumedTokens += meta.MaxTokens
-		}
 		var success bool
 		var matchName string
 		modelRatio, success, matchName = ratio_setting.GetModelRatio(info.OriginModelName)
@@ -156,6 +202,22 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		QuotaToPreConsume:    preConsumedQuota,
 	}
 
+	applyUserPricingOverridesToPriceData(info, &priceData)
+	if priceData.UsePrice {
+		priceData.QuotaToPreConsume = int(priceData.ModelPrice * common.QuotaPerUnit * priceData.GroupRatioInfo.GroupRatio)
+		if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume && (priceData.GroupRatioInfo.GroupRatio == 0 || priceData.ModelPrice == 0) {
+			priceData.QuotaToPreConsume = 0
+			priceData.FreeModel = true
+		}
+	} else {
+		ratio := priceData.ModelRatio * priceData.GroupRatioInfo.GroupRatio
+		priceData.QuotaToPreConsume = int(float64(preConsumedTokens) * ratio)
+		if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume && (priceData.GroupRatioInfo.GroupRatio == 0 || priceData.ModelRatio == 0) {
+			priceData.QuotaToPreConsume = 0
+			priceData.FreeModel = true
+		}
+	}
+
 	if common.DebugEnabled {
 		logger.LogDebug(c, "model_price_helper result: %s", priceData.ToSetting())
 	}
@@ -220,6 +282,21 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 		UsePrice:       usePrice,
 		Quota:          quota,
 		GroupRatioInfo: groupRatioInfo,
+	}
+	applyUserPricingOverridesToPriceData(info, &priceData)
+	if priceData.UsePrice {
+		priceData.Quota = int(priceData.ModelPrice * common.QuotaPerUnit * priceData.GroupRatioInfo.GroupRatio)
+		if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume && (priceData.GroupRatioInfo.GroupRatio == 0 || priceData.ModelPrice == 0) {
+			priceData.Quota = 0
+			priceData.FreeModel = true
+		}
+	} else {
+		priceData.Quota = int(priceData.ModelRatio / 2 * common.QuotaPerUnit * priceData.GroupRatioInfo.GroupRatio)
+		priceData.ModelPrice = -1
+		if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume && (priceData.GroupRatioInfo.GroupRatio == 0 || priceData.ModelRatio == 0) {
+			priceData.Quota = 0
+			priceData.FreeModel = true
+		}
 	}
 	return priceData, nil
 }

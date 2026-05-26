@@ -28,6 +28,7 @@ import ModelRatioNotSetEditor from '../../pages/Setting/Ratio/ModelRationNotSetE
 import UpstreamRatioSync from '../../pages/Setting/Ratio/UpstreamRatioSync';
 import ToolPriceSettings from '../../pages/Setting/Ratio/ToolPriceSettings';
 import VideoBillingModeSettings from '../../pages/Setting/Ratio/VideoBillingModeSettings';
+import UserPricingOverrideSettings from '../../pages/Setting/Ratio/UserPricingOverrideSettings';
 
 import { API, showError, toBoolean } from '../../helpers';
 
@@ -50,6 +51,7 @@ const RatioSetting = () => {
     DefaultUseAutoGroup: false,
     ExposeRatioEnabled: false,
     UserUsableGroups: '',
+    UserPricingOverride: '',
     'group_ratio_setting.group_special_usable_group': '',
   });
 
@@ -132,6 +134,9 @@ const RatioSetting = () => {
           </Tabs.TabPane>
           <Tabs.TabPane tab={t('视频计费模式')} itemKey='video_billing_mode'>
             <VideoBillingModeSettings options={inputs} refresh={onRefresh} />
+          </Tabs.TabPane>
+          <Tabs.TabPane tab={t('用户价格覆盖')} itemKey='user_pricing_override'>
+            <UserPricingOverrideSettings options={inputs} refresh={onRefresh} />
           </Tabs.TabPane>
         </Tabs>
       </Card>
