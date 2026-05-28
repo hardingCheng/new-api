@@ -268,6 +268,15 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "ModelQuotaPool":
+		err = ratio_setting.UpdateModelQuotaPoolByJSONString(option.Value.(string))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "模型限量池设置失败: " + err.Error(),
+			})
+			return
+		}
 	case "UserPricingOverride":
 		err = ratio_setting.UpdateUserPricingOverrideByJSONString(option.Value.(string))
 		if err != nil {

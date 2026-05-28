@@ -58,6 +58,7 @@ export const useTaskLogsData = () => {
   // Basic state
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [quotaPools, setQuotaPools] = useState([]);
   const [activePage, setActivePage] = useState(1);
   const [logCount, setLogCount] = useState(0);
   const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
@@ -285,6 +286,22 @@ export const useTaskLogsData = () => {
     setLoading(false);
   };
 
+  const loadQuotaPools = async () => {
+    try {
+      const res = await API.get('/api/task/model_quota_pools');
+      const { success, data } = res.data;
+      if (success) {
+        setQuotaPools(Array.isArray(data) ? data : []);
+      } else {
+        setQuotaPools([]);
+        console.warn('Failed to load model quota pools:', res.data?.message);
+      }
+    } catch (error) {
+      setQuotaPools([]);
+      console.warn('Failed to load model quota pools:', error);
+    }
+  };
+
   // Page handlers
   const handlePageChange = (page) => {
     loadLogs(page, pageSize).then();
@@ -297,7 +314,7 @@ export const useTaskLogsData = () => {
 
   // Refresh function
   const refresh = async () => {
-    await loadLogs(1, pageSize);
+    await Promise.all([loadLogs(1, pageSize), loadQuotaPools()]);
   };
 
   // Copy text function
@@ -347,12 +364,14 @@ export const useTaskLogsData = () => {
       parseInt(localStorage.getItem('task-page-size')) || ITEMS_PER_PAGE;
     setPageSize(localPageSize);
     loadLogs(1, localPageSize).then();
+    loadQuotaPools().then();
   }, []);
 
   return {
     // Basic state
     logs,
     loading,
+    quotaPools,
     activePage,
     logCount,
     pageSize,

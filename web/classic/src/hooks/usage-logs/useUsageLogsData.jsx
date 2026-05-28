@@ -79,6 +79,26 @@ const renderUserPricingOverrides = (overrides, t) => {
   );
 };
 
+const renderModelQuotaPools = (pools, t) => {
+  if (!Array.isArray(pools) || pools.length === 0) {
+    return '';
+  }
+  return (
+    <div style={{ maxWidth: 760, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.6 }}>
+      {pools.map((item, index) => {
+        const rule = item?.rule || {};
+        const scope = item.scope === 'user' ? t('指定用户池') : t('全局共享池');
+        const remaining = item.remaining ?? '-';
+        return (
+          <div key={`${rule.id || rule.model}-${item.period_key}-${index}`}>
+            {scope} / {rule.model} / {item.period_key}：{item.used_after ?? '-'} / {item.limit ?? '-'}，{t('剩余')} {remaining}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 export const useLogsData = () => {
   const { t } = useTranslation();
 
@@ -538,6 +558,12 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('用户价格覆盖'),
             value: renderUserPricingOverrides(other.user_pricing_overrides, t),
+          });
+        }
+        if (isAdminUser && Array.isArray(other?.model_quota_pools) && other.model_quota_pools.length > 0) {
+          expandDataLocal.push({
+            key: t('模型限量池'),
+            value: renderModelQuotaPools(other.model_quota_pools, t),
           });
         }
       }

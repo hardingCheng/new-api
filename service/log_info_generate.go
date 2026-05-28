@@ -127,6 +127,9 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 	if len(relayInfo.UserPricingOverrides) > 0 {
 		other["user_pricing_overrides"] = relayInfo.UserPricingOverrides
 	}
+	if len(relayInfo.ModelQuotaPools) > 0 {
+		other["model_quota_pools"] = relayInfo.ModelQuotaPools
+	}
 	if relayInfo.UserSetting.BillingPreference != "" {
 		other["billing_preference"] = relayInfo.UserSetting.BillingPreference
 	}

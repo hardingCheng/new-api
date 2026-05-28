@@ -135,6 +135,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	if meta.MaxTokens != 0 {
 		preConsumedTokens += meta.MaxTokens
 	}
+	info.SetEstimateTotalTokens(preConsumedTokens)
 	if !usePrice {
 		var success bool
 		var matchName string

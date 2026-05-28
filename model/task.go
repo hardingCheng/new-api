@@ -120,6 +120,7 @@ type TaskBillingContext struct {
 	OriginModelName      string                                   `json:"origin_model_name,omitempty"`      // 模型名称，必须为OriginModelName
 	VideoBillingMode     string                                   `json:"video_billing_mode,omitempty"`     // 视频计费模式：per_second / per_call
 	UserPricingOverrides []ratio_setting.UserPricingOverrideMatch `json:"user_pricing_overrides,omitempty"` // 用户价格覆盖命中规则
+	ModelQuotaPools      []ratio_setting.ModelQuotaPoolMatch      `json:"model_quota_pools,omitempty"`      // 模型限量池命中规则
 	PerCallBilling       bool                                     `json:"per_call_billing,omitempty"`       // 按次计费：跳过轮询阶段的差额结算
 }
 

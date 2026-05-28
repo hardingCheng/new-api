@@ -53,6 +53,9 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	if len(info.UserPricingOverrides) > 0 {
 		other["user_pricing_overrides"] = info.UserPricingOverrides
 	}
+	if len(info.ModelQuotaPools) > 0 {
+		other["model_quota_pools"] = info.ModelQuotaPools
+	}
 	if len(info.PriceData.OtherRatios) > 0 {
 		for k, v := range info.PriceData.OtherRatios {
 			other[k] = v
@@ -147,6 +150,9 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 		other["group_ratio"] = bc.GroupRatio
 		if len(bc.UserPricingOverrides) > 0 {
 			other["user_pricing_overrides"] = bc.UserPricingOverrides
+		}
+		if len(bc.ModelQuotaPools) > 0 {
+			other["model_quota_pools"] = bc.ModelQuotaPools
 		}
 		if len(bc.OtherRatios) > 0 {
 			for k, v := range bc.OtherRatios {

@@ -84,6 +84,7 @@ type ChannelMeta struct {
 type TokenCountMeta struct {
 	//promptTokens int
 	estimatePromptTokens int
+	estimateTotalTokens  int
 }
 
 type RelayInfo struct {
@@ -162,8 +163,10 @@ type RelayInfo struct {
 	// *bytes.Reader/Buffer/strings.Reader). 0 means "let net/http decide".
 	UpstreamRequestBodySize int64
 
-	PriceData            types.PriceData
-	UserPricingOverrides []ratio_setting.UserPricingOverrideMatch
+	PriceData             types.PriceData
+	UserPricingOverrides  []ratio_setting.UserPricingOverrideMatch
+	ModelQuotaPools       []ratio_setting.ModelQuotaPoolMatch
+	ModelQuotaPoolChecked bool
 
 	// TieredBillingSnapshot is a frozen snapshot of tiered billing rules
 	// captured at pre-consume time. Non-nil only when billing mode is "tiered_expr".
@@ -654,6 +657,17 @@ func (info *RelayInfo) SetEstimatePromptTokens(promptTokens int) {
 }
 
 func (info *RelayInfo) GetEstimatePromptTokens() int {
+	return info.estimatePromptTokens
+}
+
+func (info *RelayInfo) SetEstimateTotalTokens(totalTokens int) {
+	info.estimateTotalTokens = totalTokens
+}
+
+func (info *RelayInfo) GetEstimateTotalTokens() int {
+	if info.estimateTotalTokens > 0 {
+		return info.estimateTotalTokens
+	}
 	return info.estimatePromptTokens
 }
 

@@ -23,6 +23,7 @@ import CardPro from '../../common/ui/CardPro';
 import TaskLogsTable from './TaskLogsTable';
 import TaskLogsActions from './TaskLogsActions';
 import TaskLogsFilters from './TaskLogsFilters';
+import ModelQuotaPoolSummary from './ModelQuotaPoolSummary';
 import ColumnSelectorModal from './modals/ColumnSelectorModal';
 import ContentModal from './modals/ContentModal';
 import AudioPreviewModal from './modals/AudioPreviewModal';
@@ -50,6 +51,10 @@ const TaskLogsPage = () => {
         isModalOpen={taskLogsData.isAudioModalOpen}
         setIsModalOpen={taskLogsData.setIsAudioModalOpen}
         audioClips={taskLogsData.audioClips}
+      />
+      <ModelQuotaPoolSummary
+        quotaPools={taskLogsData.quotaPools}
+        t={taskLogsData.t}
       />
 
       <Layout>

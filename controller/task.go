@@ -81,6 +81,12 @@ func GetUserTask(c *gin.Context) {
 	common.ApiSuccess(c, pageInfo)
 }
 
+func GetModelQuotaPoolUsage(c *gin.Context) {
+	userID := c.GetInt("id")
+	includeAllUserPools := c.GetInt("role") >= common.RoleAdminUser
+	common.ApiSuccess(c, service.GetVisibleModelQuotaPoolUsage(userID, includeAllUserPools))
+}
+
 func tasksToDto(tasks []*model.Task, fillUser bool) []*dto.TaskDto {
 	var userIdMap map[int]*model.UserBase
 	channelIdMap := make(map[int]string)

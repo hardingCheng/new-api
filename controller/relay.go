@@ -159,6 +159,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	// common.SetContextKey(c, constant.ContextKeyTokenCountMeta, meta)
 
+	if newAPIError = service.CheckAndConsumeModelQuotaPool(c, relayInfo); newAPIError != nil {
+		return
+	}
+
 	if priceData.FreeModel {
 		logger.LogInfo(c, fmt.Sprintf("模型 %s 免费，跳过预扣费", relayInfo.OriginModelName))
 	} else {
@@ -590,6 +594,7 @@ func RelayTask(c *gin.Context) {
 			OriginModelName:      relayInfo.OriginModelName,
 			VideoBillingMode:     ratio_setting.GetVideoBillingMode(relayInfo.OriginModelName),
 			UserPricingOverrides: relayInfo.UserPricingOverrides,
+			ModelQuotaPools:      relayInfo.ModelQuotaPools,
 			PerCallBilling:       ratio_setting.IsVideoBillingPerCall(relayInfo.OriginModelName) || (relayInfo.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(relayInfo.OriginModelName)),
 		}
 		task.Quota = result.Quota
