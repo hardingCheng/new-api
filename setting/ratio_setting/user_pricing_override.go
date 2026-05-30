@@ -2,6 +2,7 @@ package ratio_setting
 
 import (
 	"strings"
+	"sync/atomic"
 
 	"github.com/QuantumNous/new-api/common"
 )
@@ -32,12 +33,22 @@ type UserPricingOverrideMatch struct {
 	Description string          `json:"description,omitempty"`
 }
 
-var userPricingOverrideConfig = UserPricingOverrideConfig{
-	Rules: []UserPricingRule{},
+var userPricingOverrideConfig atomic.Value
+
+func init() {
+	userPricingOverrideConfig.Store(UserPricingOverrideConfig{Rules: []UserPricingRule{}})
+}
+
+func currentUserPricingOverrideConfig() UserPricingOverrideConfig {
+	cfg, ok := userPricingOverrideConfig.Load().(UserPricingOverrideConfig)
+	if !ok {
+		return UserPricingOverrideConfig{Rules: []UserPricingRule{}}
+	}
+	return cfg
 }
 
 func UserPricingOverride2JSONString() string {
-	jsonBytes, err := common.Marshal(userPricingOverrideConfig)
+	jsonBytes, err := common.Marshal(currentUserPricingOverrideConfig())
 	if err != nil {
 		common.SysError("error marshalling user pricing override: " + err.Error())
 		return "{}"
@@ -53,13 +64,13 @@ func UpdateUserPricingOverrideByJSONString(jsonStr string) error {
 	if err := common.Unmarshal([]byte(jsonStr), &cfg); err != nil {
 		return err
 	}
-	userPricingOverrideConfig = normalizeUserPricingOverrideConfig(cfg)
+	userPricingOverrideConfig.Store(normalizeUserPricingOverrideConfig(cfg))
 	InvalidateExposedDataCache()
 	return nil
 }
 
 func GetUserPricingOverrideCopy() UserPricingOverrideConfig {
-	cfg := userPricingOverrideConfig
+	cfg := currentUserPricingOverrideConfig()
 	cfg.Rules = append([]UserPricingRule(nil), cfg.Rules...)
 	return cfg
 }
@@ -69,7 +80,8 @@ func MatchUserPricingOverride(userID int, username, userGroup, usingGroup, model
 		return nil
 	}
 	var matches []UserPricingOverrideMatch
-	for _, rule := range userPricingOverrideConfig.Rules {
+	cfg := currentUserPricingOverrideConfig()
+	for _, rule := range cfg.Rules {
 		if rule.Disabled || rule.UserID != userID || rule.Value < 0 {
 			continue
 		}

@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/QuantumNous/new-api/types"
 )
@@ -14,11 +15,11 @@ type StatusCodeRange struct {
 	End   int
 }
 
-var AutomaticDisableStatusCodeRanges = []StatusCodeRange{{Start: 401, End: 401}}
+var defaultAutomaticDisableStatusCodeRanges = []StatusCodeRange{{Start: 401, End: 401}}
 
 // Default behavior matches legacy hardcoded retry rules in controller/relay.go shouldRetry:
 // retry for 1xx, 3xx, 4xx(except 400/408), 5xx(except 504/524), and no retry for 2xx.
-var AutomaticRetryStatusCodeRanges = []StatusCodeRange{
+var defaultAutomaticRetryStatusCodeRanges = []StatusCodeRange{
 	{Start: 100, End: 199},
 	{Start: 300, End: 399},
 	{Start: 401, End: 407},
@@ -26,6 +27,16 @@ var AutomaticRetryStatusCodeRanges = []StatusCodeRange{
 	{Start: 500, End: 503},
 	{Start: 505, End: 523},
 	{Start: 525, End: 599},
+}
+
+var (
+	automaticDisableStatusCodeRanges atomic.Value
+	automaticRetryStatusCodeRanges   atomic.Value
+)
+
+func init() {
+	SetAutomaticDisableStatusCodeRanges(defaultAutomaticDisableStatusCodeRanges)
+	SetAutomaticRetryStatusCodeRanges(defaultAutomaticRetryStatusCodeRanges)
 }
 
 var alwaysSkipRetryStatusCodes = map[int]struct{}{
@@ -38,7 +49,7 @@ var alwaysSkipRetryCodes = map[types.ErrorCode]struct{}{
 }
 
 func AutomaticDisableStatusCodesToString() string {
-	return statusCodeRangesToString(AutomaticDisableStatusCodeRanges)
+	return statusCodeRangesToString(GetAutomaticDisableStatusCodeRanges())
 }
 
 func AutomaticDisableStatusCodesFromString(s string) error {
@@ -46,16 +57,16 @@ func AutomaticDisableStatusCodesFromString(s string) error {
 	if err != nil {
 		return err
 	}
-	AutomaticDisableStatusCodeRanges = ranges
+	SetAutomaticDisableStatusCodeRanges(ranges)
 	return nil
 }
 
 func ShouldDisableByStatusCode(code int) bool {
-	return shouldMatchStatusCodeRanges(AutomaticDisableStatusCodeRanges, code)
+	return shouldMatchStatusCodeRanges(GetAutomaticDisableStatusCodeRanges(), code)
 }
 
 func AutomaticRetryStatusCodesToString() string {
-	return statusCodeRangesToString(AutomaticRetryStatusCodeRanges)
+	return statusCodeRangesToString(GetAutomaticRetryStatusCodeRanges())
 }
 
 func AutomaticRetryStatusCodesFromString(s string) error {
@@ -63,7 +74,7 @@ func AutomaticRetryStatusCodesFromString(s string) error {
 	if err != nil {
 		return err
 	}
-	AutomaticRetryStatusCodeRanges = ranges
+	SetAutomaticRetryStatusCodeRanges(ranges)
 	return nil
 }
 
@@ -81,7 +92,38 @@ func ShouldRetryByStatusCode(code int) bool {
 	if IsAlwaysSkipRetryStatusCode(code) {
 		return false
 	}
-	return shouldMatchStatusCodeRanges(AutomaticRetryStatusCodeRanges, code)
+	return shouldMatchStatusCodeRanges(GetAutomaticRetryStatusCodeRanges(), code)
+}
+
+func GetAutomaticDisableStatusCodeRanges() []StatusCodeRange {
+	ranges, ok := automaticDisableStatusCodeRanges.Load().([]StatusCodeRange)
+	if !ok {
+		return nil
+	}
+	return copyStatusCodeRanges(ranges)
+}
+
+func SetAutomaticDisableStatusCodeRanges(ranges []StatusCodeRange) {
+	automaticDisableStatusCodeRanges.Store(copyStatusCodeRanges(ranges))
+}
+
+func GetAutomaticRetryStatusCodeRanges() []StatusCodeRange {
+	ranges, ok := automaticRetryStatusCodeRanges.Load().([]StatusCodeRange)
+	if !ok {
+		return nil
+	}
+	return copyStatusCodeRanges(ranges)
+}
+
+func SetAutomaticRetryStatusCodeRanges(ranges []StatusCodeRange) {
+	automaticRetryStatusCodeRanges.Store(copyStatusCodeRanges(ranges))
+}
+
+func copyStatusCodeRanges(ranges []StatusCodeRange) []StatusCodeRange {
+	if len(ranges) == 0 {
+		return []StatusCodeRange{}
+	}
+	return append([]StatusCodeRange(nil), ranges...)
 }
 
 func statusCodeRangesToString(ranges []StatusCodeRange) string {

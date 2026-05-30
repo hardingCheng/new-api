@@ -3,6 +3,7 @@ package ratio_setting
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"github.com/QuantumNous/new-api/common"
 )
@@ -54,12 +55,22 @@ type ModelQuotaPoolMatch struct {
 	Description string             `json:"description,omitempty"`
 }
 
-var modelQuotaPoolConfig = ModelQuotaPoolConfig{
-	Rules: []ModelQuotaPoolRule{},
+var modelQuotaPoolConfig atomic.Value
+
+func init() {
+	modelQuotaPoolConfig.Store(ModelQuotaPoolConfig{Rules: []ModelQuotaPoolRule{}})
+}
+
+func currentModelQuotaPoolConfig() ModelQuotaPoolConfig {
+	cfg, ok := modelQuotaPoolConfig.Load().(ModelQuotaPoolConfig)
+	if !ok {
+		return ModelQuotaPoolConfig{Rules: []ModelQuotaPoolRule{}}
+	}
+	return cfg
 }
 
 func ModelQuotaPool2JSONString() string {
-	jsonBytes, err := common.Marshal(modelQuotaPoolConfig)
+	jsonBytes, err := common.Marshal(currentModelQuotaPoolConfig())
 	if err != nil {
 		common.SysError("error marshalling model quota pool: " + err.Error())
 		return "{}"
@@ -75,13 +86,13 @@ func UpdateModelQuotaPoolByJSONString(jsonStr string) error {
 	if err := common.Unmarshal([]byte(jsonStr), &cfg); err != nil {
 		return err
 	}
-	modelQuotaPoolConfig = normalizeModelQuotaPoolConfig(cfg)
+	modelQuotaPoolConfig.Store(normalizeModelQuotaPoolConfig(cfg))
 	InvalidateExposedDataCache()
 	return nil
 }
 
 func GetModelQuotaPoolCopy() ModelQuotaPoolConfig {
-	cfg := modelQuotaPoolConfig
+	cfg := currentModelQuotaPoolConfig()
 	cfg.Rules = append([]ModelQuotaPoolRule(nil), cfg.Rules...)
 	return cfg
 }
@@ -94,7 +105,8 @@ func MatchModelQuotaPoolRules(userID int, modelName string) []ModelQuotaPoolRule
 
 	var globalRules []ModelQuotaPoolRule
 	var userRules []ModelQuotaPoolRule
-	for _, rule := range modelQuotaPoolConfig.Rules {
+	cfg := currentModelQuotaPoolConfig()
+	for _, rule := range cfg.Rules {
 		if rule.Disabled || rule.Limit <= 0 || !wildcardMatch(rule.Model, modelName) {
 			continue
 		}

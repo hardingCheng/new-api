@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -122,7 +123,43 @@ func CheckAndConsumeModelQuotaPool(ctx *gin.Context, info *relaycommon.RelayInfo
 	}
 	info.ModelQuotaPools = applied
 	info.ModelQuotaPoolChecked = true
+	info.ModelQuotaPoolSettled = false
 	return nil
+}
+
+func SettleModelQuotaPool(info *relaycommon.RelayInfo) {
+	if info == nil || len(info.ModelQuotaPools) == 0 {
+		return
+	}
+	info.ModelQuotaPoolSettled = true
+}
+
+func RollbackModelQuotaPool(info *relaycommon.RelayInfo) {
+	if info == nil || info.ModelQuotaPoolSettled || len(info.ModelQuotaPools) == 0 {
+		return
+	}
+	rollbackModelQuotaPool(modelQuotaPoolConsumedFromMatches(info.ModelQuotaPools))
+	info.ModelQuotaPoolSettled = true
+	info.ModelQuotaPools = nil
+}
+
+func RollbackTaskModelQuotaPool(task *model.Task) {
+	if task == nil || task.PrivateData.BillingContext == nil || len(task.PrivateData.BillingContext.ModelQuotaPools) == 0 {
+		return
+	}
+	rollbackModelQuotaPool(modelQuotaPoolConsumedFromMatches(task.PrivateData.BillingContext.ModelQuotaPools))
+	task.PrivateData.BillingContext.ModelQuotaPools = nil
+}
+
+func modelQuotaPoolConsumedFromMatches(matches []ratio_setting.ModelQuotaPoolMatch) map[string]int64 {
+	consumed := make(map[string]int64, len(matches))
+	for _, match := range matches {
+		if strings.TrimSpace(match.RedisKey) == "" || match.Amount <= 0 {
+			continue
+		}
+		consumed[match.RedisKey] += match.Amount
+	}
+	return consumed
 }
 
 func GetVisibleModelQuotaPoolUsage(userID int, includeAllUserPools bool) []ModelQuotaPoolUsage {

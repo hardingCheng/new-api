@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -397,6 +398,63 @@ func TestRecalculate_ActualQuotaZero(t *testing.T) {
 	assert.Equal(t, int64(0), countLogs(t))
 }
 
+func TestRecalculateByTokensUsesFrozenBillingContext(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		_ = ratio_setting.UpdateModelRatioByJSONString("{}")
+	})
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"test-model":2}`))
+
+	const userID, tokenID, channelID = 15, 15, 15
+	const initQuota, preConsumed = 10000, 1000
+	const tokenRemain = 5000
+
+	seedUser(t, userID, initQuota)
+	seedToken(t, tokenID, userID, "sk-frozen-ratio", tokenRemain)
+	seedChannel(t, channelID)
+
+	task := makeTask(userID, channelID, preConsumed, tokenID, BillingSourceWallet, 0)
+	task.PrivateData.BillingContext.ModelRatio = 0.5
+	task.PrivateData.BillingContext.GroupRatio = 0.8
+	task.PrivateData.BillingContext.ModelPrice = -1
+
+	RecalculateTaskQuotaByTokens(ctx, task, 1000)
+
+	const actualQuota = 400
+	assert.Equal(t, actualQuota, task.Quota)
+	assert.Equal(t, initQuota+(preConsumed-actualQuota), getUserQuota(t, userID))
+	assert.Equal(t, tokenRemain+(preConsumed-actualQuota), getTokenRemainQuota(t, tokenID))
+}
+
+func TestRecalculateByTokensSkipsFrozenFixedPrice(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		_ = ratio_setting.UpdateModelRatioByJSONString("{}")
+	})
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"test-model":2}`))
+
+	const userID, tokenID, channelID = 16, 16, 16
+	const initQuota, preConsumed = 10000, 1000
+	const tokenRemain = 5000
+
+	seedUser(t, userID, initQuota)
+	seedToken(t, tokenID, userID, "sk-frozen-price", tokenRemain)
+	seedChannel(t, channelID)
+
+	task := makeTask(userID, channelID, preConsumed, tokenID, BillingSourceWallet, 0)
+	task.PrivateData.BillingContext.ModelPrice = 0.25
+	task.PrivateData.BillingContext.ModelRatio = 0
+
+	RecalculateTaskQuotaByTokens(ctx, task, 1000)
+
+	assert.Equal(t, preConsumed, task.Quota)
+	assert.Equal(t, initQuota, getUserQuota(t, userID))
+	assert.Equal(t, tokenRemain, getTokenRemainQuota(t, tokenID))
+	assert.Equal(t, int64(0), countLogs(t))
+}
+
 func TestRecalculate_Subscription_NegativeDelta(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()
@@ -713,4 +771,39 @@ func TestSettle_NonPerCall_AdaptorAdjustWorks(t *testing.T) {
 	log := getLastLog(t)
 	require.NotNil(t, log)
 	assert.Equal(t, model.LogTypeRefund, log.Type)
+}
+
+func TestRollbackModelQuotaPoolFromRelayInfo(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		ModelQuotaPools: []ratio_setting.ModelQuotaPoolMatch{
+			{RedisKey: "pool:a", Amount: 2},
+			{RedisKey: "pool:a", Amount: 3},
+			{RedisKey: "pool:b", Amount: 4},
+			{RedisKey: "pool:ignored", Amount: 0},
+		},
+	}
+
+	consumed := modelQuotaPoolConsumedFromMatches(info.ModelQuotaPools)
+	assert.Equal(t, int64(5), consumed["pool:a"])
+	assert.Equal(t, int64(4), consumed["pool:b"])
+	assert.NotContains(t, consumed, "pool:ignored")
+}
+
+func TestRollbackTaskModelQuotaPoolClearsContextMatchesWithoutRedis(t *testing.T) {
+	oldRedisEnabled := common.RedisEnabled
+	oldRDB := common.RDB
+	common.RedisEnabled = false
+	common.RDB = nil
+	t.Cleanup(func() {
+		common.RedisEnabled = oldRedisEnabled
+		common.RDB = oldRDB
+	})
+
+	task := makeTask(1, 1, 0, 0, BillingSourceWallet, 0)
+	task.PrivateData.BillingContext.ModelQuotaPools = []ratio_setting.ModelQuotaPoolMatch{
+		{RedisKey: "pool:a", Amount: 1},
+	}
+
+	RollbackTaskModelQuotaPool(task)
+	assert.Empty(t, task.PrivateData.BillingContext.ModelQuotaPools)
 }

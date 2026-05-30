@@ -1,11 +1,14 @@
 package operation_setting
 
-import "strings"
+import (
+	"strings"
+	"sync/atomic"
+)
 
 var DemoSiteEnabled = false
 var SelfUseModeEnabled = false
 
-var AutomaticDisableKeywords = []string{
+var defaultAutomaticDisableKeywords = []string{
 	"Your credit balance is too low",
 	"This organization has been disabled.",
 	"You exceeded your current quota",
@@ -15,18 +18,37 @@ var AutomaticDisableKeywords = []string{
 	"Your account is not authorized",
 }
 
-func AutomaticDisableKeywordsToString() string {
-	return strings.Join(AutomaticDisableKeywords, "\n")
+var automaticDisableKeywords atomic.Value
+
+func init() {
+	SetAutomaticDisableKeywords(defaultAutomaticDisableKeywords)
 }
 
-func AutomaticDisableKeywordsFromString(s string) {
-	AutomaticDisableKeywords = []string{}
-	ak := strings.Split(s, "\n")
-	for _, k := range ak {
+func GetAutomaticDisableKeywords() []string {
+	keywords, ok := automaticDisableKeywords.Load().([]string)
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), keywords...)
+}
+
+func SetAutomaticDisableKeywords(keywords []string) {
+	normalized := make([]string, 0, len(keywords))
+	for _, k := range keywords {
 		k = strings.TrimSpace(k)
 		k = strings.ToLower(k)
 		if k != "" {
-			AutomaticDisableKeywords = append(AutomaticDisableKeywords, k)
+			normalized = append(normalized, k)
 		}
 	}
+	automaticDisableKeywords.Store(normalized)
+}
+
+func AutomaticDisableKeywordsToString() string {
+	return strings.Join(GetAutomaticDisableKeywords(), "\n")
+}
+
+func AutomaticDisableKeywordsFromString(s string) {
+	ak := strings.Split(s, "\n")
+	SetAutomaticDisableKeywords(ak)
 }
