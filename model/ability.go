@@ -104,6 +104,10 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 }
 
 func GetChannel(group string, model string, retry int) (*Channel, error) {
+	return GetChannelWithFilter(group, model, retry, nil)
+}
+
+func GetChannelWithFilter(group string, model string, retry int, allowChannel func(*Channel) bool) (*Channel, error) {
 	var abilities []Ability
 
 	var err error = nil
@@ -119,28 +123,48 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 	if err != nil {
 		return nil, err
 	}
-	channel := Channel{}
-	if len(abilities) > 0 {
-		// Randomly choose one
-		weightSum := uint(0)
-		for _, ability_ := range abilities {
-			weightSum += ability_.Weight + 10
-		}
-		// Randomly choose one
-		weight := common.GetRandomInt(int(weightSum))
-		for _, ability_ := range abilities {
-			weight -= int(ability_.Weight) + 10
-			//log.Printf("weight: %d, ability weight: %d", weight, *ability_.Weight)
-			if weight <= 0 {
-				channel.Id = ability_.ChannelId
-				break
-			}
-		}
-	} else {
+	if len(abilities) == 0 {
 		return nil, nil
 	}
-	err = DB.First(&channel, "id = ?", channel.Id).Error
-	return &channel, err
+
+	type weightedChannel struct {
+		ability Ability
+		channel *Channel
+	}
+
+	candidates := make([]weightedChannel, 0, len(abilities))
+	for _, ability_ := range abilities {
+		channel := Channel{}
+		if err = DB.First(&channel, "id = ?", ability_.ChannelId).Error; err != nil {
+			return nil, err
+		}
+		if channel.Status != common.ChannelStatusEnabled {
+			continue
+		}
+		if allowChannel != nil && !allowChannel(&channel) {
+			continue
+		}
+		candidates = append(candidates, weightedChannel{
+			ability: ability_,
+			channel: &channel,
+		})
+	}
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	weightSum := uint(0)
+	for _, candidate := range candidates {
+		weightSum += candidate.ability.Weight + 10
+	}
+	weight := common.GetRandomInt(int(weightSum))
+	for _, candidate := range candidates {
+		weight -= int(candidate.ability.Weight) + 10
+		if weight <= 0 {
+			return candidate.channel, nil
+		}
+	}
+	return candidates[0].channel, nil
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {

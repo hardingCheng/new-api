@@ -1772,7 +1772,7 @@
     "footer.columns.related.links.oneApi": "Один API",
     "footer.columns.related.title": "Связанные проекты",
     "footer.defaultCopyright": "Все права защищены.",
-    "footer.new\u0061pi.projectAttributionSuffix": "Все права защищены. Разработано участниками проекта.",
+    "footer.newapi.projectAttributionSuffix": "Все права защищены. Разработано участниками проекта.",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "Для каналов, добавленных после 10 мая 2025 г., не нужно удалять \".\" из имён моделей при развёртывании",
     "For private deployments, format: https://fastgpt.run/api/openapi": "Для частных развертываний, формат: https://fastgpt.run/api/openapi",
     "Force a syntactically valid JSON response": "Принудительно возвращать синтаксически корректный JSON",
@@ -4518,6 +4518,19 @@
     "Zero retention": "Без хранения данных",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Circuit breaker on failure": "Circuit breaker при сбоях",
+    "Temporarily skip unhealthy channels without changing their enabled status": "Временно пропускать неисправные каналы без изменения их состояния включения",
+    "Breaker failure limit": "Лимит сбоев breaker",
+    "Open the breaker after this many consecutive failures": "Открывать breaker после такого числа последовательных сбоев",
+    "Breaker cooldown (seconds)": "Пауза breaker (секунды)",
+    "Wait this long before allowing real probe requests": "Ждать столько перед допуском реальных пробных запросов",
+    "Probe request count": "Количество пробных запросов",
+    "Maximum real requests allowed while half-open": "Максимум реальных запросов в полуоткрытом состоянии",
+    "Probe success requirement": "Требуемые успешные пробы",
+    "Close the breaker after this many probe successes": "Закрывать breaker после такого числа успешных проб",
+    "Breaker excluded paths": "Пути, исключенные из breaker",
+    "one path prefix per line": "один префикс пути на строку",
+    "Requests matching these path prefixes will not affect breaker state": "Запросы с такими префиксами путей не влияют на состояние breaker"
   }
 }

@@ -228,6 +228,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		if newAPIError == nil {
 			relayInfo.LastError = nil
+			service.RecordChannelBreakerSuccess(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()))
 			return
 		}
 
@@ -363,10 +364,15 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
-	if service.ShouldDisableChannel(err) && channelError.AutoBan {
-		gopool.Go(func() {
-			service.DisableChannel(channelError, err.ErrorWithStatusCode())
-		})
+	if opened, message := service.RecordChannelBreakerFailure(c, channelError, service.ShouldDisableChannel(err)); message != "" {
+		if opened {
+			logger.LogWarn(c, fmt.Sprintf("%s (channel #%d)", message, channelError.ChannelId))
+			gopool.Go(func() {
+				service.NotifyChannelBreakerOpen(channelError, err.ErrorWithStatusCode())
+			})
+		} else {
+			logger.LogInfo(c, fmt.Sprintf("%s (channel #%d)", message, channelError.ChannelId))
+		}
 	}
 
 	if constant.ErrorLogEnabled && types.IsRecordErrorLog(err) {
@@ -527,6 +533,10 @@ func RelayTask(c *gin.Context) {
 
 		if lockedCh, ok := relayInfo.LockedChannel.(*model.Channel); ok && lockedCh != nil {
 			channel = lockedCh
+			if !service.AllowSelectedChannelByBreaker(c, channel) {
+				taskErr = service.TaskErrorWrapperLocal(fmt.Errorf("channel breaker is open"), "channel_breaker_open", http.StatusServiceUnavailable)
+				break
+			}
 			if retryParam.GetRetry() > 0 {
 				if setupErr := middleware.SetupContextForSelectedChannel(c, channel, relayInfo.OriginModelName); setupErr != nil {
 					taskErr = service.TaskErrorWrapperLocal(setupErr.Err, "setup_locked_channel_failed", http.StatusInternalServerError)
@@ -557,6 +567,7 @@ func RelayTask(c *gin.Context) {
 
 		result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
 		if taskErr == nil {
+			service.RecordChannelBreakerSuccess(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()))
 			break
 		}
 

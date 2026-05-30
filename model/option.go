@@ -54,6 +54,11 @@ func InitOptionMap() {
 	common.OptionMap["TaskEnabled"] = strconv.FormatBool(common.TaskEnabled)
 	common.OptionMap["DataExportEnabled"] = strconv.FormatBool(common.DataExportEnabled)
 	common.OptionMap["ChannelDisableThreshold"] = strconv.FormatFloat(common.GetChannelDisableThreshold(), 'f', -1, 64)
+	common.OptionMap["ChannelBreakerFailureLimit"] = strconv.Itoa(common.GetChannelBreakerFailureLimit())
+	common.OptionMap["ChannelBreakerCooldownSeconds"] = strconv.Itoa(common.GetChannelBreakerCooldownSeconds())
+	common.OptionMap["ChannelBreakerProbeCount"] = strconv.Itoa(common.GetChannelBreakerProbeCount())
+	common.OptionMap["ChannelBreakerProbeSuccessCount"] = strconv.Itoa(common.GetChannelBreakerProbeSuccessCount())
+	common.OptionMap["ChannelBreakerExcludePaths"] = strings.Join(common.GetChannelBreakerExcludePaths(), "\n")
 	common.OptionMap["EmailDomainRestrictionEnabled"] = strconv.FormatBool(common.EmailDomainRestrictionEnabled)
 	common.OptionMap["EmailAliasRestrictionEnabled"] = strconv.FormatBool(common.EmailAliasRestrictionEnabled)
 	common.OptionMap["EmailDomainWhitelist"] = strings.Join(common.EmailDomainWhitelist, ",")
@@ -558,6 +563,20 @@ func updateOptionMap(key string, value string) (err error) {
 	case "ChannelDisableThreshold":
 		threshold, _ := strconv.ParseFloat(value, 64)
 		common.SetChannelDisableThreshold(threshold)
+	case "ChannelBreakerFailureLimit":
+		limit, _ := strconv.Atoi(value)
+		common.SetChannelBreakerFailureLimit(limit)
+	case "ChannelBreakerCooldownSeconds":
+		seconds, _ := strconv.Atoi(value)
+		common.SetChannelBreakerCooldownSeconds(seconds)
+	case "ChannelBreakerProbeCount":
+		count, _ := strconv.Atoi(value)
+		common.SetChannelBreakerProbeCount(count)
+	case "ChannelBreakerProbeSuccessCount":
+		count, _ := strconv.Atoi(value)
+		common.SetChannelBreakerProbeSuccessCount(count)
+	case "ChannelBreakerExcludePaths":
+		common.SetChannelBreakerExcludePaths(value)
 	case "QuotaPerUnit":
 		common.QuotaPerUnit, _ = strconv.ParseFloat(value, 64)
 	case "SensitiveWords":

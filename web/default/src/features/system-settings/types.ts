@@ -280,6 +280,11 @@ export type OperationsSettings = {
   AutomaticDisableKeywords: string
   AutomaticDisableStatusCodes: string
   AutomaticRetryStatusCodes: string
+  ChannelBreakerFailureLimit: string
+  ChannelBreakerCooldownSeconds: string
+  ChannelBreakerProbeCount: string
+  ChannelBreakerProbeSuccessCount: string
+  ChannelBreakerExcludePaths: string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   SMTPServer: string

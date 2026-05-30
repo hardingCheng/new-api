@@ -1772,7 +1772,7 @@
     "footer.columns.related.links.oneApi": "1つのAPI",
     "footer.columns.related.title": "関連プロジェクト",
     "footer.defaultCopyright": "すべての権利を留保します。",
-    "footer.new\u0061pi.projectAttributionSuffix": "すべての権利を留保します。プロジェクトコントリビューターにより設計・開発されています。",
+    "footer.newapi.projectAttributionSuffix": "すべての権利を留保します。プロジェクトコントリビューターにより設計・開発されています。",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "2025 年 5 月 10 日以降に追加されたチャネルの場合、デプロイ時にモデル名から「.」を削除する必要はありません",
     "For private deployments, format: https://fastgpt.run/api/openapi": "プライベートデプロイメントの場合、形式: https://fastgpt.run/api/openapi",
     "Force a syntactically valid JSON response": "構文的に有効な JSON 応答を強制",
@@ -4518,6 +4518,19 @@
     "Zero retention": "データ保持なし",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "Circuit breaker on failure": "失敗時のサーキットブレーカー",
+    "Temporarily skip unhealthy channels without changing their enabled status": "有効状態を変更せずに異常なチャネルを一時的にスキップします",
+    "Breaker failure limit": "ブレーカー失敗回数",
+    "Open the breaker after this many consecutive failures": "連続失敗がこの回数に達したらブレーカーを開きます",
+    "Breaker cooldown (seconds)": "ブレーカーのクールダウン（秒）",
+    "Wait this long before allowing real probe requests": "実リクエストによるプローブを許可するまで待つ時間",
+    "Probe request count": "プローブリクエスト数",
+    "Maximum real requests allowed while half-open": "半開状態で許可する実リクエストの最大数",
+    "Probe success requirement": "プローブ成功条件",
+    "Close the breaker after this many probe successes": "この回数のプローブ成功後にブレーカーを閉じます",
+    "Breaker excluded paths": "ブレーカー除外パス",
+    "one path prefix per line": "1 行に 1 つのパスプレフィックス",
+    "Requests matching these path prefixes will not affect breaker state": "これらのパスプレフィックスに一致するリクエストはブレーカー状態に影響しません"
   }
 }

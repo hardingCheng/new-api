@@ -1772,7 +1772,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "Projets liés",
     "footer.defaultCopyright": "Tous droits réservés.",
-    "footer.new\u0061pi.projectAttributionSuffix": "Tous droits réservés. Conçu et développé par les contributeurs du projet.",
+    "footer.newapi.projectAttributionSuffix": "Tous droits réservés. Conçu et développé par les contributeurs du projet.",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "Pour les canaux ajoutés après le 10 mai 2025, pas besoin de supprimer \".\" des noms de modèles lors du déploiement",
     "For private deployments, format: https://fastgpt.run/api/openapi": "Pour les déploiements privés, format : https://fastgpt.run/api/openapi",
     "Force a syntactically valid JSON response": "Imposer une réponse JSON syntaxiquement valide",
@@ -4518,6 +4518,19 @@
     "Zero retention": "Aucune rétention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Circuit breaker on failure": "Disjoncteur en cas d’échec",
+    "Temporarily skip unhealthy channels without changing their enabled status": "Ignore temporairement les canaux défaillants sans modifier leur état activé",
+    "Breaker failure limit": "Limite d’échecs du disjoncteur",
+    "Open the breaker after this many consecutive failures": "Ouvre le disjoncteur après ce nombre d’échecs consécutifs",
+    "Breaker cooldown (seconds)": "Refroidissement du disjoncteur (secondes)",
+    "Wait this long before allowing real probe requests": "Attendre cette durée avant d’autoriser de vraies requêtes de test",
+    "Probe request count": "Nombre de requêtes de test",
+    "Maximum real requests allowed while half-open": "Nombre maximal de vraies requêtes autorisées en état semi-ouvert",
+    "Probe success requirement": "Succès requis pour le test",
+    "Close the breaker after this many probe successes": "Ferme le disjoncteur après ce nombre de tests réussis",
+    "Breaker excluded paths": "Chemins exclus du disjoncteur",
+    "one path prefix per line": "un préfixe de chemin par ligne",
+    "Requests matching these path prefixes will not affect breaker state": "Les requêtes correspondant à ces préfixes n’affectent pas l’état du disjoncteur"
   }
 }

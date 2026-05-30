@@ -2,12 +2,14 @@ package service
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -115,7 +117,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, _ = model.GetRandomSatisfiedChannel(autoGroup, param.ModelName, priorityRetry)
+			channel, _ = getRandomSatisfiedChannelByBreaker(param, autoGroup, priorityRetry)
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
 				// 当前分组没有该模型的可用渠道，尝试下一个分组
@@ -153,10 +155,94 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			break
 		}
 	} else {
-		channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry())
+		channel, err = getRandomSatisfiedChannelByBreaker(param, param.TokenGroup, param.GetRetry())
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}
 	}
 	return channel, selectGroup, nil
+}
+
+func getRandomSatisfiedChannelByBreaker(param *RetryParam, group string, priorityRetry int) (*model.Channel, error) {
+	maxAttempts := common.RetryTimes + 1
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+	var lastErr error
+	for offset := 0; offset < maxAttempts; offset++ {
+		channel, err := model.GetRandomSatisfiedChannelWithFilter(group, param.ModelName, priorityRetry+offset, func(channel *model.Channel) bool {
+			allowed := CanUseChannelByBreaker(param.Ctx, typesChannelError(channel))
+			if !allowed {
+				logger.LogWarn(param.Ctx, fmt.Sprintf("channel breaker skipped channel #%d", channel.Id))
+			}
+			return allowed
+		})
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if channel == nil {
+			continue
+		}
+		if !channel.ChannelInfo.IsMultiKey && !AcquireChannelBreakerProbe(param.Ctx, typesChannelError(channel)) {
+			logger.LogWarn(param.Ctx, fmt.Sprintf("channel breaker probe limit reached for channel #%d", channel.Id))
+			continue
+		}
+		return channel, nil
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, nil
+}
+
+func AllowSelectedChannelByBreaker(c *gin.Context, channel *model.Channel) bool {
+	channelError := typesChannelError(channel)
+	if !CanUseChannelByBreaker(c, channelError) {
+		return false
+	}
+	if channel.ChannelInfo.IsMultiKey {
+		return true
+	}
+	return AcquireChannelBreakerProbe(c, channelError)
+}
+
+func CanUseSelectedChannelByBreaker(c *gin.Context, channel *model.Channel) bool {
+	if channel == nil {
+		return false
+	}
+	allowed := CanUseChannelByBreaker(c, typesChannelError(channel))
+	if !allowed {
+		logger.LogWarn(c, fmt.Sprintf("channel breaker skipped channel #%d", channel.Id))
+	}
+	return allowed
+}
+
+func AllowSelectedChannelKeyByBreaker(c *gin.Context, channel *model.Channel, key string) bool {
+	channelError := typesChannelError(channel)
+	channelError.UsingKey = key
+	if !CanUseChannelByBreaker(c, channelError) {
+		return false
+	}
+	return AcquireChannelBreakerProbe(c, channelError)
+}
+
+func CanUseSelectedChannelKeyByBreaker(c *gin.Context, channel *model.Channel, key string) bool {
+	channelError := typesChannelError(channel)
+	channelError.UsingKey = key
+	allowed := CanUseChannelByBreaker(c, channelError)
+	if !allowed {
+		logger.LogWarn(c, fmt.Sprintf("channel breaker skipped channel #%d key", channel.Id))
+	}
+	return allowed
+}
+
+func typesChannelError(channel *model.Channel) types.ChannelError {
+	return types.ChannelError{
+		ChannelId:   channel.Id,
+		ChannelType: channel.Type,
+		ChannelName: channel.Name,
+		IsMultiKey:  channel.ChannelInfo.IsMultiKey,
+		AutoBan:     channel.GetAutoBan(),
+	}
 }

@@ -55,6 +55,13 @@ const OPERATIONS_SECTIONS = [
           AutomaticDisableKeywords: settings.AutomaticDisableKeywords,
           AutomaticDisableStatusCodes: settings.AutomaticDisableStatusCodes,
           AutomaticRetryStatusCodes: settings.AutomaticRetryStatusCodes,
+          ChannelBreakerFailureLimit: settings.ChannelBreakerFailureLimit,
+          ChannelBreakerCooldownSeconds:
+            settings.ChannelBreakerCooldownSeconds,
+          ChannelBreakerProbeCount: settings.ChannelBreakerProbeCount,
+          ChannelBreakerProbeSuccessCount:
+            settings.ChannelBreakerProbeSuccessCount,
+          ChannelBreakerExcludePaths: settings.ChannelBreakerExcludePaths,
           'monitor_setting.auto_test_channel_enabled':
             settings['monitor_setting.auto_test_channel_enabled'],
           'monitor_setting.auto_test_channel_minutes':

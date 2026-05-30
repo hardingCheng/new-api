@@ -1772,7 +1772,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "Các Dự Án Liên Quan",
     "footer.defaultCopyright": "Bản quyền được bảo lưu.",
-    "footer.new\u0061pi.projectAttributionSuffix": "Bản quyền được bảo lưu. Được thiết kế và phát triển bởi các cộng tác viên dự án.",
+    "footer.newapi.projectAttributionSuffix": "Bản quyền được bảo lưu. Được thiết kế và phát triển bởi các cộng tác viên dự án.",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "Đối với các kênh được thêm sau ngày 10 tháng 5 năm 2025, không cần loại bỏ \".\" khỏi tên mô hình trong quá trình triển khai",
     "For private deployments, format: https://fastgpt.run/api/openapi": "Đối với các triển khai riêng tư, định dạng: https://fastgpt.run/api/openapi",
     "Force a syntactically valid JSON response": "Buộc phản hồi JSON hợp lệ về cú pháp",
@@ -4518,6 +4518,19 @@
     "Zero retention": "Không lưu dữ liệu",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Circuit breaker on failure": "Circuit breaker khi lỗi",
+    "Temporarily skip unhealthy channels without changing their enabled status": "Tạm thời bỏ qua kênh lỗi mà không đổi trạng thái bật của kênh",
+    "Breaker failure limit": "Giới hạn lỗi của breaker",
+    "Open the breaker after this many consecutive failures": "Mở breaker sau số lần lỗi liên tiếp này",
+    "Breaker cooldown (seconds)": "Thời gian chờ breaker (giây)",
+    "Wait this long before allowing real probe requests": "Chờ khoảng thời gian này trước khi cho phép yêu cầu thăm dò thật",
+    "Probe request count": "Số yêu cầu thăm dò",
+    "Maximum real requests allowed while half-open": "Số yêu cầu thật tối đa được phép khi half-open",
+    "Probe success requirement": "Yêu cầu số lần thăm dò thành công",
+    "Close the breaker after this many probe successes": "Đóng breaker sau số lần thăm dò thành công này",
+    "Breaker excluded paths": "Đường dẫn loại trừ khỏi breaker",
+    "one path prefix per line": "mỗi dòng một tiền tố đường dẫn",
+    "Requests matching these path prefixes will not affect breaker state": "Các yêu cầu khớp những tiền tố đường dẫn này sẽ không ảnh hưởng trạng thái breaker"
   }
 }

@@ -61,6 +61,11 @@ const monitoringSchema = z
     AutomaticDisableKeywords: z.string(),
     AutomaticDisableStatusCodes: z.string(),
     AutomaticRetryStatusCodes: z.string(),
+    ChannelBreakerFailureLimit: numericString,
+    ChannelBreakerCooldownSeconds: numericString,
+    ChannelBreakerProbeCount: numericString,
+    ChannelBreakerProbeSuccessCount: numericString,
+    ChannelBreakerExcludePaths: z.string(),
     monitor_setting: z.object({
       auto_test_channel_enabled: z.boolean(),
       auto_test_channel_minutes: z.coerce
@@ -109,6 +114,11 @@ type MonitoringSettingsSectionProps = {
     AutomaticDisableKeywords: string
     AutomaticDisableStatusCodes: string
     AutomaticRetryStatusCodes: string
+    ChannelBreakerFailureLimit: string
+    ChannelBreakerCooldownSeconds: string
+    ChannelBreakerProbeCount: string
+    ChannelBreakerProbeSuccessCount: string
+    ChannelBreakerExcludePaths: string
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
   }
@@ -126,6 +136,11 @@ type NormalizedMonitoringValues = {
   AutomaticDisableKeywords: string
   AutomaticDisableStatusCodes: string
   AutomaticRetryStatusCodes: string
+  ChannelBreakerFailureLimit: string
+  ChannelBreakerCooldownSeconds: string
+  ChannelBreakerProbeCount: string
+  ChannelBreakerProbeSuccessCount: string
+  ChannelBreakerExcludePaths: string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
 }
@@ -142,6 +157,14 @@ const buildFormDefaults = (
   ),
   AutomaticDisableStatusCodes: defaults.AutomaticDisableStatusCodes ?? '',
   AutomaticRetryStatusCodes: defaults.AutomaticRetryStatusCodes ?? '',
+  ChannelBreakerFailureLimit: defaults.ChannelBreakerFailureLimit ?? '',
+  ChannelBreakerCooldownSeconds: defaults.ChannelBreakerCooldownSeconds ?? '',
+  ChannelBreakerProbeCount: defaults.ChannelBreakerProbeCount ?? '',
+  ChannelBreakerProbeSuccessCount:
+    defaults.ChannelBreakerProbeSuccessCount ?? '',
+  ChannelBreakerExcludePaths: normalizeLineEndings(
+    defaults.ChannelBreakerExcludePaths ?? ''
+  ),
   monitor_setting: {
     auto_test_channel_enabled:
       defaults['monitor_setting.auto_test_channel_enabled'],
@@ -166,6 +189,19 @@ const normalizeDefaults = (
   AutomaticRetryStatusCodes: parseHttpStatusCodeRules(
     defaults.AutomaticRetryStatusCodes ?? ''
   ).normalized,
+  ChannelBreakerFailureLimit: (
+    defaults.ChannelBreakerFailureLimit ?? ''
+  ).trim(),
+  ChannelBreakerCooldownSeconds: (
+    defaults.ChannelBreakerCooldownSeconds ?? ''
+  ).trim(),
+  ChannelBreakerProbeCount: (defaults.ChannelBreakerProbeCount ?? '').trim(),
+  ChannelBreakerProbeSuccessCount: (
+    defaults.ChannelBreakerProbeSuccessCount ?? ''
+  ).trim(),
+  ChannelBreakerExcludePaths: normalizeLineEndings(
+    defaults.ChannelBreakerExcludePaths ?? ''
+  ),
   'monitor_setting.auto_test_channel_enabled':
     defaults['monitor_setting.auto_test_channel_enabled'],
   'monitor_setting.auto_test_channel_minutes':
@@ -188,6 +224,14 @@ const normalizeFormValues = (
   AutomaticRetryStatusCodes: parseHttpStatusCodeRules(
     values.AutomaticRetryStatusCodes
   ).normalized,
+  ChannelBreakerFailureLimit: values.ChannelBreakerFailureLimit.trim(),
+  ChannelBreakerCooldownSeconds: values.ChannelBreakerCooldownSeconds.trim(),
+  ChannelBreakerProbeCount: values.ChannelBreakerProbeCount.trim(),
+  ChannelBreakerProbeSuccessCount:
+    values.ChannelBreakerProbeSuccessCount.trim(),
+  ChannelBreakerExcludePaths: normalizeLineEndings(
+    values.ChannelBreakerExcludePaths
+  ),
   'monitor_setting.auto_test_channel_enabled':
     values.monitor_setting.auto_test_channel_enabled,
   'monitor_setting.auto_test_channel_minutes':
@@ -359,9 +403,9 @@ export function MonitoringSettingsSection({
               render={({ field }) => (
                 <SettingsSwitchItem>
                   <SettingsSwitchContent>
-                    <FormLabel>{t('Disable on failure')}</FormLabel>
+                    <FormLabel>{t('Circuit breaker on failure')}</FormLabel>
                     <FormDescription>
-                      {t('Automatically disable channels when tests fail')}
+                      {t('Temporarily skip unhealthy channels without changing their enabled status')}
                     </FormDescription>
                   </SettingsSwitchContent>
                   <FormControl>
@@ -395,6 +439,124 @@ export function MonitoringSettingsSection({
               )}
             />
           </div>
+
+          <div className='grid gap-6 md:grid-cols-2'>
+            <FormField
+              control={form.control}
+              name='ChannelBreakerFailureLimit'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Breaker failure limit')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={1}
+                      step={1}
+                      value={field.value}
+                      onChange={(event) => field.onChange(event.target.value)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t('Open the breaker after this many consecutive failures')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='ChannelBreakerCooldownSeconds'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Breaker cooldown (seconds)')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={1}
+                      step={1}
+                      value={field.value}
+                      onChange={(event) => field.onChange(event.target.value)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t('Wait this long before allowing real probe requests')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          <div className='grid gap-6 md:grid-cols-2'>
+            <FormField
+              control={form.control}
+              name='ChannelBreakerProbeCount'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Probe request count')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={1}
+                      step={1}
+                      value={field.value}
+                      onChange={(event) => field.onChange(event.target.value)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t('Maximum real requests allowed while half-open')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='ChannelBreakerProbeSuccessCount'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Probe success requirement')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={1}
+                      step={1}
+                      value={field.value}
+                      onChange={(event) => field.onChange(event.target.value)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t('Close the breaker after this many probe successes')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          <FormField
+            control={form.control}
+            name='ChannelBreakerExcludePaths'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Breaker excluded paths')}</FormLabel>
+                <FormControl>
+                  <Textarea
+                    rows={3}
+                    placeholder={t('one path prefix per line')}
+                    {...field}
+                    onChange={(event) => field.onChange(event.target.value)}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t('Requests matching these path prefixes will not affect breaker state')}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
           <FormField
             control={form.control}

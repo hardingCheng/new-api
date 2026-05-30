@@ -95,9 +95,13 @@ func SyncChannelCache(frequency int) {
 }
 
 func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel, error) {
+	return GetRandomSatisfiedChannelWithFilter(group, model, retry, nil)
+}
+
+func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, allowChannel func(*Channel) bool) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry)
+		return GetChannelWithFilter(group, model, retry, allowChannel)
 	}
 
 	channelSyncLock.RLock()
@@ -118,6 +122,12 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 
 	if len(channels) == 1 {
 		if channel, ok := channelsIDM[channels[0]]; ok {
+			if channel.Status != common.ChannelStatusEnabled {
+				return nil, nil
+			}
+			if allowChannel != nil && !allowChannel(channel) {
+				return nil, nil
+			}
 			return channel, nil
 		}
 		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
@@ -147,7 +157,13 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 	var targetChannels []*Channel
 	for _, channelId := range channels {
 		if channel, ok := channelsIDM[channelId]; ok {
+			if channel.Status != common.ChannelStatusEnabled {
+				continue
+			}
 			if channel.GetPriority() == targetPriority {
+				if allowChannel != nil && !allowChannel(channel) {
+					continue
+				}
 				sumWeight += channel.GetWeight()
 				targetChannels = append(targetChannels, channel)
 			}

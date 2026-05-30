@@ -1772,7 +1772,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "相关项目",
     "footer.defaultCopyright": "版权所有。",
-    "footer.new\u0061pi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
+    "footer.newapi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "对于 2025 年 5 月 10 日之后添加的渠道，在部署时无需从模型名称中移除 \".\"",
     "For private deployments, format: https://fastgpt.run/api/openapi": "对于私有部署，格式为：https://fastgpt.run/api/openapi",
     "Force a syntactically valid JSON response": "强制返回语法合法的 JSON",
@@ -4518,6 +4518,19 @@
     "Zero retention": "零数据保留",
     "Zhipu": "智谱",
     "Zhipu V4": "智谱 V4",
-    "Zoom": "缩放"
+    "Zoom": "缩放",
+    "Circuit breaker on failure": "失败时熔断",
+    "Temporarily skip unhealthy channels without changing their enabled status": "临时跳过异常渠道，不改变其启用状态",
+    "Breaker failure limit": "熔断失败次数",
+    "Open the breaker after this many consecutive failures": "连续失败达到该次数后打开熔断",
+    "Breaker cooldown (seconds)": "熔断冷却时间（秒）",
+    "Wait this long before allowing real probe requests": "等待该时间后允许真实探测请求",
+    "Probe request count": "探测请求数",
+    "Maximum real requests allowed while half-open": "半开状态下允许的最大真实请求数",
+    "Probe success requirement": "探测成功要求",
+    "Close the breaker after this many probe successes": "探测成功达到该次数后关闭熔断",
+    "Breaker excluded paths": "熔断排除路径",
+    "one path prefix per line": "每行一个路径前缀",
+    "Requests matching these path prefixes will not affect breaker state": "匹配这些路径前缀的请求不会影响熔断状态"
   }
 }
