@@ -826,7 +826,7 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 	cleaned := make(map[string]json.RawMessage, len(raw))
 	for key, value := range raw {
 		switch key {
-		case "duration", "metadata", "images", "input_reference":
+		case "duration", "metadata", "images", "input_reference", "seconds":
 			continue
 		default:
 			cleaned[key] = value
@@ -847,6 +847,23 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 
 	if err := common.Unmarshal(cleanedData, &aux); err != nil {
 		return err
+	}
+
+	if rawSeconds, exists := raw["seconds"]; exists {
+		var secondsString string
+		if err := common.Unmarshal(rawSeconds, &secondsString); err == nil {
+			t.Seconds = strings.TrimSpace(secondsString)
+		} else {
+			var secondsNumber float64
+			if err := common.Unmarshal(rawSeconds, &secondsNumber); err != nil {
+				return fmt.Errorf("seconds must be a string or number")
+			}
+			if secondsNumber == float64(int64(secondsNumber)) {
+				t.Seconds = strconv.FormatInt(int64(secondsNumber), 10)
+			} else {
+				t.Seconds = strconv.FormatFloat(secondsNumber, 'f', -1, 64)
+			}
+		}
 	}
 
 	if rawDuration, exists := raw["duration"]; exists {
