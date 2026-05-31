@@ -84,6 +84,97 @@ func IsSeedanceVideoModel(model string) bool {
 	return strings.HasPrefix(model, "seedance-") || strings.HasPrefix(model, "doubao-seedance-")
 }
 
+func IsGrokImagineVideoModel(model string) bool {
+	switch strings.ToLower(strings.TrimSpace(model)) {
+	case "grok-imagine-1.0-video", "grok-imagine-video":
+		return true
+	default:
+		return false
+	}
+}
+
+func ShouldFillGrokImagineInputReference(info *RelayInfo, req TaskSubmitReq) bool {
+	if IsGrokImagineVideoModel(req.Model) {
+		return true
+	}
+	if info == nil || info.ChannelMeta == nil {
+		return false
+	}
+	return IsGrokImagineVideoModel(info.OriginModelName) || IsGrokImagineVideoModel(info.UpstreamModelName)
+}
+
+func FillMissingGrokImagineInputReference(info *RelayInfo, req *TaskSubmitReq) {
+	if req == nil || !ShouldFillGrokImagineInputReference(info, *req) || len(req.InputReferenceValues()) > 0 {
+		return
+	}
+	if values := referenceValuesFromImageFields(req.Image, req.Images); len(values) > 0 {
+		req.SetInputReferenceValues(values)
+	}
+}
+
+func referenceValuesFromImageFields(image string, images []string) []string {
+	values := make([]string, 0, len(images)+1)
+	if strings.TrimSpace(image) != "" {
+		values = append(values, image)
+	}
+	values = append(values, images...)
+	return normalizeStringList(values)
+}
+
+func FillMissingGrokImagineInputReferenceMap(info *RelayInfo, req TaskSubmitReq, bodyMap map[string]interface{}) {
+	if bodyMap == nil || !ShouldFillGrokImagineInputReference(info, req) || hasNonEmptyField(bodyMap["input_reference"]) {
+		return
+	}
+	values := req.InputReferenceValues()
+	if len(values) == 0 {
+		values = referenceValuesFromBodyMap(bodyMap)
+	}
+	if value := upstreamStringListValue(values); value != nil {
+		bodyMap["input_reference"] = value
+	}
+}
+
+func hasNonEmptyField(value interface{}) bool {
+	switch v := value.(type) {
+	case nil:
+		return false
+	case string:
+		return strings.TrimSpace(v) != ""
+	case []string:
+		return len(normalizeStringList(v)) > 0
+	case []interface{}:
+		for _, item := range v {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+				return true
+			}
+		}
+		return false
+	default:
+		return true
+	}
+}
+
+func referenceValuesFromBodyMap(bodyMap map[string]interface{}) []string {
+	values := make([]string, 0)
+	appendValue := func(raw interface{}) {
+		switch v := raw.(type) {
+		case string:
+			values = append(values, v)
+		case []string:
+			values = append(values, v...)
+		case []interface{}:
+			for _, item := range v {
+				if s, ok := item.(string); ok {
+					values = append(values, s)
+				}
+			}
+		}
+	}
+	appendValue(bodyMap["image"])
+	appendValue(bodyMap["images"])
+	return normalizeStringList(values)
+}
+
 func clampSeedanceDuration(seconds int) int {
 	if seconds < 4 {
 		return 4
@@ -250,6 +341,9 @@ func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string
 	if images := formData["images"]; len(images) > 0 {
 		req.Images = images
 	}
+	if inputReferences := formData["input_reference"]; len(inputReferences) > 0 {
+		req.SetInputReferenceValues(inputReferences)
+	}
 
 	for key, values := range formData {
 		if len(values) > 0 && !isKnownTaskField(key) {
@@ -281,9 +375,7 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 	model = req.Model
 	size = req.Size
 	seconds = EffectiveTaskDuration(req)
-	if req.InputReference != "" {
-		req.Images = []string{req.InputReference}
-	}
+	FillMissingGrokImagineInputReference(info, &req)
 
 	if strings.TrimSpace(req.Model) == "" {
 		return createTaskError(fmt.Errorf("model field is required"), "missing_model", http.StatusBadRequest, true)
@@ -365,6 +457,7 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 		// 兼容单图上传
 		req.Images = []string{req.Image}
 	}
+	FillMissingGrokImagineInputReference(info, &req)
 
 	normalizeTaskDuration(&req)
 	applySeedanceDurationBounds(&req)

@@ -699,19 +699,84 @@ type TaskRelayInfo struct {
 }
 
 type TaskSubmitReq struct {
-	Prompt         string                 `json:"prompt"`
-	Model          string                 `json:"model,omitempty"`
-	Mode           string                 `json:"mode,omitempty"`
-	Image          string                 `json:"image,omitempty"`
-	Images         []string               `json:"images,omitempty"`
-	Content        []TaskContentItem      `json:"content,omitempty"`
-	Size           string                 `json:"size,omitempty"`
-	Duration       int                    `json:"duration,omitempty"`
-	Seconds        string                 `json:"seconds,omitempty"`
-	InputReference string                 `json:"input_reference,omitempty"`
-	GenerateAudio  *dto.BoolValue         `json:"generate_audio,omitempty"`
-	Ratio          string                 `json:"ratio,omitempty"`
-	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+	Prompt          string                 `json:"prompt"`
+	Model           string                 `json:"model,omitempty"`
+	Mode            string                 `json:"mode,omitempty"`
+	Image           string                 `json:"image,omitempty"`
+	Images          []string               `json:"images,omitempty"`
+	Content         []TaskContentItem      `json:"content,omitempty"`
+	Size            string                 `json:"size,omitempty"`
+	Duration        int                    `json:"duration,omitempty"`
+	Seconds         string                 `json:"seconds,omitempty"`
+	InputReference  string                 `json:"input_reference,omitempty"`
+	InputReferences []string               `json:"-"`
+	GenerateAudio   *dto.BoolValue         `json:"generate_audio,omitempty"`
+	Ratio           string                 `json:"ratio,omitempty"`
+	Metadata        map[string]interface{} `json:"metadata,omitempty"`
+}
+
+func normalizeStringList(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		normalized = append(normalized, value)
+	}
+	return normalized
+}
+
+func stringListFromRawJSON(raw json.RawMessage) ([]string, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var single string
+	if err := common.Unmarshal(raw, &single); err == nil {
+		return normalizeStringList([]string{single}), nil
+	}
+	var multiple []string
+	if err := common.Unmarshal(raw, &multiple); err == nil {
+		return normalizeStringList(multiple), nil
+	}
+	return nil, fmt.Errorf("must be a string or string array")
+}
+
+func upstreamStringListValue(values []string) interface{} {
+	values = normalizeStringList(values)
+	if len(values) == 0 {
+		return nil
+	}
+	if len(values) == 1 {
+		return values[0]
+	}
+	return values
+}
+
+func (t *TaskSubmitReq) SetInputReferenceValues(values []string) {
+	values = normalizeStringList(values)
+	t.InputReferences = values
+	if len(values) > 0 {
+		t.InputReference = values[0]
+		return
+	}
+	t.InputReference = ""
+}
+
+func (t TaskSubmitReq) InputReferenceValues() []string {
+	if len(t.InputReferences) > 0 {
+		return normalizeStringList(t.InputReferences)
+	}
+	if strings.TrimSpace(t.InputReference) != "" {
+		return normalizeStringList([]string{t.InputReference})
+	}
+	return nil
+}
+
+func (t TaskSubmitReq) InputReferenceUpstreamValue() interface{} {
+	return upstreamStringListValue(t.InputReferenceValues())
 }
 
 type TaskMediaURL struct {
@@ -748,11 +813,30 @@ func (t *TaskSubmitReq) GetPrompt() string {
 }
 
 func (t *TaskSubmitReq) HasImage() bool {
-	return len(t.Images) > 0
+	return len(t.Images) > 0 || len(t.InputReferenceValues()) > 0
 }
 
 func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 	type Alias TaskSubmitReq
+	var raw map[string]json.RawMessage
+	if err := common.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	cleaned := make(map[string]json.RawMessage, len(raw))
+	for key, value := range raw {
+		switch key {
+		case "duration", "metadata", "images", "input_reference":
+			continue
+		default:
+			cleaned[key] = value
+		}
+	}
+
+	cleanedData, err := common.Marshal(cleaned)
+	if err != nil {
+		return err
+	}
 	aux := &struct {
 		Metadata json.RawMessage `json:"metadata,omitempty"`
 		Duration json.RawMessage `json:"duration,omitempty"`
@@ -761,11 +845,12 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 		Alias: (*Alias)(t),
 	}
 
-	if err := common.Unmarshal(data, &aux); err != nil {
+	if err := common.Unmarshal(cleanedData, &aux); err != nil {
 		return err
 	}
 
-	if len(aux.Duration) > 0 {
+	if rawDuration, exists := raw["duration"]; exists {
+		aux.Duration = rawDuration
 		var durationInt int
 		if err := common.Unmarshal(aux.Duration, &durationInt); err == nil {
 			t.Duration = durationInt
@@ -779,7 +864,24 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	if len(aux.Metadata) > 0 {
+	if rawImages, exists := raw["images"]; exists {
+		images, err := stringListFromRawJSON(rawImages)
+		if err != nil {
+			return fmt.Errorf("images %w", err)
+		}
+		t.Images = images
+	}
+
+	if rawInputReference, exists := raw["input_reference"]; exists {
+		inputReferences, err := stringListFromRawJSON(rawInputReference)
+		if err != nil {
+			return fmt.Errorf("input_reference %w", err)
+		}
+		t.SetInputReferenceValues(inputReferences)
+	}
+
+	if rawMetadata, exists := raw["metadata"]; exists {
+		aux.Metadata = rawMetadata
 		var metadataStr string
 		if err := common.Unmarshal(aux.Metadata, &metadataStr); err == nil && metadataStr != "" {
 			var metadataObj map[string]interface{}

@@ -168,6 +168,9 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 					bodyMap["duration"] = req.Duration
 				}
 			}
+			if req, err := relaycommon.GetTaskRequest(c); err == nil {
+				relaycommon.FillMissingGrokImagineInputReferenceMap(info, req, bodyMap)
+			}
 			if newBody, err := common.Marshal(bodyMap); err == nil {
 				return bytes.NewReader(newBody), nil
 			}
@@ -185,12 +188,16 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		writer.WriteField("model", info.UpstreamModelName)
 		taskReq, _ := relaycommon.GetTaskRequest(c)
 		hasDuration := relaycommon.EffectiveTaskDuration(taskReq) > 0
+		hasInputReference := false
 		for key, values := range formData.Value {
 			if key == "model" {
 				continue
 			}
 			if hasDuration && (key == "seconds" || key == "duration") {
 				continue
+			}
+			if key == "input_reference" && len(values) > 0 {
+				hasInputReference = true
 			}
 			for _, v := range values {
 				writer.WriteField(key, v)
@@ -200,6 +207,11 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 			writer.WriteField("seconds", taskReq.Seconds)
 			if _, exists := formData.Value["duration"]; exists {
 				writer.WriteField("duration", strconv.Itoa(taskReq.Duration))
+			}
+		}
+		if !hasInputReference && relaycommon.ShouldFillGrokImagineInputReference(info, taskReq) {
+			for _, value := range taskReq.InputReferenceValues() {
+				writer.WriteField("input_reference", value)
 			}
 		}
 		for fieldName, fileHeaders := range formData.File {
