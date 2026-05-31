@@ -13,9 +13,9 @@ import (
 )
 
 func TestChannelBreakerOpensAfterFailureThreshold(t *testing.T) {
-	common.SetAutomaticDisableChannelEnabled(true)
+	common.SetChannelBreakerEnabled(true)
 	disableRedisForBreakerTest(t)
-	t.Cleanup(func() { common.SetAutomaticDisableChannelEnabled(false) })
+	t.Cleanup(func() { common.SetChannelBreakerEnabled(false) })
 
 	c := testBreakerContext("/v1/chat/completions")
 	channelError := types.ChannelError{ChannelId: 1001, UsingKey: "key-a", AutoBan: true}
@@ -33,9 +33,9 @@ func TestChannelBreakerOpensAfterFailureThreshold(t *testing.T) {
 }
 
 func TestChannelBreakerSuccessClearsFailures(t *testing.T) {
-	common.SetAutomaticDisableChannelEnabled(true)
+	common.SetChannelBreakerEnabled(true)
 	disableRedisForBreakerTest(t)
-	t.Cleanup(func() { common.SetAutomaticDisableChannelEnabled(false) })
+	t.Cleanup(func() { common.SetChannelBreakerEnabled(false) })
 
 	c := testBreakerContext("/v1/chat/completions")
 	channelError := types.ChannelError{ChannelId: 1002, UsingKey: "key-a", AutoBan: true}
@@ -52,9 +52,9 @@ func TestChannelBreakerSuccessClearsFailures(t *testing.T) {
 }
 
 func TestChannelBreakerSeparatesKeys(t *testing.T) {
-	common.SetAutomaticDisableChannelEnabled(true)
+	common.SetChannelBreakerEnabled(true)
 	disableRedisForBreakerTest(t)
-	t.Cleanup(func() { common.SetAutomaticDisableChannelEnabled(false) })
+	t.Cleanup(func() { common.SetChannelBreakerEnabled(false) })
 
 	c := testBreakerContext("/v1/chat/completions")
 	keyA := types.ChannelError{ChannelId: 1003, UsingKey: "key-a", AutoBan: true}
@@ -71,9 +71,9 @@ func TestChannelBreakerSeparatesKeys(t *testing.T) {
 }
 
 func TestChannelBreakerExcludesVideos(t *testing.T) {
-	common.SetAutomaticDisableChannelEnabled(true)
+	common.SetChannelBreakerEnabled(true)
 	disableRedisForBreakerTest(t)
-	t.Cleanup(func() { common.SetAutomaticDisableChannelEnabled(false) })
+	t.Cleanup(func() { common.SetChannelBreakerEnabled(false) })
 
 	c := testBreakerContext("/v1/videos")
 	channelError := types.ChannelError{ChannelId: 1004, UsingKey: "key-a", AutoBan: true}
@@ -87,12 +87,12 @@ func TestChannelBreakerExcludesVideos(t *testing.T) {
 }
 
 func TestChannelBreakerHalfOpenRestoresAfterMajoritySuccess(t *testing.T) {
-	common.SetAutomaticDisableChannelEnabled(true)
+	common.SetChannelBreakerEnabled(true)
 	disableRedisForBreakerTest(t)
 	oldCooldown := channelBreakerCooldown
 	channelBreakerCooldown = time.Millisecond
 	t.Cleanup(func() {
-		common.SetAutomaticDisableChannelEnabled(false)
+		common.SetChannelBreakerEnabled(false)
 		channelBreakerCooldown = oldCooldown
 	})
 
@@ -114,12 +114,12 @@ func TestChannelBreakerHalfOpenRestoresAfterMajoritySuccess(t *testing.T) {
 }
 
 func TestChannelBreakerHalfOpenRestoresWithMixedMajoritySuccess(t *testing.T) {
-	common.SetAutomaticDisableChannelEnabled(true)
+	common.SetChannelBreakerEnabled(true)
 	disableRedisForBreakerTest(t)
 	oldCooldown := channelBreakerCooldown
 	channelBreakerCooldown = time.Millisecond
 	t.Cleanup(func() {
-		common.SetAutomaticDisableChannelEnabled(false)
+		common.SetChannelBreakerEnabled(false)
 		channelBreakerCooldown = oldCooldown
 	})
 
@@ -145,12 +145,12 @@ func TestChannelBreakerHalfOpenRestoresWithMixedMajoritySuccess(t *testing.T) {
 }
 
 func TestChannelBreakerCanUseDoesNotConsumeProbeSlot(t *testing.T) {
-	common.SetAutomaticDisableChannelEnabled(true)
+	common.SetChannelBreakerEnabled(true)
 	disableRedisForBreakerTest(t)
 	oldCooldown := channelBreakerCooldown
 	channelBreakerCooldown = time.Millisecond
 	t.Cleanup(func() {
-		common.SetAutomaticDisableChannelEnabled(false)
+		common.SetChannelBreakerEnabled(false)
 		channelBreakerCooldown = oldCooldown
 	})
 
@@ -170,6 +170,43 @@ func TestChannelBreakerCanUseDoesNotConsumeProbeSlot(t *testing.T) {
 		require.True(t, AcquireChannelBreakerProbe(c, channelError))
 	}
 	require.False(t, AcquireChannelBreakerProbe(c, channelError))
+}
+
+func TestChannelBreakerIndependentFromAutomaticDisableSwitch(t *testing.T) {
+	common.SetAutomaticDisableChannelEnabled(false)
+	common.SetChannelBreakerEnabled(true)
+	disableRedisForBreakerTest(t)
+	t.Cleanup(func() {
+		common.SetAutomaticDisableChannelEnabled(false)
+		common.SetChannelBreakerEnabled(false)
+	})
+
+	c := testBreakerContext("/v1/chat/completions")
+	channelError := types.ChannelError{ChannelId: 1008, UsingKey: "key-a", AutoBan: true}
+	ClearChannelBreaker(channelError)
+
+	for i := 0; i < GetChannelBreakerFailureThreshold(); i++ {
+		RecordChannelBreakerFailure(c, channelError, true)
+	}
+
+	require.False(t, AllowChannelByBreaker(c, channelError))
+}
+
+func TestChannelBreakerDisabledSwitchDoesNotBlockChannel(t *testing.T) {
+	common.SetChannelBreakerEnabled(false)
+	disableRedisForBreakerTest(t)
+
+	c := testBreakerContext("/v1/chat/completions")
+	channelError := types.ChannelError{ChannelId: 1009, UsingKey: "key-a", AutoBan: true}
+	ClearChannelBreaker(channelError)
+
+	for i := 0; i < GetChannelBreakerFailureThreshold(); i++ {
+		opened, message := RecordChannelBreakerFailure(c, channelError, true)
+		require.False(t, opened)
+		require.Empty(t, message)
+	}
+
+	require.True(t, AllowChannelByBreaker(c, channelError))
 }
 
 func testBreakerContext(path string) *gin.Context {

@@ -54,7 +54,7 @@ func ShouldExcludeChannelBreaker(c *gin.Context) bool {
 }
 
 func CanUseChannelByBreaker(c *gin.Context, channelError types.ChannelError) bool {
-	if !common.IsAutomaticDisableChannelEnabled() || ShouldExcludeChannelBreaker(c) || !channelError.AutoBan {
+	if !common.IsChannelBreakerEnabled() || ShouldExcludeChannelBreaker(c) || !channelError.AutoBan {
 		return true
 	}
 	key := channelBreakerKey(channelError)
@@ -76,7 +76,7 @@ func CanUseChannelByBreaker(c *gin.Context, channelError types.ChannelError) boo
 }
 
 func AcquireChannelBreakerProbe(c *gin.Context, channelError types.ChannelError) bool {
-	if !common.IsAutomaticDisableChannelEnabled() || ShouldExcludeChannelBreaker(c) || !channelError.AutoBan {
+	if !common.IsChannelBreakerEnabled() || ShouldExcludeChannelBreaker(c) || !channelError.AutoBan {
 		return true
 	}
 	key := channelBreakerKey(channelError)
@@ -120,7 +120,7 @@ func AllowChannelByBreaker(c *gin.Context, channelError types.ChannelError) bool
 }
 
 func RecordChannelBreakerFailure(c *gin.Context, channelError types.ChannelError, shouldTrip bool) (bool, string) {
-	if !common.IsAutomaticDisableChannelEnabled() || ShouldExcludeChannelBreaker(c) || !channelError.AutoBan {
+	if !common.IsChannelBreakerEnabled() || ShouldExcludeChannelBreaker(c) || !channelError.AutoBan {
 		return false, ""
 	}
 	key := channelBreakerKey(channelError)
@@ -152,7 +152,7 @@ func RecordChannelBreakerFailure(c *gin.Context, channelError types.ChannelError
 }
 
 func RecordChannelBreakerSuccess(c *gin.Context, channelError types.ChannelError) {
-	if !common.IsAutomaticDisableChannelEnabled() || ShouldExcludeChannelBreaker(c) {
+	if !common.IsChannelBreakerEnabled() || ShouldExcludeChannelBreaker(c) {
 		return
 	}
 	key := channelBreakerKey(channelError)

@@ -54,6 +54,10 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 	if !common.IsAutomaticDisableChannelEnabled() {
 		return false
 	}
+	return ShouldTripChannelBreaker(err)
+}
+
+func ShouldTripChannelBreaker(err *types.NewAPIError) bool {
 	if err == nil {
 		return false
 	}

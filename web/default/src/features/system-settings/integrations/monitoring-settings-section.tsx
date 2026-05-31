@@ -58,6 +58,7 @@ const monitoringSchema = z
     QuotaRemindThreshold: numericString,
     AutomaticDisableChannelEnabled: z.boolean(),
     AutomaticEnableChannelEnabled: z.boolean(),
+    ChannelBreakerEnabled: z.boolean(),
     AutomaticDisableKeywords: z.string(),
     AutomaticDisableStatusCodes: z.string(),
     AutomaticRetryStatusCodes: z.string(),
@@ -111,6 +112,7 @@ type MonitoringSettingsSectionProps = {
     QuotaRemindThreshold: string
     AutomaticDisableChannelEnabled: boolean
     AutomaticEnableChannelEnabled: boolean
+    ChannelBreakerEnabled: boolean
     AutomaticDisableKeywords: string
     AutomaticDisableStatusCodes: string
     AutomaticRetryStatusCodes: string
@@ -133,6 +135,7 @@ type NormalizedMonitoringValues = {
   QuotaRemindThreshold: string
   AutomaticDisableChannelEnabled: boolean
   AutomaticEnableChannelEnabled: boolean
+  ChannelBreakerEnabled: boolean
   AutomaticDisableKeywords: string
   AutomaticDisableStatusCodes: string
   AutomaticRetryStatusCodes: string
@@ -152,6 +155,7 @@ const buildFormDefaults = (
   QuotaRemindThreshold: defaults.QuotaRemindThreshold ?? '',
   AutomaticDisableChannelEnabled: defaults.AutomaticDisableChannelEnabled,
   AutomaticEnableChannelEnabled: defaults.AutomaticEnableChannelEnabled,
+  ChannelBreakerEnabled: defaults.ChannelBreakerEnabled,
   AutomaticDisableKeywords: normalizeLineEndings(
     defaults.AutomaticDisableKeywords ?? ''
   ),
@@ -180,6 +184,7 @@ const normalizeDefaults = (
   QuotaRemindThreshold: (defaults.QuotaRemindThreshold ?? '').trim(),
   AutomaticDisableChannelEnabled: defaults.AutomaticDisableChannelEnabled,
   AutomaticEnableChannelEnabled: defaults.AutomaticEnableChannelEnabled,
+  ChannelBreakerEnabled: defaults.ChannelBreakerEnabled,
   AutomaticDisableKeywords: normalizeLineEndings(
     defaults.AutomaticDisableKeywords ?? ''
   ),
@@ -215,6 +220,7 @@ const normalizeFormValues = (
   QuotaRemindThreshold: values.QuotaRemindThreshold.trim(),
   AutomaticDisableChannelEnabled: values.AutomaticDisableChannelEnabled,
   AutomaticEnableChannelEnabled: values.AutomaticEnableChannelEnabled,
+  ChannelBreakerEnabled: values.ChannelBreakerEnabled,
   AutomaticDisableKeywords: normalizeLineEndings(
     values.AutomaticDisableKeywords
   ),
@@ -403,6 +409,27 @@ export function MonitoringSettingsSection({
               render={({ field }) => (
                 <SettingsSwitchItem>
                   <SettingsSwitchContent>
+                    <FormLabel>{t('Auto-disable channels')}</FormLabel>
+                    <FormDescription>
+                      {t('Change channel status to auto-disabled when automatic checks fail')}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='ChannelBreakerEnabled'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
                     <FormLabel>{t('Circuit breaker on failure')}</FormLabel>
                     <FormDescription>
                       {t('Temporarily skip unhealthy channels without changing their enabled status')}
@@ -417,7 +444,9 @@ export function MonitoringSettingsSection({
                 </SettingsSwitchItem>
               )}
             />
+          </div>
 
+          <div className='grid gap-6 md:grid-cols-2'>
             <FormField
               control={form.control}
               name='AutomaticEnableChannelEnabled'
@@ -574,7 +603,7 @@ export function MonitoringSettingsSection({
                 </FormControl>
                 <FormDescription>
                   {t(
-                    'If an upstream error contains any of these keywords (case insensitive), the channel will be disabled automatically.'
+                    'If an upstream error contains any of these keywords, it is treated as a channel failure.'
                   )}
                 </FormDescription>
                 <FormMessage />
@@ -588,7 +617,7 @@ export function MonitoringSettingsSection({
               name='AutomaticDisableStatusCodes'
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('Auto-disable status codes')}</FormLabel>
+                  <FormLabel>{t('Channel failure status codes')}</FormLabel>
                   <FormControl>
                     <Input
                       placeholder={t('e.g. 401, 403, 429, 500-599')}

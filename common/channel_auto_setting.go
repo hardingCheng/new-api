@@ -10,6 +10,7 @@ var (
 	channelDisableThresholdBits atomic.Uint64
 	automaticDisableChannelFlag atomic.Bool
 	automaticEnableChannelFlag  atomic.Bool
+	channelBreakerEnabledFlag   atomic.Bool
 	channelBreakerFailureLimit  atomic.Int64
 	channelBreakerCooldownSecs  atomic.Int64
 	channelBreakerProbeCount    atomic.Int64
@@ -21,6 +22,7 @@ func init() {
 	SetChannelDisableThreshold(5.0)
 	SetAutomaticDisableChannelEnabled(false)
 	SetAutomaticEnableChannelEnabled(false)
+	SetChannelBreakerEnabled(false)
 	SetChannelBreakerFailureLimit(5)
 	SetChannelBreakerCooldownSeconds(60)
 	SetChannelBreakerProbeCount(5)
@@ -50,6 +52,14 @@ func IsAutomaticEnableChannelEnabled() bool {
 
 func SetAutomaticEnableChannelEnabled(enabled bool) {
 	automaticEnableChannelFlag.Store(enabled)
+}
+
+func IsChannelBreakerEnabled() bool {
+	return channelBreakerEnabledFlag.Load()
+}
+
+func SetChannelBreakerEnabled(enabled bool) {
+	channelBreakerEnabledFlag.Store(enabled)
 }
 
 func GetChannelBreakerFailureLimit() int {
