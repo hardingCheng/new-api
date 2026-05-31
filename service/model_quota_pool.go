@@ -134,6 +134,14 @@ func SettleModelQuotaPool(info *relaycommon.RelayInfo) {
 	info.ModelQuotaPoolSettled = true
 }
 
+func SettleModelQuotaPoolWithQuota(info *relaycommon.RelayInfo, actualQuota int) {
+	if info == nil || len(info.ModelQuotaPools) == 0 {
+		return
+	}
+	adjustRelayModelQuotaPoolWithAdjuster(info, ratio_setting.ModelQuotaPoolMetricQuota, int64(actualQuota), adjustModelQuotaPool)
+	info.ModelQuotaPoolSettled = true
+}
+
 func RollbackModelQuotaPool(info *relaycommon.RelayInfo) {
 	if info == nil || info.ModelQuotaPoolSettled || len(info.ModelQuotaPools) == 0 {
 		return
@@ -149,6 +157,58 @@ func RollbackTaskModelQuotaPool(task *model.Task) {
 	}
 	rollbackModelQuotaPool(modelQuotaPoolConsumedFromMatches(task.PrivateData.BillingContext.ModelQuotaPools))
 	task.PrivateData.BillingContext.ModelQuotaPools = nil
+}
+
+func AdjustTaskModelQuotaPoolQuota(task *model.Task, actualQuota int) {
+	if task == nil || task.PrivateData.BillingContext == nil || len(task.PrivateData.BillingContext.ModelQuotaPools) == 0 || actualQuota < 0 {
+		return
+	}
+	adjustTaskModelQuotaPool(task, ratio_setting.ModelQuotaPoolMetricQuota, int64(actualQuota))
+}
+
+func AdjustTaskModelQuotaPoolTokens(task *model.Task, actualTokens int) {
+	if task == nil || task.PrivateData.BillingContext == nil || len(task.PrivateData.BillingContext.ModelQuotaPools) == 0 || actualTokens < 0 {
+		return
+	}
+	adjustTaskModelQuotaPool(task, ratio_setting.ModelQuotaPoolMetricTotalTokens, int64(actualTokens))
+}
+
+func adjustTaskModelQuotaPool(task *model.Task, metric string, actualAmount int64) {
+	adjustTaskModelQuotaPoolWithAdjuster(task, metric, actualAmount, adjustModelQuotaPool)
+}
+
+func adjustRelayModelQuotaPoolWithAdjuster(info *relaycommon.RelayInfo, metric string, actualAmount int64, adjuster func(string, int64) bool) {
+	matches := info.ModelQuotaPools
+	adjustModelQuotaPoolMatches(matches, metric, actualAmount, adjuster)
+	info.ModelQuotaPools = matches
+}
+
+func adjustTaskModelQuotaPoolWithAdjuster(task *model.Task, metric string, actualAmount int64, adjuster func(string, int64) bool) {
+	matches := task.PrivateData.BillingContext.ModelQuotaPools
+	adjustModelQuotaPoolMatches(matches, metric, actualAmount, adjuster)
+	task.PrivateData.BillingContext.ModelQuotaPools = matches
+}
+
+func adjustModelQuotaPoolMatches(matches []ratio_setting.ModelQuotaPoolMatch, metric string, actualAmount int64, adjuster func(string, int64) bool) {
+	for i := range matches {
+		match := &matches[i]
+		if match.Metric != metric || strings.TrimSpace(match.RedisKey) == "" || match.Amount <= 0 {
+			continue
+		}
+		delta := actualAmount - match.Amount
+		if delta == 0 {
+			continue
+		}
+		if adjuster == nil || !adjuster(match.RedisKey, delta) {
+			continue
+		}
+		match.Amount = actualAmount
+		match.UsedAfter += delta
+		match.Remaining -= delta
+		if match.Remaining < 0 {
+			match.Remaining = 0
+		}
+	}
 }
 
 func modelQuotaPoolConsumedFromMatches(matches []ratio_setting.ModelQuotaPoolMatch) map[string]int64 {
@@ -246,7 +306,6 @@ func rollbackModelQuotaPool(consumed map[string]int64) {
 	if len(consumed) == 0 || !common.RedisEnabled || common.RDB == nil {
 		return
 	}
-	ctx := context.Background()
 	for key, amount := range consumed {
 		if strings.TrimSpace(key) == "" {
 			continue
@@ -254,10 +313,32 @@ func rollbackModelQuotaPool(consumed map[string]int64) {
 		if amount <= 0 {
 			amount = 1
 		}
-		if err := common.RDB.DecrBy(ctx, key, amount).Err(); err != nil {
-			common.SysError("rollback model quota pool failed: " + err.Error())
+		adjustModelQuotaPool(key, -amount)
+	}
+}
+
+func adjustModelQuotaPool(key string, delta int64) bool {
+	if strings.TrimSpace(key) == "" || delta == 0 || !common.RedisEnabled || common.RDB == nil {
+		return false
+	}
+	ctx := context.Background()
+	var err error
+	if delta > 0 {
+		err = common.RDB.IncrBy(ctx, key, delta).Err()
+	} else {
+		err = common.RDB.DecrBy(ctx, key, -delta).Err()
+	}
+	if err != nil {
+		common.SysError("adjust model quota pool failed: " + err.Error())
+		return false
+	}
+	if value, valueErr := common.RDB.Get(ctx, key).Int64(); valueErr == nil && value < 0 {
+		if setErr := common.RDB.Set(ctx, key, 0, redis.KeepTTL).Err(); setErr != nil {
+			common.SysError("reset negative model quota pool failed: " + setErr.Error())
+			return false
 		}
 	}
+	return true
 }
 
 func modelQuotaPoolConsumeAmount(rule ratio_setting.ModelQuotaPoolRule, info *relaycommon.RelayInfo) int64 {

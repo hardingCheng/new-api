@@ -594,7 +594,7 @@ func RelayTask(c *gin.Context) {
 		if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
 			common.SysError("settle task billing error: " + settleErr.Error())
 		}
-		service.SettleModelQuotaPool(relayInfo)
+		service.SettleModelQuotaPoolWithQuota(relayInfo, result.Quota)
 		service.LogTaskConsumption(c, relayInfo)
 
 		task := model.InitTask(result.Platform, relayInfo)

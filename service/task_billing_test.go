@@ -807,3 +807,47 @@ func TestRollbackTaskModelQuotaPoolClearsContextMatchesWithoutRedis(t *testing.T
 	RollbackTaskModelQuotaPool(task)
 	assert.Empty(t, task.PrivateData.BillingContext.ModelQuotaPools)
 }
+
+func TestAdjustTaskModelQuotaPoolWithAdjusterUpdatesOnlySuccessfulAdjustments(t *testing.T) {
+	task := makeTask(1, 1, 0, 0, BillingSourceWallet, 0)
+	task.PrivateData.BillingContext.ModelQuotaPools = []ratio_setting.ModelQuotaPoolMatch{
+		{
+			Metric:    ratio_setting.ModelQuotaPoolMetricQuota,
+			RedisKey:  "pool:quota",
+			Amount:    2000,
+			UsedAfter: 2000,
+			Remaining: 8000,
+		},
+		{
+			Metric:    ratio_setting.ModelQuotaPoolMetricQuota,
+			RedisKey:  "pool:failed",
+			Amount:    2000,
+			UsedAfter: 2000,
+			Remaining: 8000,
+		},
+		{
+			Metric:   ratio_setting.ModelQuotaPoolMetricRequests,
+			RedisKey: "pool:requests",
+			Amount:   1,
+		},
+	}
+
+	adjusted := map[string]int64{}
+	adjustTaskModelQuotaPoolWithAdjuster(task, ratio_setting.ModelQuotaPoolMetricQuota, 3000, func(key string, delta int64) bool {
+		adjusted[key] = delta
+		return key != "pool:failed"
+	})
+
+	require.Equal(t, int64(1000), adjusted["pool:quota"])
+	require.Equal(t, int64(1000), adjusted["pool:failed"])
+	require.NotContains(t, adjusted, "pool:requests")
+
+	matches := task.PrivateData.BillingContext.ModelQuotaPools
+	require.Equal(t, int64(3000), matches[0].Amount)
+	require.Equal(t, int64(3000), matches[0].UsedAfter)
+	require.Equal(t, int64(7000), matches[0].Remaining)
+
+	require.Equal(t, int64(2000), matches[1].Amount)
+	require.Equal(t, int64(2000), matches[1].UsedAfter)
+	require.Equal(t, int64(8000), matches[1].Remaining)
+}
