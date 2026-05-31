@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -206,6 +207,110 @@ func TestChannelBreakerDisabledSwitchDoesNotBlockChannel(t *testing.T) {
 		require.Empty(t, message)
 	}
 
+	require.True(t, AllowChannelByBreaker(c, channelError))
+}
+
+func TestListAndClearChannelBreakerStatuses(t *testing.T) {
+	common.SetChannelBreakerEnabled(true)
+	disableRedisForBreakerTest(t)
+	t.Cleanup(func() { common.SetChannelBreakerEnabled(false) })
+
+	c := testBreakerContext("/v1/chat/completions")
+	channelError := types.ChannelError{ChannelId: 1010, UsingKey: "key-a", AutoBan: true}
+	ClearChannelBreaker(channelError)
+
+	for i := 0; i < GetChannelBreakerFailureThreshold(); i++ {
+		RecordChannelBreakerFailure(c, channelError, true)
+	}
+
+	var matched *ChannelBreakerStatus
+	for _, status := range ListChannelBreakerStatuses() {
+		if status.ChannelId == 1010 && status.KeyHash == ChannelBreakerKeyHash("key-a") {
+			statusCopy := status
+			matched = &statusCopy
+			break
+		}
+	}
+	require.NotNil(t, matched)
+	require.Equal(t, ChannelBreakerStateOpen, matched.State)
+	require.True(t, ClearChannelBreakerByStateKey(matched.StateKey))
+	for _, status := range ListChannelBreakerStatuses() {
+		require.NotEqual(t, matched.StateKey, status.StateKey)
+	}
+}
+
+func TestChannelBreakerGroupRuleOverridesDefault(t *testing.T) {
+	common.SetChannelBreakerEnabled(true)
+	common.SetChannelBreakerRules([]common.ChannelBreakerRule{
+		{
+			Id:                "vip-rule",
+			Name:              "VIP规则",
+			Enabled:           true,
+			Scope:             common.ChannelBreakerScopeGroup,
+			Targets:           []string{"vip"},
+			FailureLimit:      2,
+			CooldownSeconds:   60,
+			ProbeCount:        5,
+			ProbeSuccessCount: 3,
+		},
+	})
+	disableRedisForBreakerTest(t)
+	t.Cleanup(func() {
+		common.SetChannelBreakerEnabled(false)
+		common.SetChannelBreakerRules(nil)
+	})
+
+	c := testBreakerContext("/v1/chat/completions")
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, "vip")
+	channelError := types.ChannelError{ChannelId: 1011, UsingKey: "key-a", AutoBan: true}
+	ClearChannelBreaker(channelError)
+
+	opened, _ := RecordChannelBreakerFailure(c, channelError, true)
+	require.False(t, opened)
+	opened, _ = RecordChannelBreakerFailure(c, channelError, true)
+	require.True(t, opened)
+
+	var matched *ChannelBreakerStatus
+	for _, status := range ListChannelBreakerStatuses() {
+		if status.ChannelId == 1011 {
+			statusCopy := status
+			matched = &statusCopy
+			break
+		}
+	}
+	require.NotNil(t, matched)
+	require.Equal(t, "vip-rule", matched.RuleId)
+	require.Equal(t, "vip", matched.Group)
+}
+
+func TestChannelBreakerModelRuleCanDisableBreaker(t *testing.T) {
+	common.SetChannelBreakerEnabled(true)
+	common.SetChannelBreakerRules([]common.ChannelBreakerRule{
+		{
+			Id:             "video-disabled",
+			Name:           "视频模型不熔断",
+			Enabled:        true,
+			Scope:          common.ChannelBreakerScopeModel,
+			Targets:        []string{"grok-imagine-video"},
+			DisableBreaker: true,
+		},
+	})
+	disableRedisForBreakerTest(t)
+	t.Cleanup(func() {
+		common.SetChannelBreakerEnabled(false)
+		common.SetChannelBreakerRules(nil)
+	})
+
+	c := testBreakerContext("/v1/chat/completions")
+	common.SetContextKey(c, constant.ContextKeyOriginalModel, "grok-imagine-video")
+	channelError := types.ChannelError{ChannelId: 1012, UsingKey: "key-a", AutoBan: true}
+	ClearChannelBreaker(channelError)
+
+	for i := 0; i < GetChannelBreakerFailureThreshold()+2; i++ {
+		opened, message := RecordChannelBreakerFailure(c, channelError, true)
+		require.False(t, opened)
+		require.Empty(t, message)
+	}
 	require.True(t, AllowChannelByBreaker(c, channelError))
 }
 

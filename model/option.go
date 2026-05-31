@@ -60,6 +60,7 @@ func InitOptionMap() {
 	common.OptionMap["ChannelBreakerProbeCount"] = strconv.Itoa(common.GetChannelBreakerProbeCount())
 	common.OptionMap["ChannelBreakerProbeSuccessCount"] = strconv.Itoa(common.GetChannelBreakerProbeSuccessCount())
 	common.OptionMap["ChannelBreakerExcludePaths"] = strings.Join(common.GetChannelBreakerExcludePaths(), "\n")
+	common.OptionMap["ChannelBreakerRules"] = common.ChannelBreakerRulesToJSONString()
 	common.OptionMap["EmailDomainRestrictionEnabled"] = strconv.FormatBool(common.EmailDomainRestrictionEnabled)
 	common.OptionMap["EmailAliasRestrictionEnabled"] = strconv.FormatBool(common.EmailAliasRestrictionEnabled)
 	common.OptionMap["EmailDomainWhitelist"] = strings.Join(common.EmailDomainWhitelist, ",")
@@ -580,6 +581,8 @@ func updateOptionMap(key string, value string) (err error) {
 		common.SetChannelBreakerProbeSuccessCount(count)
 	case "ChannelBreakerExcludePaths":
 		common.SetChannelBreakerExcludePaths(value)
+	case "ChannelBreakerRules":
+		err = common.UpdateChannelBreakerRulesByJSONString(value)
 	case "QuotaPerUnit":
 		common.QuotaPerUnit, _ = strconv.ParseFloat(value, 64)
 	case "SensitiveWords":

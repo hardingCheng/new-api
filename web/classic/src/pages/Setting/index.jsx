@@ -34,6 +34,7 @@ import {
   CreditCard,
   Server,
   Activity,
+  ShieldAlert,
 } from 'lucide-react';
 
 import SystemSetting from '../../components/settings/SystemSetting';
@@ -49,6 +50,7 @@ import DrawingSetting from '../../components/settings/DrawingSetting';
 import PaymentSetting from '../../components/settings/PaymentSetting';
 import ModelDeploymentSetting from '../../components/settings/ModelDeploymentSetting';
 import PerformanceSetting from '../../components/settings/PerformanceSetting';
+import ChannelBreakerSetting from '../../components/settings/ChannelBreakerSetting';
 
 const Setting = () => {
   const { t } = useTranslation();
@@ -67,6 +69,16 @@ const Setting = () => {
       ),
       content: <OperationSetting />,
       itemKey: 'operation',
+    });
+    panes.push({
+      tab: (
+        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <ShieldAlert size={18} />
+          {t('分组容灾')}
+        </span>
+      ),
+      content: <ChannelBreakerSetting />,
+      itemKey: 'channel-breaker',
     });
     panes.push({
       tab: (
