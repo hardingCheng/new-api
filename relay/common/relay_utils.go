@@ -86,7 +86,7 @@ func IsSeedanceVideoModel(model string) bool {
 
 func IsGrokImagineVideoModel(model string) bool {
 	switch strings.ToLower(strings.TrimSpace(model)) {
-	case "grok-imagine-1.0-video", "grok-imagine-video":
+	case "grok-imagine-1.0-video", "grok-imagine-video", "grok-imagine-video-1.5-preview":
 		return true
 	default:
 		return false
