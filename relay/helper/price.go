@@ -69,11 +69,13 @@ func applyUserPricingOverridesToPriceData(info *relaycommon.RelayInfo, priceData
 		return
 	}
 	modelNames := []string{info.OriginModelName}
-	if info.IsModelMapped && info.UpstreamModelName != "" {
-		modelNames = append(modelNames, info.UpstreamModelName)
-	}
-	if info.ChannelMeta != nil && info.ChannelMeta.UpstreamModelName != "" {
-		modelNames = append(modelNames, info.ChannelMeta.UpstreamModelName)
+	if info.ChannelMeta != nil {
+		if info.IsModelMapped && info.UpstreamModelName != "" {
+			modelNames = append(modelNames, info.UpstreamModelName)
+		}
+		if info.ChannelMeta.UpstreamModelName != "" {
+			modelNames = append(modelNames, info.ChannelMeta.UpstreamModelName)
+		}
 	}
 	var (
 		usePrice   bool
