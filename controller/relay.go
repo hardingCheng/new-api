@@ -164,6 +164,16 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 
 	defer func() {
+		// Safety net: a reservation that exits without being settled (e.g. panic or an
+		// unexpected early return) would otherwise stay stuck in the pool until the period
+		// resets. Roll it back so the cap reflects reality. Idempotent: no-op once settled.
+		if !relayInfo.ModelQuotaPoolSettled && len(relayInfo.ModelQuotaPools) > 0 {
+			logger.LogError(c, fmt.Sprintf("model quota pool reservation not settled, rolling back as safety net (model: %s, user: %d)", relayInfo.OriginModelName, relayInfo.UserId))
+			service.RollbackModelQuotaPool(relayInfo)
+		}
+	}()
+
+	defer func() {
 		// Only return quota if downstream failed and quota was actually pre-consumed
 		if newAPIError != nil {
 			newAPIError = service.NormalizeViolationFeeError(newAPIError)

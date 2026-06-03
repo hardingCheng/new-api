@@ -275,6 +275,11 @@ func SendSystemBarkNotify(title string, body string, group string, level string)
 	return nil
 }
 
+func IsSystemLowBalanceNotifyEnabled() bool {
+	monitorSetting := operation_setting.GetMonitorSetting()
+	return monitorSetting.BarkAlertEnabled && monitorSetting.LowBalanceAlertEnabled
+}
+
 func CheckAndSendSystemLowBalanceNotify(userId int, userEmail string, remainingQuota int) {
 	monitorSetting := operation_setting.GetMonitorSetting()
 	if !monitorSetting.BarkAlertEnabled || !monitorSetting.LowBalanceAlertEnabled {
