@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -312,6 +313,50 @@ func TestChannelBreakerModelRuleCanDisableBreaker(t *testing.T) {
 		require.Empty(t, message)
 	}
 	require.True(t, AllowChannelByBreaker(c, channelError))
+}
+
+func TestBuildChannelBreakerBarkBodyIncludesRequestDetails(t *testing.T) {
+	body := buildChannelBreakerBarkBody(ChannelBreakerNotificationContext{
+		ChannelError: types.ChannelError{
+			ChannelId:   1020,
+			ChannelName: "primary-openai",
+			ChannelType: constant.ChannelTypeOpenAI,
+			UsingKey:    "sk-test-key",
+		},
+		Reason:      "upstream returned 429",
+		ModelName:   "gpt-4o-mini",
+		Group:       "vip",
+		UserId:      88,
+		Username:    "alice",
+		TokenId:     99,
+		RequestPath: "/v1/chat/completions",
+		StatusCode:  429,
+	})
+
+	require.Contains(t, body, "渠道：primary-openai (#1020)")
+	require.Contains(t, body, "类型：OpenAI")
+	require.Contains(t, body, "模型：gpt-4o-mini")
+	require.Contains(t, body, "分组：vip")
+	require.Contains(t, body, "用户：alice (#88)")
+	require.Contains(t, body, "令牌：#99")
+	require.Contains(t, body, "路径：/v1/chat/completions")
+	require.Contains(t, body, "状态码：429")
+	require.Contains(t, body, "密钥哈希："+ChannelBreakerKeyHash("sk-test-key"))
+	require.Contains(t, body, "原因：upstream returned 429")
+}
+
+func TestLowBalanceThresholdQuotaUsesCNYThreshold(t *testing.T) {
+	oldQuotaPerUnit := common.QuotaPerUnit
+	oldExchangeRate := operation_setting.USDExchangeRate
+	common.QuotaPerUnit = 500000
+	operation_setting.USDExchangeRate = 7.3
+	t.Cleanup(func() {
+		common.QuotaPerUnit = oldQuotaPerUnit
+		operation_setting.USDExchangeRate = oldExchangeRate
+	})
+
+	require.Equal(t, 684932, lowBalanceThresholdQuota(10))
+	require.Zero(t, lowBalanceThresholdQuota(0))
 }
 
 func testBreakerContext(path string) *gin.Context {

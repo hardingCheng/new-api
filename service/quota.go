@@ -453,6 +453,18 @@ func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQu
 
 func checkAndSendQuotaNotify(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQuota int) {
 	gopool.Go(func() {
+		consumeQuota := quota + preConsumedQuota
+		remainingQuota := relayInfo.UserQuota - consumeQuota
+		fetchedQuota, remainingErr := model.GetUserQuota(relayInfo.UserId, false)
+		if remainingErr != nil {
+			common.SysError(fmt.Sprintf("failed to query user quota for system low balance notify, user %d: %s", relayInfo.UserId, remainingErr.Error()))
+		} else {
+			if fetchedQuota < remainingQuota {
+				remainingQuota = fetchedQuota
+			}
+		}
+		CheckAndSendSystemLowBalanceNotify(relayInfo.UserId, relayInfo.UserEmail, remainingQuota)
+
 		userSetting := relayInfo.UserSetting
 		threshold := common.QuotaRemindThreshold
 		if userSetting.QuotaWarningThreshold != 0 {
@@ -461,7 +473,6 @@ func checkAndSendQuotaNotify(relayInfo *relaycommon.RelayInfo, quota int, preCon
 
 		//noMoreQuota := userCache.Quota-(quota+preConsumedQuota) <= 0
 		quotaTooLow := false
-		consumeQuota := quota + preConsumedQuota
 		if relayInfo.UserQuota-consumeQuota < threshold {
 			quotaTooLow = true
 		}

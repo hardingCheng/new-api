@@ -44,6 +44,12 @@ export default function SettingsMonitoring(props) {
       '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
     'monitor_setting.auto_test_channel_enabled': false,
     'monitor_setting.auto_test_channel_minutes': 10,
+    'monitor_setting.bark_alert_enabled': true,
+    'monitor_setting.bark_alert_url':
+      'https://bark.aigod.one/kFRNZMUXcuQ6c4ccrUgQ3W/',
+    'monitor_setting.low_balance_alert_enabled': true,
+    'monitor_setting.low_balance_threshold_cny': 10,
+    'monitor_setting.channel_breaker_alert_enabled': true,
   });
   const refForm = useRef();
   const [inputsRow, setInputsRow] = useState(inputs);
@@ -160,6 +166,90 @@ export default function SettingsMonitoring(props) {
                       ...inputs,
                       'monitor_setting.auto_test_channel_minutes':
                         parseInt(value),
+                    })
+                  }
+                />
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  field={'monitor_setting.bark_alert_enabled'}
+                  label={t('Bark 系统告警')}
+                  size='default'
+                  checkedText='｜'
+                  uncheckedText='〇'
+                  extraText={t('通过配置的 Bark API 发送余额和熔断告警')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.bark_alert_enabled': value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  field={'monitor_setting.low_balance_alert_enabled'}
+                  label={t('低余额 Bark 告警')}
+                  size='default'
+                  checkedText='｜'
+                  uncheckedText='〇'
+                  extraText={t('用户余额低于阈值时发送 Bark 告警')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.low_balance_alert_enabled': value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  field={'monitor_setting.channel_breaker_alert_enabled'}
+                  label={t('熔断 Bark 告警')}
+                  size='default'
+                  checkedText='｜'
+                  uncheckedText='〇'
+                  extraText={t('渠道发生熔断时发送 Bark 告警')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.channel_breaker_alert_enabled': value,
+                    })
+                  }
+                />
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col xs={24} sm={16}>
+                <Form.Input
+                  label={t('Bark API 地址')}
+                  placeholder='https://bark.example.com/device-key/'
+                  extraText={t('用于发送系统余额预警和渠道熔断告警的 Bark 地址')}
+                  field={'monitor_setting.bark_alert_url'}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.bark_alert_url': value.trim(),
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.InputNumber
+                  label={t('低余额阈值')}
+                  step={0.01}
+                  min={0}
+                  suffix={t('元')}
+                  extraText={t('用户余额低于该人民币金额时触发 Bark 告警')}
+                  placeholder={''}
+                  field={'monitor_setting.low_balance_threshold_cny'}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.low_balance_threshold_cny':
+                        Number(value),
                     })
                   }
                 />

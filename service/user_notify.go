@@ -2,17 +2,39 @@ package service
 
 import (
 	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 )
+
+const (
+	systemBarkUserAgent       = "NewAPI-System-Bark-Notify/1.0"
+	lowBalanceNotifyCooldown  = 24 * time.Hour
+	lowBalanceNotifyKeyPrefix = "system_bark_low_balance:"
+)
+
+var lowBalanceNotifyMemory sync.Map
+
+type barkPayload struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+	Group string `json:"group,omitempty"`
+	Level string `json:"level,omitempty"`
+	Sound string `json:"sound,omitempty"`
+	URL   string `json:"url,omitempty"`
+}
 
 func NotifyRootUser(t string, subject string, content string) {
 	user := model.GetRootUser().ToBaseUser()
@@ -185,6 +207,141 @@ func sendBarkNotify(barkURL string, data dto.Notify) error {
 	return nil
 }
 
+func SendSystemBarkNotify(title string, body string, group string, level string) error {
+	monitorSetting := operation_setting.GetMonitorSetting()
+	if !monitorSetting.BarkAlertEnabled {
+		return nil
+	}
+	barkURL := strings.TrimSpace(monitorSetting.BarkAlertUrl)
+	if barkURL == "" {
+		return nil
+	}
+
+	payload := barkPayload{
+		Title: title,
+		Body:  body,
+		Group: group,
+		Level: level,
+	}
+	if level == "critical" {
+		payload.Sound = "alarm"
+	}
+	payloadBytes, err := common.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal system bark payload: %v", err)
+	}
+
+	var resp *http.Response
+	if system_setting.EnableWorker() {
+		workerReq := &WorkerRequest{
+			URL:    barkURL,
+			Key:    system_setting.WorkerValidKey,
+			Method: http.MethodPost,
+			Headers: map[string]string{
+				"Content-Type": "application/json; charset=utf-8",
+				"User-Agent":   systemBarkUserAgent,
+			},
+			Body: payloadBytes,
+		}
+
+		resp, err = DoWorkerRequest(workerReq)
+		if err != nil {
+			return fmt.Errorf("failed to send system bark request through worker: %v", err)
+		}
+		defer resp.Body.Close()
+	} else {
+		fetchSetting := system_setting.GetFetchSetting()
+		if err := common.ValidateURLWithFetchSetting(barkURL, fetchSetting.EnableSSRFProtection, fetchSetting.AllowPrivateIp, fetchSetting.DomainFilterMode, fetchSetting.IpFilterMode, fetchSetting.DomainList, fetchSetting.IpList, fetchSetting.AllowedPorts, fetchSetting.ApplyIPFilterForDomain); err != nil {
+			return fmt.Errorf("request reject: %v", err)
+		}
+
+		req, err := http.NewRequest(http.MethodPost, barkURL, bytes.NewBuffer(payloadBytes))
+		if err != nil {
+			return fmt.Errorf("failed to create system bark request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		req.Header.Set("User-Agent", systemBarkUserAgent)
+
+		resp, err = GetHttpClient().Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to send system bark request: %v", err)
+		}
+		defer resp.Body.Close()
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("system bark request failed with status code: %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func CheckAndSendSystemLowBalanceNotify(userId int, userEmail string, remainingQuota int) {
+	monitorSetting := operation_setting.GetMonitorSetting()
+	if !monitorSetting.BarkAlertEnabled || !monitorSetting.LowBalanceAlertEnabled {
+		return
+	}
+
+	threshold := lowBalanceThresholdQuota(monitorSetting.LowBalanceThresholdCny)
+	if threshold <= 0 || remainingQuota >= threshold {
+		return
+	}
+	if !reserveLowBalanceNotify(userId) {
+		return
+	}
+
+	username, err := model.GetUsernameById(userId, false)
+	if err != nil {
+		common.SysError(fmt.Sprintf("failed to query username for low balance bark notify, user %d: %s", userId, err.Error()))
+	}
+
+	title := "用户余额不足"
+	if username != "" {
+		title = fmt.Sprintf("用户余额不足：%s", username)
+	}
+
+	body := ""
+	if username != "" {
+		body = fmt.Sprintf("用户：%s (#%d)", username, userId)
+	} else {
+		body = fmt.Sprintf("用户：#%d", userId)
+	}
+	if strings.TrimSpace(userEmail) != "" {
+		body += "\n邮箱：" + userEmail
+	}
+	body += fmt.Sprintf("\n剩余额度：%s\n预警阈值：%s", logger.FormatQuota(remainingQuota), logger.FormatQuota(threshold))
+	if err := SendSystemBarkNotify(title, body, "new-api 余额预警", "timeSensitive"); err != nil {
+		common.SysError(fmt.Sprintf("failed to send system low balance bark notify for user %d: %s", userId, err.Error()))
+	}
+}
+
+func lowBalanceThresholdQuota(thresholdCny float64) int {
+	if thresholdCny <= 0 || common.QuotaPerUnit <= 0 || operation_setting.USDExchangeRate <= 0 {
+		return 0
+	}
+	quota := thresholdCny / operation_setting.USDExchangeRate * common.QuotaPerUnit
+	return int(math.Ceil(quota))
+}
+
+func reserveLowBalanceNotify(userId int) bool {
+	key := fmt.Sprintf("%s%d", lowBalanceNotifyKeyPrefix, userId)
+	if common.RedisEnabled && common.RDB != nil {
+		ok, err := common.RDB.SetNX(context.Background(), key, "1", lowBalanceNotifyCooldown).Result()
+		if err == nil {
+			return ok
+		}
+		common.SysError("failed to reserve low balance bark notify in redis: " + err.Error())
+	}
+
+	now := time.Now()
+	if value, ok := lowBalanceNotifyMemory.Load(key); ok {
+		if lastSent, ok := value.(time.Time); ok && now.Sub(lastSent) < lowBalanceNotifyCooldown {
+			return false
+		}
+	}
+	lowBalanceNotifyMemory.Store(key, now)
+	return true
+}
+
 func sendGotifyNotify(gotifyUrl string, gotifyToken string, priority int, data dto.Notify) error {
 	// 处理占位符
 	content := data.Content
@@ -215,7 +372,7 @@ func sendGotifyNotify(gotifyUrl string, gotifyToken string, priority int, data d
 	}
 
 	// 序列化为 JSON
-	payloadBytes, err := json.Marshal(payload)
+	payloadBytes, err := common.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal gotify payload: %v", err)
 	}

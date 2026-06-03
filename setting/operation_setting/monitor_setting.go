@@ -8,14 +8,24 @@ import (
 )
 
 type MonitorSetting struct {
-	AutoTestChannelEnabled bool    `json:"auto_test_channel_enabled"`
-	AutoTestChannelMinutes float64 `json:"auto_test_channel_minutes"`
+	AutoTestChannelEnabled     bool    `json:"auto_test_channel_enabled"`
+	AutoTestChannelMinutes     float64 `json:"auto_test_channel_minutes"`
+	BarkAlertEnabled           bool    `json:"bark_alert_enabled"`
+	BarkAlertUrl               string  `json:"bark_alert_url"`
+	LowBalanceAlertEnabled     bool    `json:"low_balance_alert_enabled"`
+	LowBalanceThresholdCny     float64 `json:"low_balance_threshold_cny"`
+	ChannelBreakerAlertEnabled bool    `json:"channel_breaker_alert_enabled"`
 }
 
 // 默认配置
 var monitorSetting = MonitorSetting{
-	AutoTestChannelEnabled: false,
-	AutoTestChannelMinutes: 10,
+	AutoTestChannelEnabled:     false,
+	AutoTestChannelMinutes:     10,
+	BarkAlertEnabled:           true,
+	BarkAlertUrl:               "https://bark.aigod.one/kFRNZMUXcuQ6c4ccrUgQ3W/",
+	LowBalanceAlertEnabled:     true,
+	LowBalanceThresholdCny:     10,
+	ChannelBreakerAlertEnabled: true,
 }
 
 func init() {

@@ -367,8 +367,30 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	if opened, message := service.RecordChannelBreakerFailure(c, channelError, service.ShouldTripChannelBreakerWithRule(c, channelError, err)); message != "" {
 		if opened {
 			logger.LogWarn(c, fmt.Sprintf("%s (channel #%d)", message, channelError.ChannelId))
+			group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+			if group == "" {
+				group = common.GetContextKeyString(c, constant.ContextKeyTokenGroup)
+			}
+			if group == "" {
+				group = common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+			}
+			requestPath := ""
+			if c.Request != nil && c.Request.URL != nil {
+				requestPath = c.Request.URL.Path
+			}
+			notifyCtx := service.ChannelBreakerNotificationContext{
+				ChannelError: channelError,
+				Reason:       err.ErrorWithStatusCode(),
+				ModelName:    common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
+				Group:        group,
+				UserId:       common.GetContextKeyInt(c, constant.ContextKeyUserId),
+				Username:     common.GetContextKeyString(c, constant.ContextKeyUserName),
+				TokenId:      common.GetContextKeyInt(c, constant.ContextKeyTokenId),
+				RequestPath:  requestPath,
+				StatusCode:   err.StatusCode,
+			}
 			gopool.Go(func() {
-				service.NotifyChannelBreakerOpen(channelError, err.ErrorWithStatusCode())
+				service.NotifyChannelBreakerOpen(notifyCtx)
 			})
 		} else {
 			logger.LogInfo(c, fmt.Sprintf("%s (channel #%d)", message, channelError.ChannelId))
