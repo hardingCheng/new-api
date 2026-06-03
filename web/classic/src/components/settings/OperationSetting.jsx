@@ -75,12 +75,6 @@ const OperationSetting = () => {
       '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
     'monitor_setting.auto_test_channel_enabled': false,
     'monitor_setting.auto_test_channel_minutes': 10,
-    'monitor_setting.bark_alert_enabled': true,
-    'monitor_setting.bark_alert_url':
-      'https://bark.aigod.one/kFRNZMUXcuQ6c4ccrUgQ3W/',
-    'monitor_setting.low_balance_alert_enabled': true,
-    'monitor_setting.low_balance_threshold_cny': 10,
-    'monitor_setting.channel_breaker_alert_enabled': true,
 
     /* 签到设置 */
     'checkin_setting.enabled': false,

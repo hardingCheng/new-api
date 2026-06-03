@@ -57,6 +57,11 @@ const OPTION_KEYS = [
   'ChannelBreakerProbeSuccessCount',
   'ChannelBreakerExcludePaths',
   'ChannelBreakerRules',
+  'monitor_setting.bark_alert_enabled',
+  'monitor_setting.bark_alert_url',
+  'monitor_setting.low_balance_alert_enabled',
+  'monitor_setting.low_balance_threshold_cny',
+  'monitor_setting.channel_breaker_alert_enabled',
   'AutomaticDisableKeywords',
   'AutomaticDisableStatusCodes',
   'AutomaticRetryStatusCodes',
@@ -70,6 +75,12 @@ const defaultInputs = {
   ChannelBreakerProbeSuccessCount: '3',
   ChannelBreakerExcludePaths: '/v1/videos',
   ChannelBreakerRules: '[]',
+  'monitor_setting.bark_alert_enabled': true,
+  'monitor_setting.bark_alert_url':
+    'https://bark.aigod.one/kFRNZMUXcuQ6c4ccrUgQ3W/',
+  'monitor_setting.low_balance_alert_enabled': true,
+  'monitor_setting.low_balance_threshold_cny': 10,
+  'monitor_setting.channel_breaker_alert_enabled': true,
   AutomaticDisableKeywords: '',
   AutomaticDisableStatusCodes: '401',
   AutomaticRetryStatusCodes:
@@ -91,7 +102,8 @@ const ruleTemplates = [
     probe_count: 5,
     probe_success_count: 3,
     failure_status_codes: '429,500-599',
-    failure_keywords: 'rate limit\ntemporarily unavailable\noverloaded\nserver error',
+    failure_keywords:
+      'rate limit\ntemporarily unavailable\noverloaded\nserver error',
     exclude_paths: '/v1/videos',
   },
   {
@@ -101,7 +113,8 @@ const ruleTemplates = [
     probe_count: 5,
     probe_success_count: 4,
     failure_status_codes: '401,403,429,500-599',
-    failure_keywords: 'insufficient quota\npermission denied\nrate limit\noverloaded',
+    failure_keywords:
+      'insufficient quota\npermission denied\nrate limit\noverloaded',
     exclude_paths: '/v1/videos',
   },
   {
@@ -442,8 +455,8 @@ export default function SettingsChannelBreaker(props) {
       render: (_, record) => (
         <Text>
           {record.probe_success || 0}/{inputs.ChannelBreakerProbeSuccessCount}{' '}
-          {t('成功')} · {record.probe_total || 0}/{inputs.ChannelBreakerProbeCount}{' '}
-          {t('完成')}
+          {t('成功')} · {record.probe_total || 0}/
+          {inputs.ChannelBreakerProbeCount} {t('完成')}
         </Text>
       ),
     },
@@ -589,7 +602,12 @@ export default function SettingsChannelBreaker(props) {
       if (!Object.prototype.hasOwnProperty.call(props.options || {}, key)) {
         continue;
       }
-      if (key === 'ChannelBreakerEnabled') {
+      if (
+        key === 'ChannelBreakerEnabled' ||
+        key === 'monitor_setting.bark_alert_enabled' ||
+        key === 'monitor_setting.low_balance_alert_enabled' ||
+        key === 'monitor_setting.channel_breaker_alert_enabled'
+      ) {
         currentInputs[key] = toBoolean(props.options[key]);
       } else {
         currentInputs[key] = props.options[key] ?? defaultInputs[key];
@@ -637,7 +655,9 @@ export default function SettingsChannelBreaker(props) {
                 <Text strong>{t('触发')}</Text>
                 <br />
                 <Text type='tertiary'>
-                  {t('命中失败状态码、失败关键词或 channel error 后累计失败次数。')}
+                  {t(
+                    '命中失败状态码、失败关键词或 channel error 后累计失败次数。',
+                  )}
                 </Text>
               </Col>
               <Col xs={24} sm={8}>
@@ -651,7 +671,9 @@ export default function SettingsChannelBreaker(props) {
                 <Text strong>{t('人工干预')}</Text>
                 <br />
                 <Text type='tertiary'>
-                  {t('运营可以在下方表格直接解除熔断，让渠道或 key 立刻恢复调度。')}
+                  {t(
+                    '运营可以在下方表格直接解除熔断，让渠道或 key 立刻恢复调度。',
+                  )}
                 </Text>
               </Col>
             </Row>
@@ -772,99 +794,192 @@ export default function SettingsChannelBreaker(props) {
               </Col>
             </Row>
 
-          <Row gutter={16}>
-            <Col xs={24} sm={12} md={8} lg={8} xl={8}>
-              <Form.InputNumber
-                field='ChannelBreakerProbeCount'
-                label={t('探测请求数')}
-                min={1}
-                step={1}
-                extraText={t('半开状态最多放行的真实请求数量。')}
-                onChange={(value) =>
-                  setInputs({
-                    ...inputs,
-                    ChannelBreakerProbeCount: String(value),
-                  })
-                }
-              />
-            </Col>
-            <Col xs={24} sm={12} md={8} lg={8} xl={8}>
-              <Form.InputNumber
-                field='ChannelBreakerProbeSuccessCount'
-                label={t('探测成功要求')}
-                min={1}
-                step={1}
-                extraText={t('达到该成功数后关闭熔断，恢复正常调度。')}
-                onChange={(value) =>
-                  setInputs({
-                    ...inputs,
-                    ChannelBreakerProbeSuccessCount: String(value),
-                  })
-                }
-              />
-            </Col>
-            <Col xs={24} sm={12} md={8} lg={8} xl={8}>
-              <Form.TextArea
-                field='ChannelBreakerExcludePaths'
-                label={t('熔断排除路径')}
-                placeholder={'/v1/videos'}
-                autosize={{ minRows: 3, maxRows: 6 }}
-                extraText={t('一行一个路径前缀，匹配后不会影响熔断状态。')}
-                onChange={(value) =>
-                  setInputs({ ...inputs, ChannelBreakerExcludePaths: value })
-                }
-              />
-            </Col>
-          </Row>
+            <Row gutter={16}>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.InputNumber
+                  field='ChannelBreakerProbeCount'
+                  label={t('探测请求数')}
+                  min={1}
+                  step={1}
+                  extraText={t('半开状态最多放行的真实请求数量。')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      ChannelBreakerProbeCount: String(value),
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.InputNumber
+                  field='ChannelBreakerProbeSuccessCount'
+                  label={t('探测成功要求')}
+                  min={1}
+                  step={1}
+                  extraText={t('达到该成功数后关闭熔断，恢复正常调度。')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      ChannelBreakerProbeSuccessCount: String(value),
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.TextArea
+                  field='ChannelBreakerExcludePaths'
+                  label={t('熔断排除路径')}
+                  placeholder={'/v1/videos'}
+                  autosize={{ minRows: 3, maxRows: 6 }}
+                  extraText={t('一行一个路径前缀，匹配后不会影响熔断状态。')}
+                  onChange={(value) =>
+                    setInputs({ ...inputs, ChannelBreakerExcludePaths: value })
+                  }
+                />
+              </Col>
+            </Row>
 
-          <Row gutter={16}>
-            <Col xs={24} sm={16}>
-              <HttpStatusCodeRulesInput
-                label={t('失败状态码')}
-                placeholder={t('例如：401, 403, 429, 500-599')}
-                extraText={t(
-                  '这些状态码会被视为渠道失败，用于自动禁用和熔断失败计数。',
-                )}
-                field='AutomaticDisableStatusCodes'
-                onChange={(value) =>
-                  setInputs({ ...inputs, AutomaticDisableStatusCodes: value })
-                }
-                parsed={parsedFailureStatusCodes}
-                invalidText={t('失败状态码格式不正确')}
-              />
-              <HttpStatusCodeRulesInput
-                label={t('自动重试状态码')}
-                placeholder={t('例如：401, 403, 429, 500-599')}
-                extraText={t(
-                  '支持填写单个状态码或范围（含首尾），使用逗号分隔；504 和 524 始终不重试，不受此处配置影响',
-                )}
-                field='AutomaticRetryStatusCodes'
-                onChange={(value) =>
-                  setInputs({ ...inputs, AutomaticRetryStatusCodes: value })
-                }
-                parsed={parsedRetryStatusCodes}
-                invalidText={t('自动重试状态码格式不正确')}
-              />
-              <Form.TextArea
-                label={t('失败关键词')}
-                placeholder={t('一行一个，不区分大小写')}
-                extraText={t(
-                  '上游错误包含这些关键词时，会被视为渠道失败，用于自动禁用和熔断失败计数。',
-                )}
-                field='AutomaticDisableKeywords'
-                autosize={{ minRows: 6, maxRows: 12 }}
-                onChange={(value) =>
-                  setInputs({ ...inputs, AutomaticDisableKeywords: value })
-                }
-              />
-            </Col>
-          </Row>
+            <Row gutter={16}>
+              <Col xs={24} sm={16}>
+                <HttpStatusCodeRulesInput
+                  label={t('失败状态码')}
+                  placeholder={t('例如：401, 403, 429, 500-599')}
+                  extraText={t(
+                    '这些状态码会被视为渠道失败，用于自动禁用和熔断失败计数。',
+                  )}
+                  field='AutomaticDisableStatusCodes'
+                  onChange={(value) =>
+                    setInputs({ ...inputs, AutomaticDisableStatusCodes: value })
+                  }
+                  parsed={parsedFailureStatusCodes}
+                  invalidText={t('失败状态码格式不正确')}
+                />
+                <HttpStatusCodeRulesInput
+                  label={t('自动重试状态码')}
+                  placeholder={t('例如：401, 403, 429, 500-599')}
+                  extraText={t(
+                    '支持填写单个状态码或范围（含首尾），使用逗号分隔；504 和 524 始终不重试，不受此处配置影响',
+                  )}
+                  field='AutomaticRetryStatusCodes'
+                  onChange={(value) =>
+                    setInputs({ ...inputs, AutomaticRetryStatusCodes: value })
+                  }
+                  parsed={parsedRetryStatusCodes}
+                  invalidText={t('自动重试状态码格式不正确')}
+                />
+                <Form.TextArea
+                  label={t('失败关键词')}
+                  placeholder={t('一行一个，不区分大小写')}
+                  extraText={t(
+                    '上游错误包含这些关键词时，会被视为渠道失败，用于自动禁用和熔断失败计数。',
+                  )}
+                  field='AutomaticDisableKeywords'
+                  autosize={{ minRows: 6, maxRows: 12 }}
+                  onChange={(value) =>
+                    setInputs({ ...inputs, AutomaticDisableKeywords: value })
+                  }
+                />
+              </Col>
+            </Row>
 
-          <Row>
-            <Button size='default' onClick={onSubmit}>
-              {t('保存分组容灾设置')}
-            </Button>
-          </Row>
+            <Form.Section text={t('Bark 系统告警')}>
+              <Banner
+                fullMode={false}
+                type='info'
+                description={t('通过配置的 Bark API 发送余额和熔断告警')}
+              />
+              <Row gutter={16} style={{ marginTop: 12 }}>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.Switch
+                    field='monitor_setting.bark_alert_enabled'
+                    label={t('Bark 系统告警')}
+                    size='default'
+                    checkedText='｜'
+                    uncheckedText='〇'
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.bark_alert_enabled': value,
+                      })
+                    }
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.Switch
+                    field='monitor_setting.channel_breaker_alert_enabled'
+                    label={t('熔断 Bark 告警')}
+                    size='default'
+                    checkedText='｜'
+                    uncheckedText='〇'
+                    extraText={t('渠道发生熔断时发送 Bark 告警')}
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.channel_breaker_alert_enabled': value,
+                      })
+                    }
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.Switch
+                    field='monitor_setting.low_balance_alert_enabled'
+                    label={t('低余额 Bark 告警')}
+                    size='default'
+                    checkedText='｜'
+                    uncheckedText='〇'
+                    extraText={t('用户余额低于阈值时发送 Bark 告警')}
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.low_balance_alert_enabled': value,
+                      })
+                    }
+                  />
+                </Col>
+              </Row>
+              <Row gutter={16}>
+                <Col xs={24} sm={16}>
+                  <Form.Input
+                    label={t('Bark API 地址')}
+                    placeholder='https://bark.example.com/device-key/'
+                    extraText={t(
+                      '用于发送系统余额预警和渠道熔断告警的 Bark 地址',
+                    )}
+                    field='monitor_setting.bark_alert_url'
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.bark_alert_url': value.trim(),
+                      })
+                    }
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.InputNumber
+                    label={t('低余额阈值')}
+                    step={0.01}
+                    min={0}
+                    suffix={t('元')}
+                    extraText={t('用户余额低于该人民币金额时触发 Bark 告警')}
+                    placeholder=''
+                    field='monitor_setting.low_balance_threshold_cny'
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.low_balance_threshold_cny':
+                          Number(value),
+                      })
+                    }
+                  />
+                </Col>
+              </Row>
+            </Form.Section>
+
+            <Row>
+              <Button size='default' onClick={onSubmit}>
+                {t('保存分组容灾设置')}
+              </Button>
+            </Row>
           </Form.Section>
         </Form.Section>
       </Form>
