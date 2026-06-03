@@ -123,6 +123,16 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+	if message, blocked := operation_setting.IsSeedanceResourcePoolGuardBlocked(relayInfo.UserId, relayInfo.OriginModelName); blocked {
+		recordSeedanceResourcePoolGuardErrorLog(c, relayInfo, message, "get_channel_failed", http.StatusTooManyRequests)
+		newAPIError = types.NewErrorWithStatusCode(
+			errors.New(message),
+			types.ErrorCodeGetChannelFailed,
+			http.StatusTooManyRequests,
+			types.ErrOptionWithSkipRetry(),
+		)
+		return
+	}
 
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
 	needCountToken := constant.CountToken
@@ -444,6 +454,39 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 
 }
 
+func recordSeedanceResourcePoolGuardErrorLog(c *gin.Context, relayInfo *relaycommon.RelayInfo, message string, errorCode string, statusCode int) {
+	if !constant.ErrorLogEnabled || relayInfo == nil {
+		return
+	}
+	other := make(map[string]interface{})
+	if c.Request != nil && c.Request.URL != nil {
+		other["request_path"] = c.Request.URL.Path
+	}
+	other["error_type"] = "new_api_error"
+	other["error_code"] = errorCode
+	other["status_code"] = statusCode
+	other["channel_id"] = 0
+	other["guard"] = "seedance_resource_pool"
+	startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
+	if startTime.IsZero() {
+		startTime = time.Now()
+	}
+	useTimeSeconds := int(time.Since(startTime).Seconds())
+	model.RecordErrorLog(
+		c,
+		relayInfo.UserId,
+		0,
+		relayInfo.OriginModelName,
+		c.GetString("token_name"),
+		message,
+		relayInfo.TokenId,
+		useTimeSeconds,
+		relayInfo.IsStream,
+		relayInfo.UserGroup,
+		other,
+	)
+}
+
 func RelayMidjourney(c *gin.Context) {
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatMjProxy, nil, nil)
 
@@ -539,6 +582,11 @@ func RelayTask(c *gin.Context) {
 
 	if taskErr := relay.ResolveOriginTask(c, relayInfo); taskErr != nil {
 		respondTaskError(c, taskErr)
+		return
+	}
+	if message, blocked := operation_setting.IsSeedanceResourcePoolGuardBlocked(relayInfo.UserId, relayInfo.OriginModelName); blocked {
+		recordSeedanceResourcePoolGuardErrorLog(c, relayInfo, message, "model_resource_pool_exhausted", http.StatusTooManyRequests)
+		respondTaskError(c, service.TaskErrorWrapperLocal(errors.New(message), "model_resource_pool_exhausted", http.StatusTooManyRequests))
 		return
 	}
 

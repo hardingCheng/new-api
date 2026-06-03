@@ -20,6 +20,7 @@ For commercial licensing, please contact support@quantumnous.com
 import React, { useEffect, useState } from 'react';
 import { Card, Spin } from '@douyinfe/semi-ui';
 import SettingsChannelBreaker from '../../pages/Setting/ChannelBreaker/SettingsChannelBreaker';
+import SettingsModelLimit from '../../pages/Setting/ModelLimit/SettingsModelLimit';
 import { API, showError, toBoolean } from '../../helpers';
 
 const ChannelBreakerSetting = () => {
@@ -41,6 +42,13 @@ const ChannelBreakerSetting = () => {
     'monitor_setting.low_balance_alert_enabled': true,
     'monitor_setting.low_balance_threshold_cny': 10,
     'monitor_setting.channel_breaker_alert_enabled': true,
+    'model_limit_setting.seedance_resource_pool_guard_enabled': true,
+    'model_limit_setting.seedance_resource_pool_guard_models':
+      'seedance-2.0-fast-480p',
+    'model_limit_setting.seedance_resource_pool_guard_user_ids':
+      '42\n2113417732',
+    'model_limit_setting.seedance_resource_pool_guard_message':
+      '此模型资源池已耗尽，请使用其他的模型。',
   });
   const [loading, setLoading] = useState(false);
 
@@ -81,6 +89,9 @@ const ChannelBreakerSetting = () => {
     <Spin spinning={loading} size='large'>
       <Card style={{ marginTop: '10px' }}>
         <SettingsChannelBreaker options={inputs} refresh={onRefresh} />
+      </Card>
+      <Card style={{ marginTop: '10px' }}>
+        <SettingsModelLimit options={inputs} refresh={onRefresh} />
       </Card>
     </Spin>
   );
