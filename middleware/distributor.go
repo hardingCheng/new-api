@@ -162,9 +162,14 @@ func Distribute() func(c *gin.Context) {
 			}
 		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
-		if setupErr := SetupContextForSelectedChannel(c, channel, modelRequest.Model); setupErr != nil {
-			abortWithOpenAiMessage(c, http.StatusServiceUnavailable, setupErr.Error(), setupErr.GetErrorCode())
-			return
+		// Fetch-style endpoints (task/suno/mj/video fetch by id) set shouldSelectChannel=false and
+		// read the record from DB by task id, so a nil channel is legitimate here. Only set up channel
+		// context when we actually selected one; otherwise these fetches would abort with "channel is nil".
+		if channel != nil || shouldSelectChannel {
+			if setupErr := SetupContextForSelectedChannel(c, channel, modelRequest.Model); setupErr != nil {
+				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, setupErr.Error(), setupErr.GetErrorCode())
+				return
+			}
 		}
 		c.Next()
 		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
