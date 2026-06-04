@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -387,8 +388,18 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 		return
 	}
 
-	// /v1/videos/:task_id returns the task record with direct URL fields for compatibility.
+	// /v1/videos/:task_id 直接透传上游原生 OpenAI Video 结构（由适配器的
+	// ConvertToOpenAIVideo 完成），避免重拼字段导致内部字段泄露、status 被翻译成
+	// "unknown" 等下游 new-api 无法解析的问题。仅当适配器未实现转换器时回退到精简 DTO。
 	if isOpenAIVideoAPI {
+		if adaptor := GetTaskAdaptor(originTask.Platform); adaptor != nil {
+			if converter, ok := adaptor.(channel.OpenAIVideoConverter); ok {
+				if converted, convErr := converter.ConvertToOpenAIVideo(originTask); convErr == nil {
+					respBody = converted
+					return
+				}
+			}
+		}
 		respBody, err = common.Marshal(TaskModel2PublicVideoDto(originTask))
 		if err != nil {
 			taskResp = service.TaskErrorWrapper(err, "marshal_response_failed", http.StatusInternalServerError)

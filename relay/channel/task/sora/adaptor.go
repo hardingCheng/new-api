@@ -381,8 +381,59 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	data := task.Data
 	var err error
+
+	// 替换为对外公开的 task ID（不暴露上游真实 ID）
 	if data, err = sjson.SetBytes(data, "id", task.TaskID); err != nil {
 		return nil, errors.Wrap(err, "set id failed")
 	}
+
+	// 用数据库中的权威状态覆盖 task.Data 可能过期的值。
+	// 关键场景：超时清理器只更新数据库 status=FAILURE、progress=100%，
+	// 但不会回写 task.Data；若纯透传，下游会一直看到 "processing" 而永远轮询。
+	// ToVideoStatus 已把 NOT_START 归入 queued，避免输出 "unknown" 导致下游无法解析。
+	if status := task.Status.ToVideoStatus(); status != "" && status != dto.VideoStatusUnknown {
+		if data, err = sjson.SetBytes(data, "status", status); err != nil {
+			return nil, errors.Wrap(err, "set status failed")
+		}
+	}
+	if p := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(task.Progress), "%")); p != "" {
+		if pv, convErr := strconv.Atoi(p); convErr == nil {
+			if data, err = sjson.SetBytes(data, "progress", pv); err != nil {
+				return nil, errors.Wrap(err, "set progress failed")
+			}
+		}
+	}
+	if task.Status == model.TaskStatusFailure {
+		reason := task.FailReason
+		if reason == "" {
+			reason = "task failed"
+		}
+		if data, err = sjson.SetBytes(data, "error.message", reason); err != nil {
+			return nil, errors.Wrap(err, "set error.message failed")
+		}
+	}
+
+	// 任务成功时，确保顶层与 metadata 中的 url/video_url/result_url 都存在
+	if task.Status == model.TaskStatusSuccess {
+		var respMap map[string]any
+		if err := common.Unmarshal(data, &respMap); err == nil {
+			var resultURL string
+			if existingURL, ok := respMap["url"].(string); ok && existingURL != "" {
+				resultURL = existingURL
+			} else if existingVideoURL, ok := respMap["video_url"].(string); ok && existingVideoURL != "" {
+				resultURL = existingVideoURL
+			} else if task.PrivateData.ResultURL != "" {
+				resultURL = task.PrivateData.ResultURL
+			}
+			if resultURL != "" {
+				for _, field := range []string{"url", "video_url", "result_url", "metadata.url", "metadata.video_url", "metadata.result_url"} {
+					if data, err = sjson.SetBytes(data, field, resultURL); err != nil {
+						return nil, errors.Wrapf(err, "set %s failed", field)
+					}
+				}
+			}
+		}
+	}
+
 	return data, nil
 }
