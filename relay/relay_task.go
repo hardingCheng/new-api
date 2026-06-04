@@ -567,12 +567,14 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 func TaskModel2PublicVideoDto(task *model.Task) *dto.VideoTaskPublicDto {
 	full := TaskModel2Dto(task)
 	return &dto.VideoTaskPublicDto{
-		ID:               full.ID,
+		ID:               full.TaskID,
 		CreatedAt:        full.CreatedAt,
 		UpdatedAt:        full.UpdatedAt,
 		TaskID:           full.TaskID,
 		Action:           full.Action,
-		Status:           full.Status,
+		// status 映射为 OpenAI 小写（queued/in_progress/completed/failed），
+		// 让下游 new-api 的 sora 解析器能正确识别任务完成/失败。
+		Status:           task.Status.ToVideoStatus(),
 		FailReason:       full.FailReason,
 		ResultURL:        full.ResultURL,
 		URL:              full.URL,
@@ -580,13 +582,27 @@ func TaskModel2PublicVideoDto(task *model.Task) *dto.VideoTaskPublicDto {
 		SubmitTime:       full.SubmitTime,
 		StartTime:        full.StartTime,
 		FinishTime:       full.FinishTime,
-		Progress:         full.Progress,
+		Progress:         parseProgressPercent(full.Progress),
 		Properties:       full.Properties,
 		ModelName:        full.ModelName,
 		VideoDuration:    full.VideoDuration,
 		Data:             full.Data,
 		Timestamp2String: full.Timestamp2String,
 	}
+}
+
+// parseProgressPercent 将 "100%" / "50%" 这类进度字符串转为整数 0-100，
+// 无法解析时返回 0。
+func parseProgressPercent(progress string) int {
+	s := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(progress), "%"))
+	if s == "" {
+		return 0
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		return 0
+	}
+	return v
 }
 
 func taskPublicResultURL(task *model.Task) string {

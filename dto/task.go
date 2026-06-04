@@ -64,7 +64,9 @@ type TaskDto struct {
 // 去除了 platform / user_id / group / channel_id / channel_name / quota /
 // refund_quota / username / key 等内部计费与归属字段，避免泄露给调用方。
 type VideoTaskPublicDto struct {
-	ID               int64           `json:"id"`
+	// ID 对外返回 task_xxxx 字符串（与 OpenAI Video API 一致），
+	// 不再暴露数据库自增主键，避免下游按字符串解析数字 id 失败。
+	ID               string          `json:"id"`
 	CreatedAt        int64           `json:"created_at"`
 	UpdatedAt        int64           `json:"updated_at"`
 	TaskID           string          `json:"task_id"`
@@ -77,7 +79,9 @@ type VideoTaskPublicDto struct {
 	SubmitTime       int64           `json:"submit_time"`
 	StartTime        int64           `json:"start_time"`
 	FinishTime       int64           `json:"finish_time"`
-	Progress         string          `json:"progress"`
+	// Progress 输出为数字（0-100），与 OpenAI Video API 一致，
+	// 避免下游按 int 解析 "100%" 字符串失败。
+	Progress         int             `json:"progress"`
 	Properties       any             `json:"properties"`
 	ModelName        string          `json:"model_name,omitempty"`
 	VideoDuration    int             `json:"video_duration,omitempty"`
