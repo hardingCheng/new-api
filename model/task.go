@@ -78,9 +78,11 @@ func (t *Task) GetData(v any) error {
 }
 
 type Properties struct {
-	Input             string `json:"input"`
-	UpstreamModelName string `json:"upstream_model_name,omitempty"`
-	OriginModelName   string `json:"origin_model_name,omitempty"`
+	Input                 string `json:"input"`
+	UpstreamModelName     string `json:"upstream_model_name,omitempty"`
+	OriginModelName       string `json:"origin_model_name,omitempty"`
+	HasReferenceVideo     bool   `json:"has_reference_video,omitempty"`
+	ReferenceVideoSeconds int    `json:"reference_video_seconds,omitempty"`
 }
 
 func (m *Properties) Scan(val interface{}) error {

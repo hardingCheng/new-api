@@ -372,15 +372,10 @@ export const getTaskLogsColumns = ({
         const displayText = String(record.username || userId || '?');
         return (
           <Space>
-            <Avatar
-              size='extra-small'
-              color={stringToColor(displayText)}
-            >
+            <Avatar size='extra-small' color={stringToColor(displayText)}>
               {displayText.slice(0, 1)}
             </Avatar>
-            <Typography.Text>
-              {displayText}
-            </Typography.Text>
+            <Typography.Text>{displayText}</Typography.Text>
           </Space>
         );
       },
@@ -401,7 +396,7 @@ export const getTaskLogsColumns = ({
         const modelName = getTaskModelName(record);
         return modelName && modelName !== '-' ? (
           <Tag
-            color='blue'
+            color={stringToColor(modelName)}
             shape='circle'
             className='cursor-pointer'
             onClick={() => {
@@ -420,7 +415,14 @@ export const getTaskLogsColumns = ({
       title: t('消耗额度'),
       dataIndex: 'quota',
       render: (text) => {
-        return <Tag color='violet'>{formatQuotaAmount(text || 0)}</Tag>;
+        if (!isAdminUser) {
+          return <></>;
+        }
+        return (
+          <Tag color='red' type='solid' shape='circle'>
+            {formatQuotaAmount(text || 0)}
+          </Tag>
+        );
       },
     },
     {
@@ -428,10 +430,15 @@ export const getTaskLogsColumns = ({
       title: t('退款额度'),
       dataIndex: 'refund_quota',
       render: (text, record) => {
+        if (!isAdminUser) {
+          return <></>;
+        }
         const refundQuota =
           text || (record.status === 'FAILURE' ? record.quota || 0 : 0);
         return refundQuota > 0 ? (
-          <Tag color='green'>{formatQuotaAmount(refundQuota)}</Tag>
+          <Tag color='green' type='solid' shape='circle'>
+            {formatQuotaAmount(refundQuota)}
+          </Tag>
         ) : (
           '-'
         );
@@ -446,6 +453,44 @@ export const getTaskLogsColumns = ({
         return duration ? (
           <Tag color='cyan' shape='circle'>
             {formatSeconds(duration, t)}
+          </Tag>
+        ) : (
+          '-'
+        );
+      },
+    },
+    {
+      key: COLUMN_KEYS.HAS_REFERENCE_VIDEO,
+      title: t('是否视频参考'),
+      dataIndex: 'properties',
+      render: (text, record) => {
+        if (!isAdminUser) {
+          return <></>;
+        }
+        const hasReference = !!record?.properties?.has_reference_video;
+        return hasReference ? (
+          <Tag color='green' shape='circle' prefixIcon={<Video size={14} />}>
+            {t('是')}
+          </Tag>
+        ) : (
+          <Tag color='grey' shape='circle'>
+            {t('否')}
+          </Tag>
+        );
+      },
+    },
+    {
+      key: COLUMN_KEYS.REFERENCE_VIDEO_DURATION,
+      title: t('参考视频时长'),
+      dataIndex: 'properties',
+      render: (text, record) => {
+        if (!isAdminUser) {
+          return <></>;
+        }
+        const seconds = record?.properties?.reference_video_seconds;
+        return seconds ? (
+          <Tag color='teal' shape='circle'>
+            {formatSeconds(seconds, t)}
           </Tag>
         ) : (
           '-'
@@ -546,7 +591,8 @@ export const getTaskLogsColumns = ({
           record.action === TASK_ACTION_REMIX_GENERATE;
         const isSuccess = record.status === 'SUCCESS';
         const resultUrl = record.result_url;
-        const hasResultUrl = typeof resultUrl === 'string' && /^https?:\/\//.test(resultUrl);
+        const hasResultUrl =
+          typeof resultUrl === 'string' && /^https?:\/\//.test(resultUrl);
         if (isSuccess && isVideoTask && hasResultUrl) {
           return (
             <a

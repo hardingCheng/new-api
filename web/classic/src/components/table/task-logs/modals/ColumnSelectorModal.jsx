@@ -29,6 +29,7 @@ const ColumnSelectorModal = ({
   handleSelectAll,
   initDefaultColumns,
   COLUMN_KEYS,
+  ADMIN_ONLY_COLUMNS = [],
   isAdminUser,
   copyText,
   openContentModal,
@@ -78,12 +79,7 @@ const ColumnSelectorModal = ({
       >
         {allColumns.map((column) => {
           // Skip admin-only columns for non-admin users
-          if (
-            !isAdminUser &&
-            (column.key === COLUMN_KEYS.CHANNEL_NAME ||
-              column.key === COLUMN_KEYS.CHANNEL_ID ||
-              column.key === COLUMN_KEYS.USERNAME)
-          ) {
+          if (!isAdminUser && ADMIN_ONLY_COLUMNS.includes(column.key)) {
             return null;
           }
 

@@ -26,10 +26,15 @@ import {
   isAdmin,
   showError,
   showSuccess,
+  showWarning,
   timestamp2string,
 } from '../../helpers';
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
+import {
+  buildTaskExportRows,
+  EXPORT_PAGE_SIZE,
+} from '../../components/table/task-logs/taskLogsExport';
 
 export const useTaskLogsData = () => {
   const { t } = useTranslation();
@@ -47,6 +52,8 @@ export const useTaskLogsData = () => {
     QUOTA: 'quota',
     REFUND_QUOTA: 'refund_quota',
     VIDEO_DURATION: 'video_duration',
+    HAS_REFERENCE_VIDEO: 'has_reference_video',
+    REFERENCE_VIDEO_DURATION: 'reference_video_duration',
     TYPE: 'type',
     TASK_ID: 'task_id',
     TASK_STATUS: 'task_status',
@@ -55,9 +62,21 @@ export const useTaskLogsData = () => {
     RESULT_URL: 'result_url',
   };
 
+  // Columns visible to admins only
+  const ADMIN_ONLY_COLUMNS = [
+    COLUMN_KEYS.CHANNEL_NAME,
+    COLUMN_KEYS.CHANNEL_ID,
+    COLUMN_KEYS.USERNAME,
+    COLUMN_KEYS.QUOTA,
+    COLUMN_KEYS.REFUND_QUOTA,
+    COLUMN_KEYS.HAS_REFERENCE_VIDEO,
+    COLUMN_KEYS.REFERENCE_VIDEO_DURATION,
+  ];
+
   // Basic state
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [quotaPools, setQuotaPools] = useState([]);
   const [activePage, setActivePage] = useState(1);
   const [logCount, setLogCount] = useState(0);
@@ -121,9 +140,9 @@ export const useTaskLogsData = () => {
 
         // For non-admin users, force-hide admin-only columns (does not touch admin settings)
         if (!isAdminUser) {
-          merged[COLUMN_KEYS.CHANNEL_NAME] = false;
-          merged[COLUMN_KEYS.CHANNEL_ID] = false;
-          merged[COLUMN_KEYS.USERNAME] = false;
+          ADMIN_ONLY_COLUMNS.forEach((key) => {
+            merged[key] = false;
+          });
         }
         setVisibleColumns(merged);
       } catch (e) {
@@ -146,9 +165,11 @@ export const useTaskLogsData = () => {
       [COLUMN_KEYS.USERNAME]: isAdminUser,
       [COLUMN_KEYS.PLATFORM]: true,
       [COLUMN_KEYS.MODEL]: true,
-      [COLUMN_KEYS.QUOTA]: true,
-      [COLUMN_KEYS.REFUND_QUOTA]: true,
+      [COLUMN_KEYS.QUOTA]: isAdminUser,
+      [COLUMN_KEYS.REFUND_QUOTA]: isAdminUser,
       [COLUMN_KEYS.VIDEO_DURATION]: true,
+      [COLUMN_KEYS.HAS_REFERENCE_VIDEO]: isAdminUser,
+      [COLUMN_KEYS.REFERENCE_VIDEO_DURATION]: isAdminUser,
       [COLUMN_KEYS.TYPE]: true,
       [COLUMN_KEYS.TASK_ID]: true,
       [COLUMN_KEYS.TASK_STATUS]: true,
@@ -177,12 +198,7 @@ export const useTaskLogsData = () => {
     const updatedColumns = {};
 
     allKeys.forEach((key) => {
-      if (
-        (key === COLUMN_KEYS.CHANNEL_NAME ||
-          key === COLUMN_KEYS.CHANNEL_ID ||
-          key === COLUMN_KEYS.USERNAME) &&
-        !isAdminUser
-      ) {
+      if (!isAdminUser && ADMIN_ONLY_COLUMNS.includes(key)) {
         updatedColumns[key] = false;
       } else {
         updatedColumns[key] = checked;
@@ -256,8 +272,7 @@ export const useTaskLogsData = () => {
       model_name,
       start_timestamp,
       end_timestamp,
-    } =
-      getFormValues();
+    } = getFormValues();
     let localStartTimestamp = parseInt(Date.parse(start_timestamp) / 1000);
     let localEndTimestamp = parseInt(Date.parse(end_timestamp) / 1000);
     const params = new URLSearchParams({
@@ -317,6 +332,77 @@ export const useTaskLogsData = () => {
     await Promise.all([loadLogs(1, pageSize), loadQuotaPools()]);
   };
 
+  // 导出报表：按当前筛选条件翻页拉取全部记录，生成 xlsx 下载
+  const exportReport = async () => {
+    setExporting(true);
+    try {
+      const {
+        channel_id,
+        task_id,
+        status,
+        username,
+        model_name,
+        start_timestamp,
+        end_timestamp,
+      } = getFormValues();
+      const localStartTimestamp = parseInt(Date.parse(start_timestamp) / 1000);
+      const localEndTimestamp = parseInt(Date.parse(end_timestamp) / 1000);
+
+      let page = 1;
+      let total = Infinity;
+      const allItems = [];
+      while (allItems.length < total) {
+        const params = new URLSearchParams({
+          p: String(page),
+          page_size: String(EXPORT_PAGE_SIZE),
+          task_id,
+          start_timestamp: String(localStartTimestamp),
+          end_timestamp: String(localEndTimestamp),
+        });
+        if (isAdminUser) {
+          params.set('channel_id', channel_id);
+          params.set('status', status);
+          params.set('username', username);
+          params.set('model_name', model_name);
+        }
+        const url = isAdminUser
+          ? `/api/task/?${params.toString()}`
+          : `/api/task/self?${params.toString()}`;
+        const res = await API.get(url);
+        const { success, message, data } = res.data;
+        if (!success) {
+          showError(message);
+          return;
+        }
+        const items = data.items || [];
+        total = data.total || 0;
+        allItems.push(...items);
+        if (items.length === 0) break;
+        page += 1;
+        if (page > 2000) break; // 安全上限，避免异常分页造成死循环
+      }
+
+      if (allItems.length === 0) {
+        showWarning(t('没有可导出的数据'));
+        return;
+      }
+
+      const rows = buildTaskExportRows(allItems, { t, isAdminUser });
+      const XLSX = await import('xlsx');
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, t('任务记录'));
+      const stamp = timestamp2string(Date.now() / 1000).replace(/[^\d]/g, '');
+      XLSX.writeFile(workbook, `task-report-${stamp}.xlsx`);
+      showSuccess(t('导出成功'));
+    } catch (error) {
+      console.error('export task report failed', error);
+      showError(t('导出失败，请重试'));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // Copy text function
   const copyText = async (text) => {
     if (await copy(text)) {
@@ -371,6 +457,7 @@ export const useTaskLogsData = () => {
     // Basic state
     logs,
     loading,
+    exporting,
     quotaPools,
     activePage,
     logCount,
@@ -406,6 +493,7 @@ export const useTaskLogsData = () => {
     handleSelectAll,
     initDefaultColumns,
     COLUMN_KEYS,
+    ADMIN_ONLY_COLUMNS,
 
     // Compact mode
     compactMode,
@@ -422,6 +510,7 @@ export const useTaskLogsData = () => {
     handlePageChange,
     handlePageSizeChange,
     refresh,
+    exportReport,
     copyText,
     openContentModal,
     openVideoModal,

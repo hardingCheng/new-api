@@ -696,6 +696,10 @@ func RelayTask(c *gin.Context) {
 		task.Quota = result.Quota
 		task.Data = result.TaskData
 		task.Action = relayInfo.Action
+		if referenceSeconds := c.GetInt("reference_video_seconds"); referenceSeconds > 0 {
+			task.Properties.HasReferenceVideo = true
+			task.Properties.ReferenceVideoSeconds = referenceSeconds
+		}
 		if insertErr := task.Insert(); insertErr != nil {
 			common.SysError("insert task error: " + insertErr.Error())
 		}
