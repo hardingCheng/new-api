@@ -38,8 +38,32 @@ type ImageURL struct {
 	URL string `json:"url"`
 }
 
+// flexString 兼容上游将 id 返回为字符串或数字两种情况：
+// 部分 Sora 兼容渠道（如 seedance）会把 id 作为数字返回，
+// 直接用 string 解析会报 "cannot unmarshal number into Go struct field ... of type string"。
+type flexString string
+
+func (s *flexString) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || string(data) == "null" {
+		*s = ""
+		return nil
+	}
+	if data[0] == '"' {
+		var str string
+		if err := common.Unmarshal(data, &str); err != nil {
+			return err
+		}
+		*s = flexString(str)
+		return nil
+	}
+	// 非字符串（数字等）原样作为字符串保存
+	*s = flexString(data)
+	return nil
+}
+
 type responseTask struct {
-	ID                 string `json:"id"`
+	ID                 flexString `json:"id"`
 	TaskID             string `json:"task_id,omitempty"` //兼容旧接口
 	Object             string `json:"object"`
 	Model              string `json:"model"`
@@ -273,7 +297,7 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 		return
 	}
 
-	upstreamID := dResp.ID
+	upstreamID := string(dResp.ID)
 	if upstreamID == "" {
 		upstreamID = dResp.TaskID
 	}
@@ -283,7 +307,7 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	}
 
 	// 使用公开 task_xxxx ID 返回给客户端
-	dResp.ID = info.PublicTaskID
+	dResp.ID = flexString(info.PublicTaskID)
 	dResp.TaskID = info.PublicTaskID
 	c.JSON(http.StatusOK, dResp)
 	return upstreamID, responseBody, nil
