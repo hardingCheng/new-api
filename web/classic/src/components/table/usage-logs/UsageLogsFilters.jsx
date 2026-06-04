@@ -32,9 +32,11 @@ const LogsFilters = ({
   setLogType,
   loading,
   isAdminUser,
-  positiveQuotaUsers,
-  positiveQuotaUsersLoading,
-  loadPositiveQuotaUsers,
+  userOptions,
+  userOptionsLoading,
+  loadUserOptions,
+  persistSelectedUsernames,
+  clearSelectedUsernames,
   t,
 }) => {
   return (
@@ -51,7 +53,7 @@ const LogsFilters = ({
       <div className='flex flex-col gap-2'>
         <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2'>
           {/* 时间选择器 */}
-          <div className='col-span-1 lg:col-span-2'>
+          <div className='md:col-span-2'>
             <Form.DatePicker
               field='dateRange'
               className='w-full'
@@ -115,27 +117,6 @@ const LogsFilters = ({
                 pure
                 size='small'
               />
-              <Form.Select
-                field='usernames'
-                multiple
-                filter
-                remote
-                prefix={<IconSearch />}
-                placeholder={t('有余额用户')}
-                optionList={positiveQuotaUsers}
-                loading={positiveQuotaUsersLoading}
-                maxTagCount={3}
-                showRestTagsPopover
-                expandRestTagsOnClick
-                showClear
-                pure
-                size='small'
-                onSearch={(value) => loadPositiveQuotaUsers(value)}
-                renderSelectedItem={(optionNode) => ({
-                  isRenderInTag: true,
-                  content: optionNode.value,
-                })}
-              />
               <Form.Input
                 field='username'
                 prefix={<IconSearch />}
@@ -144,6 +125,31 @@ const LogsFilters = ({
                 pure
                 size='small'
               />
+              <div className='md:col-span-2'>
+                <Form.Select
+                  field='usernames'
+                  className='w-full'
+                  multiple
+                  filter
+                  remote
+                  prefix={<IconSearch />}
+                  placeholder={t('用户筛选')}
+                  optionList={userOptions}
+                  loading={userOptionsLoading}
+                  maxTagCount={3}
+                  showRestTagsPopover
+                  expandRestTagsOnClick
+                  showClear
+                  pure
+                  size='small'
+                  onChange={(value) => persistSelectedUsernames(value)}
+                  onSearch={(value) => loadUserOptions(value)}
+                  renderSelectedItem={(optionNode) => ({
+                    isRenderInTag: true,
+                    content: optionNode.value,
+                  })}
+                />
+              </div>
             </>
           )}
         </div>
@@ -190,6 +196,8 @@ const LogsFilters = ({
               onClick={() => {
                 if (formApi) {
                   formApi.reset();
+                  formApi.setValue('usernames', []);
+                  clearSelectedUsernames && clearSelectedUsernames();
                   setLogType(0);
                   setTimeout(() => {
                     refresh();

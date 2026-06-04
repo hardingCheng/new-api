@@ -4268,6 +4268,7 @@
     "上游错误包含这些关键词时，会被视为渠道失败，用于自动禁用和熔断失败计数。": "Lỗi upstream chứa các từ khóa này sẽ được xem là lỗi kênh để tự động vô hiệu hóa và đếm lỗi ngắt mạch.",
     "有余额": "Có số dư",
     "有余额用户": "Người dùng có số dư",
+    "用户筛选": "Lọc theo người dùng",
     "用户名称精确筛选": "Lọc chính xác tên người dùng"
   }
 }

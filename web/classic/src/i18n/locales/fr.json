@@ -3736,6 +3736,7 @@
     "上游错误包含这些关键词时，会被视为渠道失败，用于自动禁用和熔断失败计数。": "Les erreurs amont contenant ces mots-clés sont traitées comme des échecs de canal pour la désactivation automatique et le comptage des échecs du disjoncteur.",
     "有余额": "Avec solde",
     "有余额用户": "Utilisateurs avec solde",
+    "用户筛选": "Filtrer par utilisateur",
     "用户名称精确筛选": "Filtre exact du nom d'utilisateur"
   }
 }

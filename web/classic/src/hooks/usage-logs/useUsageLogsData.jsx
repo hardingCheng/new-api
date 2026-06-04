@@ -58,7 +58,14 @@ const renderUserPricingOverrides = (overrides, t) => {
     return '';
   }
   return (
-    <div style={{ maxWidth: 680, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.6 }}>
+    <div
+      style={{
+        maxWidth: 680,
+        whiteSpace: 'normal',
+        wordBreak: 'break-word',
+        lineHeight: 1.6,
+      }}
+    >
       {overrides.map((item, index) => {
         const rule = item?.rule || {};
         const type =
@@ -70,7 +77,9 @@ const renderUserPricingOverrides = (overrides, t) => {
         const group = rule.group_pattern || t('全部分组');
         const model = rule.model_pattern || t('全部模型');
         return (
-          <div key={`${rule.user_id}-${rule.group_pattern}-${rule.model_pattern}-${index}`}>
+          <div
+            key={`${rule.user_id}-${rule.group_pattern}-${rule.model_pattern}-${index}`}
+          >
             {t('分组')} {group} / {t('模型')} {model}：{type} {rule.value}
           </div>
         );
@@ -84,14 +93,22 @@ const renderModelQuotaPools = (pools, t) => {
     return '';
   }
   return (
-    <div style={{ maxWidth: 760, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.6 }}>
+    <div
+      style={{
+        maxWidth: 760,
+        whiteSpace: 'normal',
+        wordBreak: 'break-word',
+        lineHeight: 1.6,
+      }}
+    >
       {pools.map((item, index) => {
         const rule = item?.rule || {};
         const scope = item.scope === 'user' ? t('指定用户池') : t('全局共享池');
         const remaining = item.remaining ?? '-';
         return (
           <div key={`${rule.id || rule.model}-${item.period_key}-${index}`}>
-            {scope} / {rule.model} / {item.period_key}：{item.used_after ?? '-'} / {item.limit ?? '-'}，{t('剩余')} {remaining}
+            {scope} / {rule.model} / {item.period_key}：{item.used_after ?? '-'}{' '}
+            / {item.limit ?? '-'}，{t('剩余')} {remaining}
           </div>
         );
       })}
@@ -130,9 +147,8 @@ export const useLogsData = () => {
   const [logCount, setLogCount] = useState(0);
   const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
   const [logType, setLogType] = useState(0);
-  const [positiveQuotaUsers, setPositiveQuotaUsers] = useState([]);
-  const [positiveQuotaUsersLoading, setPositiveQuotaUsersLoading] =
-    useState(false);
+  const [userOptions, setUserOptions] = useState([]);
+  const [userOptionsLoading, setUserOptionsLoading] = useState(false);
 
   // User and admin
   const isAdminUser = isAdmin();
@@ -143,6 +159,31 @@ export const useLogsData = () => {
   const BILLING_DISPLAY_MODE_STORAGE_KEY = isAdminUser
     ? 'logs-billing-display-mode-admin'
     : 'logs-billing-display-mode-user';
+  // 选中的用户名筛选缓存（仅管理员）：刷新后保持，点击重置时清空
+  const SELECTED_USERNAMES_STORAGE_KEY = 'logs-filter-usernames-admin';
+  const getInitialSelectedUsernames = () => {
+    if (!isAdminUser) {
+      return [];
+    }
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem(SELECTED_USERNAMES_STORAGE_KEY),
+      );
+      return Array.isArray(saved) ? saved.filter(Boolean) : [];
+    } catch (e) {
+      return [];
+    }
+  };
+  const persistSelectedUsernames = (value) => {
+    if (!isAdminUser) {
+      return;
+    }
+    const list = Array.isArray(value) ? value.filter(Boolean) : [];
+    localStorage.setItem(SELECTED_USERNAMES_STORAGE_KEY, JSON.stringify(list));
+  };
+  const clearSelectedUsernames = () => {
+    localStorage.removeItem(SELECTED_USERNAMES_STORAGE_KEY);
+  };
 
   // Statistics state
   const [stat, setStat] = useState({
@@ -155,7 +196,7 @@ export const useLogsData = () => {
   let now = new Date();
   const formInitValues = {
     username: '',
-    usernames: [],
+    usernames: getInitialSelectedUsernames(),
     token_name: '',
     model_name: '',
     channel: '',
@@ -224,7 +265,9 @@ export const useLogsData = () => {
   };
 
   // Column visibility state
-  const [visibleColumns, setVisibleColumns] = useState(getInitialVisibleColumns);
+  const [visibleColumns, setVisibleColumns] = useState(
+    getInitialVisibleColumns,
+  );
   const [showColumnSelector, setShowColumnSelector] = useState(false);
   const [billingDisplayMode, setBillingDisplayMode] = useState(
     getInitialBillingDisplayMode,
@@ -324,35 +367,41 @@ export const useLogsData = () => {
     };
   };
 
-  const loadPositiveQuotaUsers = async (keyword = '') => {
+  const loadUserOptions = async (keyword = '') => {
     if (!isAdminUser) {
       return;
     }
-    setPositiveQuotaUsersLoading(true);
+    setUserOptionsLoading(true);
     try {
       const params = new URLSearchParams({
         keyword,
         group: '',
         p: '1',
         page_size: '1000',
-        positive_quota: 'true',
       });
+      // 不再按余额筛选，后端按 pinned 优先排序，置顶用户排在前面
       const res = await API.get(`/api/user/search?${params.toString()}`);
       const { success, message, data } = res.data;
       if (success) {
         const items = Array.isArray(data?.items) ? data.items : [];
-        setPositiveQuotaUsers(
-          items.map((user) => ({
-            label: user.username,
-            value: user.username,
-            quota: user.quota,
-          })),
-        );
+        const options = items.map((user) => ({
+          label: user.username,
+          value: user.username,
+          quota: user.quota,
+        }));
+        // 合并已选中的用户名，保证刷新后仍能回显为标签
+        const existing = new Set(options.map((opt) => opt.value));
+        getInitialSelectedUsernames().forEach((name) => {
+          if (!existing.has(name)) {
+            options.push({ label: name, value: name });
+          }
+        });
+        setUserOptions(options);
       } else {
         showError(message);
       }
     } finally {
-      setPositiveQuotaUsersLoading(false);
+      setUserOptionsLoading(false);
     }
   };
 
@@ -485,7 +534,10 @@ export const useLogsData = () => {
       }
       let expandDataLocal = [];
 
-      if (isAdminUser && (logs[i].type === 0 || logs[i].type === 2 || logs[i].type === 6)) {
+      if (
+        isAdminUser &&
+        (logs[i].type === 0 || logs[i].type === 2 || logs[i].type === 6)
+      ) {
         expandDataLocal.push({
           key: t('渠道信息'),
           value: `${logs[i].channel} - ${logs[i].channel_name || '[未知]'}`,
@@ -532,7 +584,10 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('日志详情'),
             value: other?.claude
-              ? renderClaudeLogContent({ ...other, displayMode: billingDisplayMode })
+              ? renderClaudeLogContent({
+                  ...other,
+                  displayMode: billingDisplayMode,
+                })
               : renderLogContent({ ...other, displayMode: billingDisplayMode }),
           });
         }
@@ -554,13 +609,21 @@ export const useLogsData = () => {
             value: getVideoBillingModeText(other.video_billing_mode, t),
           });
         }
-        if (isAdminUser && Array.isArray(other?.user_pricing_overrides) && other.user_pricing_overrides.length > 0) {
+        if (
+          isAdminUser &&
+          Array.isArray(other?.user_pricing_overrides) &&
+          other.user_pricing_overrides.length > 0
+        ) {
           expandDataLocal.push({
             key: t('用户价格覆盖'),
             value: renderUserPricingOverrides(other.user_pricing_overrides, t),
           });
         }
-        if (isAdminUser && Array.isArray(other?.model_quota_pools) && other.model_quota_pools.length > 0) {
+        if (
+          isAdminUser &&
+          Array.isArray(other?.model_quota_pools) &&
+          other.model_quota_pools.length > 0
+        ) {
           expandDataLocal.push({
             key: t('模型限量池'),
             value: renderModelQuotaPools(other.model_quota_pools, t),
@@ -641,7 +704,14 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('失败原因'),
             value: (
-              <div style={{ maxWidth: 600, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.6 }}>
+              <div
+                style={{
+                  maxWidth: 600,
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-word',
+                  lineHeight: 1.6,
+                }}
+              >
                 {other.reason}
               </div>
             ),
@@ -658,7 +728,8 @@ export const useLogsData = () => {
         const ss = other.stream_status;
         const isOk = ss.status === 'ok';
         const statusLabel = isOk ? '✓ ' + t('正常') : '✗ ' + t('异常');
-        let streamValue = statusLabel + ' (' + (ss.end_reason || 'unknown') + ')';
+        let streamValue =
+          statusLabel + ' (' + (ss.end_reason || 'unknown') + ')';
         if (ss.error_count > 0) {
           streamValue += ` [${t('软错误')}: ${ss.error_count}]`;
         }
@@ -673,7 +744,14 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('流错误详情'),
             value: (
-              <div style={{ maxWidth: 600, whiteSpace: 'pre-line', wordBreak: 'break-word', lineHeight: 1.6 }}>
+              <div
+                style={{
+                  maxWidth: 600,
+                  whiteSpace: 'pre-line',
+                  wordBreak: 'break-word',
+                  lineHeight: 1.6,
+                }}
+              >
                 {ss.errors.join('\n')}
               </div>
             ),
@@ -949,7 +1027,7 @@ export const useLogsData = () => {
   }, [formApi]);
 
   useEffect(() => {
-    loadPositiveQuotaUsers();
+    loadUserOptions();
   }, []);
 
   // Check if any record has expandable content
@@ -970,8 +1048,8 @@ export const useLogsData = () => {
     logCount,
     pageSize,
     logType,
-    positiveQuotaUsers,
-    positiveQuotaUsersLoading,
+    userOptions,
+    userOptionsLoading,
     stat,
     isAdminUser,
 
@@ -1021,7 +1099,9 @@ export const useLogsData = () => {
     setLogsFormat,
     hasExpandableRows,
     setLogType,
-    loadPositiveQuotaUsers,
+    loadUserOptions,
+    persistSelectedUsernames,
+    clearSelectedUsernames,
     openParamOverrideModal,
 
     // Translation
