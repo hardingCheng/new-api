@@ -40,16 +40,13 @@ const formatTimestamp = (timestampInSeconds) => {
   );
 };
 
-const formatQuotaAmount = (quota) => {
+// 导出用：返回全精度数值（不逐行四舍五入），保证 Excel 求和与后端按原始额度汇总后换算的结果一致
+const toQuotaNumber = (quota) => {
   const amount = quotaToDisplayAmount(quota);
   if (!Number.isFinite(amount)) {
-    return '0';
+    return 0;
   }
-  const fixed = amount.toFixed(2).replace(/\.?0+$/, '');
-  if (fixed === '0' && amount > 0) {
-    return '0.01';
-  }
-  return fixed;
+  return amount;
 };
 
 const getModelName = (record) =>
@@ -156,9 +153,8 @@ export const buildTaskExportRows = (items, { t, isAdminUser }) => {
     row[t('平台')] = getPlatformLabel(record.platform, t);
     row[t('模型')] = getModelName(record);
     if (isAdminUser) {
-      row[t('消耗额度')] = formatQuotaAmount(record.quota || 0);
-      row[t('退款额度')] =
-        refundQuota > 0 ? formatQuotaAmount(refundQuota) : '';
+      row[t('消耗额度')] = toQuotaNumber(record.quota || 0);
+      row[t('退款额度')] = refundQuota > 0 ? toQuotaNumber(refundQuota) : 0;
     }
     row[t('视频时长') + '(s)'] = videoDuration || '';
     if (isAdminUser) {
