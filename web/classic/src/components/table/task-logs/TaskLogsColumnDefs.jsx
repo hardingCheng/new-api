@@ -419,7 +419,7 @@ export const getTaskLogsColumns = ({
           return <></>;
         }
         return (
-          <Tag color='red' type='solid' shape='circle'>
+          <Tag color='green' type='solid' shape='circle'>
             {formatQuotaAmount(text || 0)}
           </Tag>
         );
@@ -436,7 +436,7 @@ export const getTaskLogsColumns = ({
         const refundQuota =
           text || (record.status === 'FAILURE' ? record.quota || 0 : 0);
         return refundQuota > 0 ? (
-          <Tag color='green' type='solid' shape='circle'>
+          <Tag color='red' type='solid' shape='circle'>
             {formatQuotaAmount(refundQuota)}
           </Tag>
         ) : (

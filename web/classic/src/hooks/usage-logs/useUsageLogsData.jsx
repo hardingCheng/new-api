@@ -337,7 +337,9 @@ export const useLogsData = () => {
 
   // 获取表单值的辅助函数，确保所有值都是字符串
   const getFormValues = () => {
-    const formValues = formApi ? formApi.getValues() : {};
+    // formApi 尚未就绪时（如刷新后的首次加载）回退到初始值，
+    // 以便缓存的用户名筛选等条件能带入首次查询
+    const formValues = formApi ? formApi.getValues() : formInitValues;
 
     let start_timestamp = timestamp2string(getTodayStartTimestamp());
     let end_timestamp = timestamp2string(now.getTime() / 1000 + 3600);
