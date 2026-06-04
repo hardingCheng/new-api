@@ -60,6 +60,31 @@ type TaskDto struct {
 	Key              string          `json:"key,omitempty"`
 }
 
+// VideoTaskPublicDto 是 /v1/videos/{task_id} 对外返回的精简结构，
+// 去除了 platform / user_id / group / channel_id / channel_name / quota /
+// refund_quota / username / key 等内部计费与归属字段，避免泄露给调用方。
+type VideoTaskPublicDto struct {
+	ID               int64           `json:"id"`
+	CreatedAt        int64           `json:"created_at"`
+	UpdatedAt        int64           `json:"updated_at"`
+	TaskID           string          `json:"task_id"`
+	Action           string          `json:"action"`
+	Status           string          `json:"status"`
+	FailReason       string          `json:"fail_reason"`
+	ResultURL        string          `json:"result_url,omitempty"`
+	URL              string          `json:"url,omitempty"`
+	VideoURL         string          `json:"video_url,omitempty"`
+	SubmitTime       int64           `json:"submit_time"`
+	StartTime        int64           `json:"start_time"`
+	FinishTime       int64           `json:"finish_time"`
+	Progress         string          `json:"progress"`
+	Properties       any             `json:"properties"`
+	ModelName        string          `json:"model_name,omitempty"`
+	VideoDuration    int             `json:"video_duration,omitempty"`
+	Data             json.RawMessage `json:"data"`
+	Timestamp2String string          `json:"timestamp2string,omitempty"`
+}
+
 type FetchReq struct {
 	IDs []string `json:"ids"`
 }

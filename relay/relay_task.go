@@ -389,7 +389,7 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 
 	// /v1/videos/:task_id returns the task record with direct URL fields for compatibility.
 	if isOpenAIVideoAPI {
-		respBody, err = common.Marshal(TaskModel2Dto(originTask))
+		respBody, err = common.Marshal(TaskModel2PublicVideoDto(originTask))
 		if err != nil {
 			taskResp = service.TaskErrorWrapper(err, "marshal_response_failed", http.StatusInternalServerError)
 		}
@@ -558,6 +558,34 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		Data:             taskDataWithResultURL(task.Data, resultURL, task.TaskID),
 		Timestamp2String: taskTimestampString(task.CreatedAt),
 		Key:              strconv.FormatInt(task.ID, 10),
+	}
+}
+
+// TaskModel2PublicVideoDto 构建 /v1/videos/{task_id} 的对外精简响应，
+// 复用 TaskModel2Dto 的字段计算逻辑，但只保留调用方需要的字段，
+// 不暴露 platform / user_id / group / channel_id / quota 等内部信息。
+func TaskModel2PublicVideoDto(task *model.Task) *dto.VideoTaskPublicDto {
+	full := TaskModel2Dto(task)
+	return &dto.VideoTaskPublicDto{
+		ID:               full.ID,
+		CreatedAt:        full.CreatedAt,
+		UpdatedAt:        full.UpdatedAt,
+		TaskID:           full.TaskID,
+		Action:           full.Action,
+		Status:           full.Status,
+		FailReason:       full.FailReason,
+		ResultURL:        full.ResultURL,
+		URL:              full.URL,
+		VideoURL:         full.VideoURL,
+		SubmitTime:       full.SubmitTime,
+		StartTime:        full.StartTime,
+		FinishTime:       full.FinishTime,
+		Progress:         full.Progress,
+		Properties:       full.Properties,
+		ModelName:        full.ModelName,
+		VideoDuration:    full.VideoDuration,
+		Data:             full.Data,
+		Timestamp2String: full.Timestamp2String,
 	}
 }
 
