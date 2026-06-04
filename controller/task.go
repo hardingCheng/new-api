@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -125,7 +126,62 @@ func tasksToDto(tasks []*model.Task, fillUser bool) []*dto.TaskDto {
 		if channelName, ok := channelIdMap[task.ChannelId]; ok {
 			task.ChannelName = channelName
 		}
-		result[i] = relay.TaskModel2Dto(task)
+		dtoItem := relay.TaskModel2Dto(task)
+		// 普通用户路径（非管理员）脱敏：移除计费/渠道/上游模型名等内部字段
+		if !fillUser {
+			redactTaskDtoForUser(dtoItem)
+		}
+		result[i] = dtoItem
 	}
 	return result
+}
+
+// redactTaskDtoForUser 移除普通用户不应看到的内部字段：
+// 计费额度、归属渠道/分组、内部主键，以及上游真实模型名和上游内部 task_id。
+func redactTaskDtoForUser(d *dto.TaskDto) {
+	d.Quota = 0
+	d.RefundQuota = 0
+	// 注意：d.Key 是任务的数据库自增 ID 字符串（非 API 密钥），
+	// 前端任务表格用它作为 rowKey，置空会导致行 key 冲突，故保留。
+	d.Group = ""
+	d.ChannelId = 0
+	d.ChannelName = ""
+	if props, ok := d.Properties.(model.Properties); ok {
+		props.UpstreamModelName = ""
+		d.Properties = props
+	}
+	d.Data = redactTaskDataForUser(d.Data, d.ModelName, d.TaskID)
+}
+
+// redactTaskDataForUser 脱敏原始上游响应体中的 model（替换为对外模型名）和
+// task_id（替换为对外公开 ID）。
+func redactTaskDataForUser(data json.RawMessage, originModel, publicTaskID string) json.RawMessage {
+	if len(data) == 0 {
+		return data
+	}
+	var m map[string]any
+	if err := common.Unmarshal(data, &m); err != nil {
+		return data
+	}
+	changed := false
+	if _, ok := m["model"]; ok {
+		if originModel != "" {
+			m["model"] = originModel
+		} else {
+			delete(m, "model")
+		}
+		changed = true
+	}
+	if _, ok := m["task_id"]; ok {
+		m["task_id"] = publicTaskID
+		changed = true
+	}
+	if !changed {
+		return data
+	}
+	b, err := common.Marshal(m)
+	if err != nil {
+		return data
+	}
+	return json.RawMessage(b)
 }

@@ -21,6 +21,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
+	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
@@ -309,6 +310,10 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	// 使用公开 task_xxxx ID 返回给客户端
 	dResp.ID = flexString(info.PublicTaskID)
 	dResp.TaskID = info.PublicTaskID
+	// 用对外模型名覆盖上游真实模型名，避免泄露映射后的上游模型（如 wp/seedance-2.0-fast-480p）
+	if info.OriginModelName != "" {
+		dResp.Model = info.OriginModelName
+	}
 	c.JSON(http.StatusOK, dResp)
 	return upstreamID, responseBody, nil
 }
@@ -382,28 +387,52 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	data := task.Data
 	var err error
 
+	// 空数据兜底：上游从未回写 task.Data（如刚提交、或超时清理把状态置为终态但未回写 body）时，
+	// 透传空 body 会让下游解析失败，这里给一个最小可解析对象。
+	if len(data) == 0 {
+		data = []byte("{}")
+	}
+
 	// 替换为对外公开的 task ID（不暴露上游真实 ID）
 	if data, err = sjson.SetBytes(data, "id", task.TaskID); err != nil {
 		return nil, errors.Wrap(err, "set id failed")
 	}
 
-	// 用数据库中的权威状态覆盖 task.Data 可能过期的值。
-	// 关键场景：超时清理器只更新数据库 status=FAILURE、progress=100%，
+	// 用对外模型名覆盖上游真实模型名，避免泄露映射后的上游模型
+	if task.Properties.OriginModelName != "" {
+		if data, err = sjson.SetBytes(data, "model", task.Properties.OriginModelName); err != nil {
+			return nil, errors.Wrap(err, "set model failed")
+		}
+	}
+
+	// 上游回显的 task_id（部分渠道如 veo 会带）是上游内部 ID，替换为对外公开 ID。
+	// 仅在字段存在时替换，避免给本不返回 task_id 的渠道凭空加字段。
+	if gjson.GetBytes(data, "task_id").Exists() {
+		if data, err = sjson.SetBytes(data, "task_id", task.TaskID); err != nil {
+			return nil, errors.Wrap(err, "set task_id failed")
+		}
+	}
+
+	// 仅在数据库已是终态（成功/失败）时，才用权威值覆盖 task.Data。
+	// 非终态（排队/处理中）必须保持上游原生状态字符串（如 seedance 的 "processing"），
+	// 否则像 Apigod 这类只认上游原生状态的下游会把 "in_progress" 判为 unknown。
+	// 终态覆盖用于纠正一个 stale 场景：超时清理器把 DB 置为 FAILURE、progress=100%，
 	// 但不会回写 task.Data；若纯透传，下游会一直看到 "processing" 而永远轮询。
-	// ToVideoStatus 已把 NOT_START 归入 queued，避免输出 "unknown" 导致下游无法解析。
-	if status := task.Status.ToVideoStatus(); status != "" && status != dto.VideoStatusUnknown {
-		if data, err = sjson.SetBytes(data, "status", status); err != nil {
+	switch task.Status {
+	case model.TaskStatusSuccess:
+		if data, err = sjson.SetBytes(data, "status", dto.VideoStatusCompleted); err != nil {
 			return nil, errors.Wrap(err, "set status failed")
 		}
-	}
-	if p := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(task.Progress), "%")); p != "" {
-		if pv, convErr := strconv.Atoi(p); convErr == nil {
-			if data, err = sjson.SetBytes(data, "progress", pv); err != nil {
-				return nil, errors.Wrap(err, "set progress failed")
-			}
+		if data, err = sjson.SetBytes(data, "progress", 100); err != nil {
+			return nil, errors.Wrap(err, "set progress failed")
 		}
-	}
-	if task.Status == model.TaskStatusFailure {
+	case model.TaskStatusFailure:
+		if data, err = sjson.SetBytes(data, "status", dto.VideoStatusFailed); err != nil {
+			return nil, errors.Wrap(err, "set status failed")
+		}
+		if data, err = sjson.SetBytes(data, "progress", 100); err != nil {
+			return nil, errors.Wrap(err, "set progress failed")
+		}
 		reason := task.FailReason
 		if reason == "" {
 			reason = "task failed"
@@ -432,6 +461,14 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 					}
 				}
 			}
+		}
+	}
+
+	// status 兜底：非终态透传上游原生状态，但若上游 body 缺 status 字段（如空数据兜底场景），
+	// 下游会解析失败，这里用 DB 状态映射出的 OpenAI 标准状态补上。
+	if !gjson.GetBytes(data, "status").Exists() {
+		if data, err = sjson.SetBytes(data, "status", task.Status.ToVideoStatus()); err != nil {
+			return nil, errors.Wrap(err, "set status fallback failed")
 		}
 	}
 
