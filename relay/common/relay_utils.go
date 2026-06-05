@@ -175,6 +175,35 @@ func referenceValuesFromBodyMap(bodyMap map[string]interface{}) []string {
 	return normalizeStringList(values)
 }
 
+// IsGrokImagineVideo15Preview 匹配 grok-video-1.5-preview 与 grok-imagine-video-1.5-preview。
+func IsGrokImagineVideo15Preview(model string) bool {
+	switch strings.ToLower(strings.TrimSpace(model)) {
+	case "grok-video-1.5-preview", "grok-imagine-video-1.5-preview":
+		return true
+	default:
+		return false
+	}
+}
+
+// FillGrokImagineVideo15PreviewImages 仅对 grok-video-1.5-preview /
+// grok-imagine-video-1.5-preview 生效：始终用请求里的 reference_images 原样覆盖
+// images 字段后再发给上游（上游需要 images 字段，但客户端只传 reference_images）。
+// images 与 reference_images 完全一致，不做去重/去空格等归一化。
+func FillGrokImagineVideo15PreviewImages(info *RelayInfo, req TaskSubmitReq, bodyMap map[string]interface{}) {
+	if bodyMap == nil {
+		return
+	}
+	if !IsGrokImagineVideo15Preview(req.Model) &&
+		(info == nil || !IsGrokImagineVideo15Preview(info.OriginModelName)) {
+		return
+	}
+	refs, ok := bodyMap["reference_images"]
+	if !ok || !hasNonEmptyField(refs) {
+		return
+	}
+	bodyMap["images"] = refs
+}
+
 func clampSeedanceDuration(seconds int) int {
 	if seconds < 4 {
 		return 4

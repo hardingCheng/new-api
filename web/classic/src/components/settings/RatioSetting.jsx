@@ -30,6 +30,7 @@ import ToolPriceSettings from '../../pages/Setting/Ratio/ToolPriceSettings';
 import VideoBillingModeSettings from '../../pages/Setting/Ratio/VideoBillingModeSettings';
 import ModelQuotaPoolSettings from '../../pages/Setting/Ratio/ModelQuotaPoolSettings';
 import UserPricingOverrideSettings from '../../pages/Setting/Ratio/UserPricingOverrideSettings';
+import SettingsModelLimit from '../../pages/Setting/ModelLimit/SettingsModelLimit';
 
 import { API, showError, toBoolean } from '../../helpers';
 
@@ -139,6 +140,9 @@ const RatioSetting = () => {
           </Tabs.TabPane>
           <Tabs.TabPane tab={t('模型限量池')} itemKey='model_quota_pool'>
             <ModelQuotaPoolSettings options={inputs} refresh={onRefresh} />
+            <Card style={{ marginTop: '10px' }}>
+              <SettingsModelLimit options={inputs} refresh={onRefresh} />
+            </Card>
           </Tabs.TabPane>
           <Tabs.TabPane tab={t('用户价格覆盖')} itemKey='user_pricing_override'>
             <UserPricingOverrideSettings options={inputs} refresh={onRefresh} />
