@@ -482,7 +482,8 @@ func recordSeedanceResourcePoolGuardErrorLog(c *gin.Context, relayInfo *relaycom
 		relayInfo.TokenId,
 		useTimeSeconds,
 		relayInfo.IsStream,
-		relayInfo.UserGroup,
+		// 与标准错误日志一致，记录请求实际使用的分组而非用户权限分组
+		common.GetContextKeyString(c, constant.ContextKeyUsingGroup),
 		other,
 	)
 }
