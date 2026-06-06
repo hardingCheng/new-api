@@ -97,9 +97,24 @@ func GetModelQuotaPoolCopy() ModelQuotaPoolConfig {
 	return cfg
 }
 
-func MatchModelQuotaPoolRules(userID int, modelName string) []ModelQuotaPoolRule {
-	modelName = strings.TrimSpace(modelName)
-	if modelName == "" {
+// MatchModelQuotaPoolRules 匹配限量池规则。modelNames 可传多个候选名
+// （如客户端模型名 OriginModelName 与映射后的上游模型名 UpstreamModelName），
+// 只要规则的 model 命中任意一个即视为匹配，避免规则按上游名配置时漏匹配。
+func MatchModelQuotaPoolRules(userID int, modelNames ...string) []ModelQuotaPoolRule {
+	names := make([]string, 0, len(modelNames))
+	seen := make(map[string]struct{}, len(modelNames))
+	for _, name := range modelNames {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
 		return nil
 	}
 
@@ -107,7 +122,7 @@ func MatchModelQuotaPoolRules(userID int, modelName string) []ModelQuotaPoolRule
 	var userRules []ModelQuotaPoolRule
 	cfg := currentModelQuotaPoolConfig()
 	for _, rule := range cfg.Rules {
-		if rule.Disabled || rule.Limit <= 0 || !wildcardMatch(rule.Model, modelName) {
+		if rule.Disabled || rule.Limit <= 0 || !matchesAnyModelQuotaPoolModel(rule.Model, names) {
 			continue
 		}
 		switch rule.Scope {
@@ -128,6 +143,15 @@ func MatchModelQuotaPoolRules(userID int, modelName string) []ModelQuotaPoolRule
 		matches = append(matches, globalRule)
 	}
 	return matches
+}
+
+func matchesAnyModelQuotaPoolModel(pattern string, names []string) bool {
+	for _, name := range names {
+		if wildcardMatch(pattern, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func ModelQuotaPoolRuleKey(rule ModelQuotaPoolRule) string {

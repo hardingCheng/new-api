@@ -59,7 +59,9 @@ func CheckAndConsumeModelQuotaPool(ctx *gin.Context, info *relaycommon.RelayInfo
 	if info.ModelQuotaPoolChecked {
 		return nil
 	}
-	matches := ratio_setting.MatchModelQuotaPoolRules(info.UserId, info.OriginModelName)
+	// 同时用客户端模型名与映射后的上游模型名匹配规则，
+	// 避免限量池规则按上游名配置时漏匹配导致放行。
+	matches := ratio_setting.MatchModelQuotaPoolRules(info.UserId, info.OriginModelName, info.UpstreamModelName)
 	if len(matches) == 0 {
 		info.ModelQuotaPoolChecked = true
 		return nil

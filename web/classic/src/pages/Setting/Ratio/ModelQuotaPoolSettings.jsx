@@ -213,6 +213,14 @@ export default function ModelQuotaPoolSettings({ options, refresh }) {
     setRules((previous) => previous.filter((rule) => rule.id !== id));
   };
 
+  const toggleRuleDisabled = (id) => {
+    setRules((previous) =>
+      previous.map((rule) =>
+        rule.id === id ? { ...rule, disabled: !rule.disabled } : rule,
+      ),
+    );
+  };
+
   const saveRules = async () => {
     setLoading(true);
     try {
@@ -235,11 +243,18 @@ export default function ModelQuotaPoolSettings({ options, refresh }) {
   const columns = [
     {
       title: t('状态'),
-      width: 90,
+      width: 120,
       render: (_, record) => (
-        <Tag color={record.disabled ? 'grey' : 'green'} shape='circle'>
-          {record.disabled ? t('停用') : t('启用')}
-        </Tag>
+        <Space>
+          <Switch
+            size='small'
+            checked={!record.disabled}
+            onChange={() => toggleRuleDisabled(record.id)}
+          />
+          <Tag color={record.disabled ? 'grey' : 'green'} shape='circle'>
+            {record.disabled ? t('停用') : t('启用')}
+          </Tag>
+        </Space>
       ),
     },
     {
