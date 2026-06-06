@@ -194,8 +194,12 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 				}
 			}
 			if req, err := relaycommon.GetTaskRequest(c); err == nil {
-				relaycommon.FillMissingGrokImagineInputReferenceMap(info, req, bodyMap)
-				relaycommon.FillGrokImagineVideo15PreviewImages(info, req, bodyMap)
+				if relaycommon.ShouldRewriteGrokImagineReferenceToImageURL(info, req) {
+					relaycommon.RewriteGrokImagineReferenceToImageURL(bodyMap)
+				} else {
+					relaycommon.FillMissingGrokImagineInputReferenceMap(info, req, bodyMap)
+					relaycommon.FillGrokImagineVideo15PreviewImages(info, req, bodyMap)
+				}
 			}
 			if newBody, err := common.Marshal(bodyMap); err == nil {
 				return bytes.NewReader(newBody), nil

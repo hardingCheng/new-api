@@ -204,6 +204,58 @@ func FillGrokImagineVideo15PreviewImages(info *RelayInfo, req TaskSubmitReq, bod
 	bodyMap["images"] = refs
 }
 
+// grokImagineImageURLChannelId 指定渠道：该渠道的 grok-video-1.5-preview /
+// grok-imagine-video-1.5-preview 上游只认单个 image_url 字段，需要把客户端的
+// reference_images 数组改写为 image_url（取第一个链接）。
+const grokImagineImageURLChannelId = 345
+
+// ShouldRewriteGrokImagineReferenceToImageURL 仅当命中指定渠道且模型为
+// grok-video-1.5-preview / grok-imagine-video-1.5-preview 时为真。
+func ShouldRewriteGrokImagineReferenceToImageURL(info *RelayInfo, req TaskSubmitReq) bool {
+	if info == nil || info.ChannelMeta == nil || info.ChannelId != grokImagineImageURLChannelId {
+		return false
+	}
+	return IsGrokImagineVideo15Preview(req.Model) || IsGrokImagineVideo15Preview(info.OriginModelName)
+}
+
+// RewriteGrokImagineReferenceToImageURL 删除 reference_images，并把第一个链接写入 image_url。
+func RewriteGrokImagineReferenceToImageURL(bodyMap map[string]interface{}) {
+	if bodyMap == nil {
+		return
+	}
+	refs, ok := bodyMap["reference_images"]
+	if !ok {
+		return
+	}
+	first := firstReferenceImageURL(refs)
+	delete(bodyMap, "reference_images")
+	if first != "" {
+		bodyMap["image_url"] = first
+	}
+}
+
+func firstReferenceImageURL(raw interface{}) string {
+	switch v := raw.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case []string:
+		for _, s := range v {
+			if s = strings.TrimSpace(s); s != "" {
+				return s
+			}
+		}
+	case []interface{}:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				if s = strings.TrimSpace(s); s != "" {
+					return s
+				}
+			}
+		}
+	}
+	return ""
+}
+
 func clampSeedanceDuration(seconds int) int {
 	if seconds < 4 {
 		return 4
