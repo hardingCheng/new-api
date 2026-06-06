@@ -61,7 +61,13 @@ func CheckAndConsumeModelQuotaPool(ctx *gin.Context, info *relaycommon.RelayInfo
 	}
 	// 同时用客户端模型名与映射后的上游模型名匹配规则，
 	// 避免限量池规则按上游名配置时漏匹配导致放行。
-	matches := ratio_setting.MatchModelQuotaPoolRules(info.UserId, info.OriginModelName, info.UpstreamModelName)
+	// 该检查在渠道选定前就可能执行，此时 ChannelMeta 为 nil，
+	// 直接取 info.UpstreamModelName 会空指针，需判空。
+	upstreamModelName := ""
+	if info.ChannelMeta != nil {
+		upstreamModelName = info.UpstreamModelName
+	}
+	matches := ratio_setting.MatchModelQuotaPoolRules(info.UserId, info.OriginModelName, upstreamModelName)
 	if len(matches) == 0 {
 		info.ModelQuotaPoolChecked = true
 		return nil
