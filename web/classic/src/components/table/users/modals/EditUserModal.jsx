@@ -363,7 +363,7 @@ const EditUserModal = (props) => {
                           placeholder={t('请选择分组')}
                           optionList={groupOptions}
                           allowAdditions
-                          search
+                          filter
                           rules={[{ required: true, message: t('请选择分组') }]}
                         />
                       </Col>
