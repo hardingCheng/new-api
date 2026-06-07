@@ -22,6 +22,7 @@ import { Tag, Space, Skeleton } from '@douyinfe/semi-ui';
 import { renderQuota } from '../../../helpers';
 import CompactModeToggle from '../../common/ui/CompactModeToggle';
 import { useMinimumLoadingTime } from '../../../hooks/common/useMinimumLoadingTime';
+import UsageLogsStatDrawer from './modals/UsageLogsStatDrawer';
 
 const LogsActions = ({
   stat,
@@ -29,6 +30,7 @@ const LogsActions = ({
   showStat,
   compactMode,
   setCompactMode,
+  isAdminUser,
   t,
 }) => {
   const showSkeleton = useMinimumLoadingTime(loadingStat);
@@ -58,6 +60,17 @@ const LogsActions = ({
             {t('消耗额度')}: {renderQuota(stat.quota)}
           </Tag>
           <Tag
+            color='green'
+            style={{
+              fontWeight: 500,
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+              padding: 13,
+            }}
+            className='!rounded-lg'
+          >
+            {t('退款额度')}: {renderQuota(stat.refund_quota || 0)}
+          </Tag>
+          <Tag
             color='pink'
             style={{
               fontWeight: 500,
@@ -83,11 +96,14 @@ const LogsActions = ({
         </Space>
       </Skeleton>
 
-      <CompactModeToggle
-        compactMode={compactMode}
-        setCompactMode={setCompactMode}
-        t={t}
-      />
+      <Space>
+        {isAdminUser && <UsageLogsStatDrawer t={t} />}
+        <CompactModeToggle
+          compactMode={compactMode}
+          setCompactMode={setCompactMode}
+          t={t}
+        />
+      </Space>
     </div>
   );
 };

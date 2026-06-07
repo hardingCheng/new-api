@@ -427,6 +427,22 @@ func GetChannelById(id int, selectAll bool) (*Channel, error) {
 	return channel, nil
 }
 
+// GetChannelIdNameMap 返回渠道 id -> name 的映射，用于统计展示时回填渠道名称。
+func GetChannelIdNameMap() (map[int]string, error) {
+	var rows []struct {
+		Id   int
+		Name string
+	}
+	if err := DB.Model(&Channel{}).Select("id, name").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[int]string, len(rows))
+	for _, r := range rows {
+		result[r.Id] = r.Name
+	}
+	return result, nil
+}
+
 func BatchInsertChannels(channels []Channel) error {
 	if len(channels) == 0 {
 		return nil

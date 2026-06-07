@@ -429,13 +429,18 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 }
 
 type Stat struct {
-	Quota int `json:"quota"`
-	Rpm   int `json:"rpm"`
-	Tpm   int `json:"tpm"`
+	Quota       int `json:"quota"`
+	RefundQuota int `json:"refund_quota"`
+	Rpm         int `json:"rpm"`
+	Tpm         int `json:"tpm"`
 }
 
 func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, usernames []string, tokenName string, channel int, group string) (stat Stat, err error) {
-	tx := LOG_DB.Table("logs").Select("sum(quota) quota")
+	// 同时统计消耗(type2)与退款(type6)，使用条件聚合，三库通用。
+	tx := LOG_DB.Table("logs").Select(
+		"sum(case when type = ? then quota else 0 end) quota, sum(case when type = ? then quota else 0 end) refund_quota",
+		LogTypeConsume, LogTypeRefund,
+	)
 
 	// 为rpm和tpm创建单独的查询
 	rpmTpmQuery := LOG_DB.Table("logs").Select("count(*) rpm, sum(prompt_tokens) + sum(completion_tokens) tpm")
@@ -476,7 +481,8 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 		rpmTpmQuery = rpmTpmQuery.Where(logGroupCol+" = ?", group)
 	}
 
-	tx = tx.Where("type = ?", LogTypeConsume)
+	// tx 通过 case-when 区分消耗/退款，这里限定只统计这两类，排除充值等其他类型。
+	tx = tx.Where("type IN ?", []int{LogTypeConsume, LogTypeRefund})
 	rpmTpmQuery = rpmTpmQuery.Where("type = ?", LogTypeConsume)
 
 	// 只统计最近60秒的rpm和tpm
@@ -493,6 +499,76 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	}
 
 	return stat, nil
+}
+
+// QuotaBreakdownRow 按维度（渠道/模型/用户）聚合的消耗与退款额度。
+type QuotaBreakdownRow struct {
+	Name         string `json:"name"`
+	ChannelId    int    `json:"channel_id"`
+	ConsumeQuota int    `json:"consume_quota"`
+	RefundQuota  int    `json:"refund_quota"`
+	Count        int    `json:"count"`
+}
+
+// SumQuotaBreakdown 按指定维度聚合统计消耗(type2)与退款(type6)额度。
+// dimension 取值：channel / model / user。三库通用（case-when 条件聚合）。
+func SumQuotaBreakdown(dimension string, startTimestamp int64, endTimestamp int64, modelName string, username string, usernames []string, tokenName string, channel int, group string) (rows []QuotaBreakdownRow, err error) {
+	// 只 select 分组列本身，避免 PostgreSQL / MySQL ONLY_FULL_GROUP_BY 报错。
+	var groupCol, nameExpr string
+	switch dimension {
+	case "channel":
+		groupCol = "channel_id"
+		nameExpr = "channel_id channel_id"
+	case "model":
+		groupCol = "model_name"
+		nameExpr = "model_name name"
+	case "user":
+		groupCol = "username"
+		nameExpr = "username name"
+	default:
+		return nil, errors.New("invalid dimension")
+	}
+
+	tx := LOG_DB.Table("logs").
+		Select(
+			nameExpr+", "+
+				"sum(case when type = ? then quota else 0 end) consume_quota, "+
+				"sum(case when type = ? then quota else 0 end) refund_quota, "+
+				"count(*) count",
+			LogTypeConsume, LogTypeRefund,
+		)
+
+	if len(usernames) > 0 {
+		tx = tx.Where("username IN ?", usernames)
+	} else if tx, err = applyExplicitLogTextFilter(tx, "username", username); err != nil {
+		return nil, err
+	}
+	if tokenName != "" {
+		tx = tx.Where("token_name = ?", tokenName)
+	}
+	if startTimestamp != 0 {
+		tx = tx.Where("created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		tx = tx.Where("created_at <= ?", endTimestamp)
+	}
+	if tx, err = applyExplicitLogTextFilter(tx, "model_name", modelName); err != nil {
+		return nil, err
+	}
+	if channel != 0 {
+		tx = tx.Where("channel_id = ?", channel)
+	}
+	if group != "" {
+		tx = tx.Where(logGroupCol+" = ?", group)
+	}
+	tx = tx.Where("type IN ?", []int{LogTypeConsume, LogTypeRefund})
+
+	tx = tx.Group(groupCol).Order("consume_quota desc").Limit(1000)
+	if err = tx.Scan(&rows).Error; err != nil {
+		common.SysError("failed to query quota breakdown: " + err.Error())
+		return nil, errors.New("查询统计数据失败")
+	}
+	return rows, nil
 }
 
 func SumUsedToken(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string) (token int) {

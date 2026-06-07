@@ -138,10 +138,47 @@ func GetLogsStat(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data": gin.H{
-			"quota": stat.Quota,
-			"rpm":   stat.Rpm,
-			"tpm":   stat.Tpm,
+			"quota":        stat.Quota,
+			"refund_quota": stat.RefundQuota,
+			"rpm":          stat.Rpm,
+			"tpm":          stat.Tpm,
 		},
+	})
+	return
+}
+
+func GetLogsStatBreakdown(c *gin.Context) {
+	dimension := c.Query("dimension")
+	if dimension == "" {
+		dimension = "channel"
+	}
+	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	tokenName := c.Query("token_name")
+	username := c.Query("username")
+	usernames := parseQueryList(c.Query("usernames"))
+	modelName := c.Query("model_name")
+	channel, _ := strconv.Atoi(c.Query("channel"))
+	group := c.Query("group")
+	rows, err := model.SumQuotaBreakdown(dimension, startTimestamp, endTimestamp, modelName, username, usernames, tokenName, channel, group)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	// 渠道维度回填渠道名称。
+	if dimension == "channel" {
+		if nameMap, mapErr := model.GetChannelIdNameMap(); mapErr == nil {
+			for i := range rows {
+				if name, ok := nameMap[rows[i].ChannelId]; ok && name != "" {
+					rows[i].Name = name
+				}
+			}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    rows,
 	})
 	return
 }
@@ -165,9 +202,10 @@ func GetLogsSelfStat(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data": gin.H{
-			"quota": quotaNum.Quota,
-			"rpm":   quotaNum.Rpm,
-			"tpm":   quotaNum.Tpm,
+			"quota":        quotaNum.Quota,
+			"refund_quota": quotaNum.RefundQuota,
+			"rpm":          quotaNum.Rpm,
+			"tpm":          quotaNum.Tpm,
 			//"token": tokenNum,
 		},
 	})
