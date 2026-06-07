@@ -204,15 +204,18 @@ func FillGrokImagineVideo15PreviewImages(info *RelayInfo, req TaskSubmitReq, bod
 	bodyMap["images"] = refs
 }
 
-// grokImagineImageURLChannelId 指定渠道：该渠道的 grok-video-1.5-preview /
+// grokImagineImageURLChannelIds 指定渠道：这些渠道的 grok-video-1.5-preview /
 // grok-imagine-video-1.5-preview 上游只认单个 image_url 字段，需要把客户端的
 // reference_images 数组改写为 image_url（取第一个链接）。
-const grokImagineImageURLChannelId = 345
+var grokImagineImageURLChannelIds = map[int]bool{
+	345: true,
+	349: true,
+}
 
 // ShouldRewriteGrokImagineReferenceToImageURL 仅当命中指定渠道且模型为
 // grok-video-1.5-preview / grok-imagine-video-1.5-preview 时为真。
 func ShouldRewriteGrokImagineReferenceToImageURL(info *RelayInfo, req TaskSubmitReq) bool {
-	if info == nil || info.ChannelMeta == nil || info.ChannelId != grokImagineImageURLChannelId {
+	if info == nil || info.ChannelMeta == nil || !grokImagineImageURLChannelIds[info.ChannelId] {
 		return false
 	}
 	return IsGrokImagineVideo15Preview(req.Model) || IsGrokImagineVideo15Preview(info.OriginModelName)
