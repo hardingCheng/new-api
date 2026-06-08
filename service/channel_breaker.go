@@ -11,6 +11,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -199,6 +200,7 @@ func RecordChannelBreakerFailure(c *gin.Context, channelError types.ChannelError
 		saveChannelBreakerStateLocked(key, state)
 		return false, fmt.Sprintf("channel breaker pending (failures: %d/%d)", state.Failures, failureLimit)
 	}
+	recordChannelBreakerOpenLog(key, state, "channel breaker opened")
 	openBreakerLocked(state)
 	saveChannelBreakerStateLocked(key, state)
 	return true, "channel breaker opened"
@@ -347,12 +349,30 @@ func evaluateProbeLocked(key string, state *channelBreakerState, rule channelBre
 		return false, "channel breaker closed after probe"
 	}
 	if state.ProbeTotal >= probeRequests {
+		recordChannelBreakerOpenLog(key, state, fmt.Sprintf("channel breaker remains open after probe (%d/%d successes)", state.ProbeSuccess, state.ProbeTotal))
 		openBreakerLocked(state)
 		saveChannelBreakerStateLocked(key, state)
 		return true, fmt.Sprintf("channel breaker remains open after probe (%d/%d successes)", state.ProbeSuccess, state.ProbeTotal)
 	}
 	saveChannelBreakerStateLocked(key, state)
 	return false, fmt.Sprintf("channel breaker probing (%d/%d successes, %d/%d completed)", state.ProbeSuccess, probeSuccesses, state.ProbeTotal, probeRequests)
+}
+
+// recordChannelBreakerOpenLog 在熔断器打开时异步记录一条历史日志。
+// 必须在 openBreakerLocked 之前调用，以便捕获被重置前的 Failures。
+func recordChannelBreakerOpenLog(key string, state *channelBreakerState, reason string) {
+	channelId, keyHash := parseChannelBreakerKey(key)
+	model.RecordChannelBreakerLog(&model.ChannelBreakerLog{
+		ChannelId:    channelId,
+		KeyHash:      keyHash,
+		RuleId:       state.RuleId,
+		RuleName:     state.RuleName,
+		UsingGroup:   state.Group,
+		ModelName:    state.Model,
+		Failures:     state.Failures,
+		CooldownSecs: state.CooldownSecs,
+		Reason:       reason,
+	})
 }
 
 func openBreakerLocked(state *channelBreakerState) {

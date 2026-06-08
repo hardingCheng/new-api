@@ -146,6 +146,11 @@ export default function SettingsChannelBreaker(props) {
   const [loading, setLoading] = useState(false);
   const [statusLoading, setStatusLoading] = useState(false);
   const [breakerStatuses, setBreakerStatuses] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [breakerHistory, setBreakerHistory] = useState([]);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const HISTORY_PAGE_SIZE = 10;
   const [rules, setRules] = useState([]);
   const [ruleModalVisible, setRuleModalVisible] = useState(false);
   const [editingRuleIndex, setEditingRuleIndex] = useState(-1);
@@ -357,6 +362,27 @@ export default function SettingsChannelBreaker(props) {
       showError(t('获取熔断状态失败'));
     } finally {
       setStatusLoading(false);
+    }
+  }
+
+  async function fetchBreakerHistory(page = historyPage) {
+    try {
+      setHistoryLoading(true);
+      const res = await API.get(
+        `/api/option/channel_breaker/logs?page=${page}&page_size=${HISTORY_PAGE_SIZE}`,
+      );
+      const { success, message, data } = res.data;
+      if (!success) {
+        showError(message);
+        return;
+      }
+      setBreakerHistory(data?.items || []);
+      setHistoryTotal(data?.total || 0);
+      setHistoryPage(page);
+    } catch (error) {
+      showError(t('获取熔断历史失败'));
+    } finally {
+      setHistoryLoading(false);
     }
   }
 
@@ -616,6 +642,43 @@ export default function SettingsChannelBreaker(props) {
     },
   ];
 
+  const breakerHistoryColumns = [
+    {
+      title: t('时间'),
+      dataIndex: 'created_at',
+      render: (value) => formatTime(value ? value * 1000 : 0),
+    },
+    {
+      title: t('渠道'),
+      dataIndex: 'channel_name',
+      render: (value, record) =>
+        value && value !== '' ? value : `#${record.channel_id}`,
+    },
+    {
+      title: t('模型'),
+      dataIndex: 'model_name',
+      render: (value) => (value && value !== '' ? value : '-'),
+    },
+    {
+      title: t('分组'),
+      dataIndex: 'using_group',
+      render: (value) => (value && value !== '' ? value : '-'),
+    },
+    {
+      title: t('命中规则'),
+      dataIndex: 'rule_name',
+      render: (value) => (value && value !== '' ? value : '-'),
+    },
+    {
+      title: t('失败次数'),
+      dataIndex: 'failures',
+    },
+    {
+      title: t('冷却(秒)'),
+      dataIndex: 'cooldown_secs',
+    },
+  ];
+
   useEffect(() => {
     const currentInputs = { ...defaultInputs };
     for (const key of OPTION_KEYS) {
@@ -643,6 +706,7 @@ export default function SettingsChannelBreaker(props) {
 
   useEffect(() => {
     fetchBreakerStatuses();
+    fetchBreakerHistory(1);
   }, []);
 
   return (
@@ -724,6 +788,34 @@ export default function SettingsChannelBreaker(props) {
               rowKey='state_key'
               pagination={false}
               empty={t('当前没有熔断中的渠道或 key')}
+            />
+          </Form.Section>
+
+          <Form.Section text={t('历史熔断日志')}>
+            <Space style={{ marginBottom: 12 }}>
+              <Button
+                onClick={() => fetchBreakerHistory(historyPage)}
+                loading={historyLoading}
+              >
+                {t('刷新历史')}
+              </Button>
+              <Text type='tertiary'>
+                {t('记录每一次熔断器打开的历史，便于排查异常渠道。')}
+              </Text>
+            </Space>
+            <Table
+              size='small'
+              loading={historyLoading}
+              columns={breakerHistoryColumns}
+              dataSource={breakerHistory}
+              rowKey='id'
+              pagination={{
+                currentPage: historyPage,
+                pageSize: HISTORY_PAGE_SIZE,
+                total: historyTotal,
+                onPageChange: (page) => fetchBreakerHistory(page),
+              }}
+              empty={t('暂无熔断历史')}
             />
           </Form.Section>
 

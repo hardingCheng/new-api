@@ -43,7 +43,7 @@ const DIMENSIONS = [
 const defaultRange = () => {
   const end = new Date();
   const start = new Date();
-  start.setDate(start.getDate() - 7);
+  start.setHours(0, 0, 0, 0);
   return [start, end];
 };
 

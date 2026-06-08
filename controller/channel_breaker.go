@@ -77,6 +77,18 @@ func GetChannelBreakerStatuses(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"items": resp})
 }
 
+func GetChannelBreakerLogs(c *gin.Context) {
+	pageInfo := common.GetPageQuery(c)
+	logs, total, err := model.GetChannelBreakerLogs(pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(logs)
+	common.ApiSuccess(c, pageInfo)
+}
+
 func ClearChannelBreakerStatus(c *gin.Context) {
 	var req clearChannelBreakerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
