@@ -323,6 +323,26 @@ export default function SettingsChannelBreaker(props) {
       .finally(() => setLoading(false));
   }
 
+  async function saveRulesOnly() {
+    setLoading(true);
+    try {
+      const res = await API.put('/api/option/', {
+        key: 'ChannelBreakerRules',
+        value: normalizeValue('ChannelBreakerRules', inputs.ChannelBreakerRules),
+      });
+      if (res.data?.success) {
+        showSuccess(t('熔断规则已保存'));
+        props.refresh();
+      } else {
+        showError(res.data?.message || t('保存失败'));
+      }
+    } catch (e) {
+      showError(t('保存失败，请重试'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function fetchBreakerStatuses() {
     try {
       setStatusLoading(true);
@@ -727,6 +747,14 @@ export default function SettingsChannelBreaker(props) {
                   {t(template.name)}
                 </Button>
               ))}
+              <Button
+                theme='solid'
+                type='secondary'
+                loading={loading}
+                onClick={saveRulesOnly}
+              >
+                {t('保存规则')}
+              </Button>
             </Space>
             <Table
               size='small'
