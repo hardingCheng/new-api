@@ -25,6 +25,7 @@ import {
   showSuccess,
   renderQuota,
   getCurrencyConfig,
+  selectFilter,
 } from '../../../../helpers';
 import {
   quotaToDisplayAmount,
@@ -363,7 +364,9 @@ const EditUserModal = (props) => {
                           placeholder={t('请选择分组')}
                           optionList={groupOptions}
                           allowAdditions
-                          filter
+                          filter={selectFilter}
+                          searchPosition='dropdown'
+                          style={{ width: '100%' }}
                           rules={[{ required: true, message: t('请选择分组') }]}
                         />
                       </Col>

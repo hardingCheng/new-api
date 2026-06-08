@@ -3584,7 +3584,7 @@ const EditChannelModal = (props) => {
                     label={t('分组')}
                     placeholder={t('请选择可以使用该渠道的分组')}
                     multiple
-                    filter
+                    filter={selectFilter}
                     searchPosition='dropdown'
                     allowAdditions
                     additionLabel={t(
