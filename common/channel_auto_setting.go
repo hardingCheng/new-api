@@ -31,6 +31,11 @@ type ChannelBreakerRule struct {
 	DisableBreaker       bool     `json:"disable_breaker"`
 	OnlyKeyBreaker       bool     `json:"only_key_breaker"`
 	IgnoreClientError4xx bool     `json:"ignore_client_error_4xx"`
+	// 立即禁用：命中（状态码 AND 关键词）时直接永久禁用整个渠道，不走失败计数熔断。
+	// 典型场景：上游渠道账号余额耗尽返回 403。
+	InstantDisableEnabled     bool   `json:"instant_disable_enabled"`
+	InstantDisableStatusCodes string `json:"instant_disable_status_codes"`
+	InstantDisableKeywords    string `json:"instant_disable_keywords"`
 }
 
 var (

@@ -138,7 +138,36 @@ const ruleTemplates = [
     exclude_paths: '/v1/videos',
     disable_breaker: true,
   },
+  {
+    name: '上游余额不足立即禁用',
+    failure_limit: 5,
+    cooldown_seconds: 60,
+    probe_count: 5,
+    probe_success_count: 3,
+    failure_status_codes: '429,500-599',
+    failure_keywords: '',
+    exclude_paths: '/v1/videos',
+    instant_disable_enabled: true,
+    instant_disable_status_codes: '403',
+    instant_disable_keywords:
+      'insufficient account balance\ninsufficient_user_quota\n预扣费额度失败\nInsufficient account balance',
+  },
 ];
+
+// 内置规则：与后端 defaultChannelBreakerRuntimeRule 的立即禁用默认值保持一致。
+// 开箱即用、独立于全局熔断开关，仅用于展示，不可编辑/删除。
+const BUILTIN_INSTANT_DISABLE_RULE = {
+  id: '__builtin_instant_disable__',
+  builtin: true,
+  name: '上游余额不足立即禁用',
+  enabled: true,
+  scope: 'global',
+  targets: [],
+  instant_disable_enabled: true,
+  instant_disable_status_codes: '403',
+  instant_disable_keywords:
+    'insufficient account balance\ninsufficient user quota\ninsufficient_user_quota\n预扣费额度失败',
+};
 
 export default function SettingsChannelBreaker(props) {
   const { t } = useTranslation();
@@ -226,6 +255,9 @@ export default function SettingsChannelBreaker(props) {
       disable_breaker: !!rule.disable_breaker,
       only_key_breaker: !!rule.only_key_breaker,
       ignore_client_error_4xx: !!rule.ignore_client_error_4xx,
+      instant_disable_enabled: !!rule.instant_disable_enabled,
+      instant_disable_status_codes: rule.instant_disable_status_codes || '',
+      instant_disable_keywords: rule.instant_disable_keywords || '',
     };
   }
 
@@ -569,14 +601,25 @@ export default function SettingsChannelBreaker(props) {
       dataIndex: 'name',
       render: (text, record) => (
         <div>
-          <Text strong>{text}</Text>
+          <Text strong>{t(text)}</Text>
           <br />
-          <Tag color={record.enabled ? 'green' : 'grey'} size='small'>
-            {record.enabled ? t('启用') : t('停用')}
-          </Tag>
+          {record.builtin ? (
+            <Tag color='blue' size='small'>
+              {t('内置')}
+            </Tag>
+          ) : (
+            <Tag color={record.enabled ? 'green' : 'grey'} size='small'>
+              {record.enabled ? t('启用') : t('停用')}
+            </Tag>
+          )}
           {record.disable_breaker && (
             <Tag color='orange' size='small'>
               {t('不参与熔断')}
+            </Tag>
+          )}
+          {record.instant_disable_enabled && (
+            <Tag color='red' size='small'>
+              {t('立即禁用')}
             </Tag>
           )}
         </div>
@@ -607,46 +650,74 @@ export default function SettingsChannelBreaker(props) {
       title: t('失败/冷却'),
       dataIndex: 'failure_limit',
       render: (_, record) =>
-        `${record.failure_limit}${t('次')} / ${record.cooldown_seconds}${t('秒')}`,
+        record.builtin
+          ? '-'
+          : `${record.failure_limit}${t('次')} / ${record.cooldown_seconds}${t('秒')}`,
     },
     {
       title: t('探测要求'),
       dataIndex: 'probe_success_count',
       render: (_, record) =>
-        `${record.probe_success_count}/${record.probe_count} ${t('成功')}`,
+        record.builtin
+          ? '-'
+          : `${record.probe_success_count}/${record.probe_count} ${t('成功')}`,
     },
     {
       title: t('操作'),
       dataIndex: 'operate',
-      render: (_, record, index) => (
-        <Space>
-          <Button size='small' onClick={() => openRuleModal(record, index)}>
-            {t('编辑')}
-          </Button>
-          <Button
-            size='small'
-            onClick={() => toggleRule(index, !record.enabled)}
-          >
-            {record.enabled ? t('停用') : t('启用')}
-          </Button>
-          <Popconfirm
-            title={t('确认删除该规则？')}
-            onConfirm={() => deleteRule(index)}
-          >
-            <Button size='small' type='danger'>
-              {t('删除')}
+      render: (_, record) => {
+        if (record.builtin) {
+          return <Text type='tertiary'>{t('内置规则，不可编辑')}</Text>;
+        }
+        const index = rules.findIndex((r) => r.id === record.id);
+        return (
+          <Space>
+            <Button size='small' onClick={() => openRuleModal(record, index)}>
+              {t('编辑')}
             </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            <Button
+              size='small'
+              onClick={() => toggleRule(index, !record.enabled)}
+            >
+              {record.enabled ? t('停用') : t('启用')}
+            </Button>
+            <Popconfirm
+              title={t('确认删除该规则？')}
+              onConfirm={() => deleteRule(index)}
+            >
+              <Button size='small' type='danger'>
+                {t('删除')}
+              </Button>
+            </Popconfirm>
+          </Space>
+        );
+      },
     },
   ];
+
+  const isInstantDisableLog = (record) =>
+    typeof record?.reason === 'string' &&
+    record.reason.startsWith('命中立即禁用规则');
 
   const breakerHistoryColumns = [
     {
       title: t('时间'),
       dataIndex: 'created_at',
       render: (value) => formatTime(value ? value * 1000 : 0),
+    },
+    {
+      title: t('类型'),
+      dataIndex: 'breaker_type',
+      render: (_, record) =>
+        isInstantDisableLog(record) ? (
+          <Tag color='red' size='small'>
+            {t('立即禁用')}
+          </Tag>
+        ) : (
+          <Tag color='blue' size='small'>
+            {t('熔断')}
+          </Tag>
+        ),
     },
     {
       title: t('渠道'),
@@ -672,10 +743,12 @@ export default function SettingsChannelBreaker(props) {
     {
       title: t('失败次数'),
       dataIndex: 'failures',
+      render: (value, record) => (isInstantDisableLog(record) ? '-' : value),
     },
     {
       title: t('冷却(秒)'),
       dataIndex: 'cooldown_secs',
+      render: (value, record) => (isInstantDisableLog(record) ? '-' : value),
     },
   ];
 
@@ -824,7 +897,7 @@ export default function SettingsChannelBreaker(props) {
               fullMode={false}
               type='warning'
               description={t(
-                '规则按优先级匹配：渠道 > 模型 > 分组 > 全局。命中具体规则时，会使用该规则里的失败次数、冷却时间、探测要求、失败状态码、失败关键词和排除路径；没有命中规则时才使用下方全局熔断参数。',
+                '规则按优先级匹配：渠道 > 模型 > 分组 > 全局。命中具体规则时，会使用该规则里的失败次数、冷却时间、探测要求、失败状态码、失败关键词和排除路径；没有命中规则时才使用下方全局熔断参数。列表中的「内置」规则为上游余额不足（403 + 余额相关关键词）立即禁用整个渠道的开箱即用保护，独立于全局熔断开关、命中一次即生效，不可编辑或删除。',
               )}
             />
             <Space style={{ margin: '12px 0' }} wrap>
@@ -851,7 +924,7 @@ export default function SettingsChannelBreaker(props) {
             <Table
               size='small'
               columns={ruleColumns}
-              dataSource={rules}
+              dataSource={[BUILTIN_INSTANT_DISABLE_RULE, ...rules]}
               rowKey='id'
               pagination={false}
               empty={t('当前没有自定义规则，将使用全局熔断参数')}
@@ -1348,6 +1421,64 @@ export default function SettingsChannelBreaker(props) {
                     }
                   />,
                   t('开启后 400-499 不计入熔断失败，401/403 等也会被忽略。'),
+                )}
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col xs={24} sm={8}>
+                {renderRuleField(
+                  t('立即禁用渠道'),
+                  <Switch
+                    checked={editingRule.instant_disable_enabled}
+                    checkedText='｜'
+                    uncheckedText='〇'
+                    onChange={(value) =>
+                      setEditingRule({
+                        ...editingRule,
+                        instant_disable_enabled: value,
+                      })
+                    }
+                  />,
+                  t(
+                    '命中（状态码 AND 关键词）时直接永久禁用整个渠道，不走失败计数。典型场景：上游账号余额耗尽。',
+                  ),
+                )}
+              </Col>
+              <Col xs={24} sm={8}>
+                {renderRuleField(
+                  t('立即禁用状态码'),
+                  <Input
+                    value={editingRule.instant_disable_status_codes}
+                    placeholder='403'
+                    disabled={!editingRule.instant_disable_enabled}
+                    onChange={(value) =>
+                      setEditingRule({
+                        ...editingRule,
+                        instant_disable_status_codes: value,
+                      })
+                    }
+                  />,
+                  t('与关键词同时命中才触发，例如 403。'),
+                )}
+              </Col>
+              <Col xs={24} sm={8}>
+                {renderRuleField(
+                  t('立即禁用关键词'),
+                  <TextArea
+                    value={editingRule.instant_disable_keywords}
+                    placeholder={
+                      'insufficient account balance\ninsufficient_user_quota\n预扣费额度失败'
+                    }
+                    disabled={!editingRule.instant_disable_enabled}
+                    autosize={{ minRows: 4, maxRows: 8 }}
+                    onChange={(value) =>
+                      setEditingRule({
+                        ...editingRule,
+                        instant_disable_keywords: value,
+                      })
+                    }
+                  />,
+                  t('一行一个，需与状态码同时命中。我方用户额度不足不会误伤。'),
                 )}
               </Col>
             </Row>
