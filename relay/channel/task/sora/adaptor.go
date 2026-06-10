@@ -64,19 +64,20 @@ func (s *flexString) UnmarshalJSON(data []byte) error {
 }
 
 type responseTask struct {
-	ID                 flexString `json:"id"`
-	TaskID             string `json:"task_id,omitempty"` //兼容旧接口
-	Object             string `json:"object"`
-	Model              string `json:"model"`
-	Status             string `json:"status"`
-	Progress           int    `json:"progress"`
-	CreatedAt          int64  `json:"created_at"`
-	CompletedAt        int64  `json:"completed_at,omitempty"`
-	ExpiresAt          int64  `json:"expires_at,omitempty"`
-	Seconds            string `json:"seconds,omitempty"`
-	Size               string `json:"size,omitempty"`
-	RemixedFromVideoID string `json:"remixed_from_video_id,omitempty"`
-	Error              *struct {
+	ID                    flexString `json:"id"`
+	TaskID                string     `json:"task_id,omitempty"` //兼容旧接口
+	Object                string     `json:"object"`
+	Model                 string     `json:"model"`
+	Status                string     `json:"status"`
+	Progress              int        `json:"progress"`
+	CreatedAt             int64      `json:"created_at"`
+	CompletedAt           int64      `json:"completed_at,omitempty"`
+	ExpiresAt             int64      `json:"expires_at,omitempty"`
+	Seconds               string     `json:"seconds,omitempty"`
+	Size                  string     `json:"size,omitempty"`
+	RemixedFromVideoID    string     `json:"remixed_from_video_id,omitempty"`
+	ReferenceVideoSeconds int        `json:"reference_video_seconds,omitempty"`
+	Error                 *struct {
 		Message string `json:"message"`
 		Code    string `json:"code"`
 	} `json:"error,omitempty"`
@@ -319,6 +320,9 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	if info.OriginModelName != "" {
 		dResp.Model = info.OriginModelName
 	}
+	if referenceSeconds := c.GetInt("reference_video_seconds"); referenceSeconds > 0 {
+		dResp.ReferenceVideoSeconds = referenceSeconds
+	}
 	c.JSON(http.StatusOK, dResp)
 	return upstreamID, responseBody, nil
 }
@@ -474,6 +478,12 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	if !gjson.GetBytes(data, "status").Exists() {
 		if data, err = sjson.SetBytes(data, "status", task.Status.ToVideoStatus()); err != nil {
 			return nil, errors.Wrap(err, "set status fallback failed")
+		}
+	}
+
+	if task.Properties.ReferenceVideoSeconds > 0 {
+		if data, err = sjson.SetBytes(data, "reference_video_seconds", task.Properties.ReferenceVideoSeconds); err != nil {
+			return nil, errors.Wrap(err, "set reference_video_seconds failed")
 		}
 	}
 
