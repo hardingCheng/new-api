@@ -49,6 +49,7 @@ var (
 	channelBreakerProbeSuccess  atomic.Int64
 	channelBreakerExcludePaths  atomic.Value
 	channelBreakerRules         atomic.Value
+	channelBreakerExemptChannel atomic.Value // map[int]struct{}：报错不触发熔断与自动禁用的渠道
 )
 
 func init() {
@@ -62,6 +63,7 @@ func init() {
 	SetChannelBreakerProbeSuccessCount(3)
 	SetChannelBreakerExcludePaths("/v1/videos")
 	SetChannelBreakerRules(nil)
+	SetChannelBreakerExemptChannels(nil)
 }
 
 func GetChannelDisableThreshold() float64 {
@@ -240,6 +242,65 @@ func NormalizeChannelBreakerRule(rule ChannelBreakerRule) ChannelBreakerRule {
 		rule.ProbeSuccessCount = rule.ProbeCount
 	}
 	return rule
+}
+
+// ---- 熔断豁免渠道：集中名单（报错不触发熔断与自动禁用，余额不足仍会禁用）----
+
+func GetChannelBreakerExemptChannels() []int {
+	m, ok := channelBreakerExemptChannel.Load().(map[int]struct{})
+	if !ok || len(m) == 0 {
+		return []int{}
+	}
+	ids := make([]int, 0, len(m))
+	for id := range m {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+func IsChannelBreakerExemptChannel(channelId int) bool {
+	if channelId <= 0 {
+		return false
+	}
+	m, ok := channelBreakerExemptChannel.Load().(map[int]struct{})
+	if !ok {
+		return false
+	}
+	_, exist := m[channelId]
+	return exist
+}
+
+func SetChannelBreakerExemptChannels(ids []int) {
+	m := make(map[int]struct{}, len(ids))
+	for _, id := range ids {
+		if id > 0 {
+			m[id] = struct{}{}
+		}
+	}
+	channelBreakerExemptChannel.Store(m)
+}
+
+func ChannelBreakerExemptChannelsToJSONString() string {
+	data, err := Marshal(GetChannelBreakerExemptChannels())
+	if err != nil {
+		return "[]"
+	}
+	return string(data)
+}
+
+func UpdateChannelBreakerExemptChannelsByJSONString(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		SetChannelBreakerExemptChannels(nil)
+		return nil
+	}
+	var ids []int
+	if err := UnmarshalJsonStr(value, &ids); err != nil {
+		return err
+	}
+	SetChannelBreakerExemptChannels(ids)
+	return nil
 }
 
 func ParseChannelBreakerList(value string) []string {

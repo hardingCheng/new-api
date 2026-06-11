@@ -57,6 +57,7 @@ const OPTION_KEYS = [
   'ChannelBreakerProbeSuccessCount',
   'ChannelBreakerExcludePaths',
   'ChannelBreakerRules',
+  'ChannelBreakerExemptChannels',
   'monitor_setting.bark_alert_enabled',
   'monitor_setting.bark_alert_url',
   'monitor_setting.low_balance_alert_enabled',
@@ -74,6 +75,7 @@ const defaultInputs = {
   ChannelBreakerProbeSuccessCount: '3',
   ChannelBreakerExcludePaths: '/v1/videos',
   ChannelBreakerRules: '[]',
+  ChannelBreakerExemptChannels: '[]',
   'monitor_setting.bark_alert_enabled': true,
   'monitor_setting.bark_alert_url':
     'https://bark.aigod.one/kFRNZMUXcuQ6c4ccrUgQ3W/',
@@ -184,7 +186,74 @@ export default function SettingsChannelBreaker(props) {
   const [editingRule, setEditingRule] = useState(null);
   const [inputs, setInputs] = useState(defaultInputs);
   const [inputsRow, setInputsRow] = useState(defaultInputs);
+  const [exemptChannelOptions, setExemptChannelOptions] = useState([]);
   const refForm = useRef();
+
+  function parseExemptChannels(value) {
+    try {
+      const parsed = JSON.parse(value || '[]');
+      return Array.isArray(parsed)
+        ? parsed.map((id) => Number(id)).filter((id) => id > 0)
+        : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  const exemptChannelIds = parseExemptChannels(inputs.ChannelBreakerExemptChannels);
+
+  // 已选渠道至少展示 #id，搜索到的会带上渠道名。
+  const exemptChannelOptionList = (() => {
+    const map = new Map();
+    exemptChannelIds.forEach((id) => map.set(id, { value: id, label: `#${id}` }));
+    exemptChannelOptions.forEach((opt) => map.set(opt.value, opt));
+    return Array.from(map.values());
+  })();
+
+  async function searchExemptChannels(keyword = '') {
+    try {
+      const res = await API.get(
+        `/api/channel/search?keyword=${encodeURIComponent(keyword)}&group=&model=&p=1&page_size=20`,
+      );
+      const { success, data } = res.data;
+      if (!success) return;
+      const items = Array.isArray(data?.items) ? data.items : data || [];
+      setExemptChannelOptions(
+        items
+          .filter((c) => c && c.id)
+          .map((c) => ({ value: c.id, label: `#${c.id} ${c.name || ''}`.trim() })),
+      );
+    } catch (error) {
+      // 忽略搜索错误，不阻塞配置
+    }
+  }
+
+  function onChangeExemptChannels(values) {
+    const ids = (Array.isArray(values) ? values : [])
+      .map((id) => Number(id))
+      .filter((id) => id > 0);
+    setInputs({ ...inputs, ChannelBreakerExemptChannels: JSON.stringify(ids) });
+  }
+
+  async function saveExemptChannelsOnly() {
+    setLoading(true);
+    try {
+      const res = await API.put('/api/option/', {
+        key: 'ChannelBreakerExemptChannels',
+        value: JSON.stringify(exemptChannelIds),
+      });
+      if (res.data?.success) {
+        showSuccess(t('熔断豁免渠道已保存'));
+        props.refresh();
+      } else {
+        showError(res.data?.message || t('保存失败'));
+      }
+    } catch (e) {
+      showError(t('保存失败，请重试'));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const parsedChannelBreakerStatusCodes = parseHttpStatusCodeRules(
     inputs.ChannelBreakerFailureStatusCodes || '',
@@ -765,6 +834,7 @@ export default function SettingsChannelBreaker(props) {
   useEffect(() => {
     fetchBreakerStatuses();
     fetchBreakerHistory(1);
+    searchExemptChannels('');
   }, []);
 
   return (
@@ -914,6 +984,52 @@ export default function SettingsChannelBreaker(props) {
               pagination={false}
               empty={t('当前没有自定义规则，将使用全局熔断参数')}
             />
+          </Form.Section>
+
+          <Form.Section text={t('熔断豁免渠道')}>
+            <Banner
+              fullMode={false}
+              type='info'
+              description={t(
+                '在此选择的渠道：报错不会触发熔断，也不会被自动禁用（上游余额不足仍会立即禁用）。适用于报错属于正常现象的渠道，例如部分会主动返回错误的上游。',
+              )}
+            />
+            <Row gutter={16} style={{ marginTop: 12 }}>
+              <Col xs={24} sm={16}>
+                <Text strong style={{ display: 'block', marginBottom: 6 }}>
+                  {t('豁免渠道')}
+                </Text>
+                <Select
+                  multiple
+                  filter
+                  remote
+                  style={{ width: '100%' }}
+                  placeholder={t('搜索并选择渠道（按渠道名或 ID）')}
+                  value={exemptChannelIds}
+                  optionList={exemptChannelOptionList}
+                  onSearch={(keyword) => searchExemptChannels(keyword)}
+                  onChange={onChangeExemptChannels}
+                  showClear
+                />
+                <Text
+                  type='tertiary'
+                  size='small'
+                  style={{ display: 'block', marginTop: 4 }}
+                >
+                  {t('已选渠道的报错不计入熔断失败，也不会被自动禁用。')}
+                </Text>
+              </Col>
+            </Row>
+            <Row style={{ marginTop: 12 }}>
+              <Button
+                theme='solid'
+                type='secondary'
+                loading={loading}
+                onClick={saveExemptChannelsOnly}
+              >
+                {t('保存豁免渠道')}
+              </Button>
+            </Row>
           </Form.Section>
 
           <Form.Section text={t('全局熔断参数')}>

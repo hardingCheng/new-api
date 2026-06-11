@@ -1,5 +1,12 @@
 {
   "translation": {
+    "熔断豁免渠道": "Canaux exemptés du disjoncteur",
+    "在此选择的渠道：报错不会触发熔断，也不会被自动禁用（上游余额不足仍会立即禁用）。适用于报错属于正常现象的渠道，例如部分会主动返回错误的上游。": "Canaux sélectionnés ici : leurs erreurs ne déclenchent pas le disjoncteur ni la désactivation automatique (la désactivation immédiate pour solde insuffisant en amont s'applique toujours). À utiliser pour les canaux où les erreurs sont normales.",
+    "豁免渠道": "Canaux exemptés",
+    "搜索并选择渠道（按渠道名或 ID）": "Rechercher et sélectionner des canaux (par nom ou ID)",
+    "已选渠道的报错不计入熔断失败，也不会被自动禁用。": "Les erreurs des canaux sélectionnés ne comptent pas comme des échecs du disjoncteur et ne les désactivent pas automatiquement.",
+    "保存豁免渠道": "Enregistrer les canaux exemptés",
+    "熔断豁免渠道已保存": "Canaux exemptés enregistrés",
     "固定价同时享受分组折扣": "Appliquer la remise de groupe au prix fixe",
     "默认关闭：你填多少就收多少；开启后参考固定价会再乘以用户的分组倍率。": "Désactivé par défaut : le montant saisi est facturé tel quel ; une fois activé, le prix fixe de référence est aussi multiplié par le coefficient de groupe de l'utilisateur.",
     "参考计价方式": "Mode de tarification de la référence",

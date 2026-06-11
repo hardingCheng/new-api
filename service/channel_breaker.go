@@ -97,7 +97,7 @@ func ShouldExcludeChannelBreaker(c *gin.Context) bool {
 
 func CanUseChannelByBreaker(c *gin.Context, channelError types.ChannelError) bool {
 	rule := resolveChannelBreakerRule(c, channelError)
-	if !rule.Enabled || shouldExcludeChannelBreakerByRule(c, rule) || !channelError.AutoBan {
+	if !rule.Enabled || shouldExcludeChannelBreakerByRule(c, rule) || !channelError.AutoBan || channelError.SkipBreaker {
 		return true
 	}
 	channelError, ok := normalizeChannelBreakerTarget(channelError, rule)
@@ -124,7 +124,7 @@ func CanUseChannelByBreaker(c *gin.Context, channelError types.ChannelError) boo
 
 func AcquireChannelBreakerProbe(c *gin.Context, channelError types.ChannelError) bool {
 	rule := resolveChannelBreakerRule(c, channelError)
-	if !rule.Enabled || shouldExcludeChannelBreakerByRule(c, rule) || !channelError.AutoBan {
+	if !rule.Enabled || shouldExcludeChannelBreakerByRule(c, rule) || !channelError.AutoBan || channelError.SkipBreaker {
 		return true
 	}
 	channelError, ok := normalizeChannelBreakerTarget(channelError, rule)
@@ -173,7 +173,7 @@ func AllowChannelByBreaker(c *gin.Context, channelError types.ChannelError) bool
 
 func RecordChannelBreakerFailure(c *gin.Context, channelError types.ChannelError, shouldTrip bool) (bool, string) {
 	rule := resolveChannelBreakerRule(c, channelError)
-	if !rule.Enabled || shouldExcludeChannelBreakerByRule(c, rule) || !channelError.AutoBan {
+	if !rule.Enabled || shouldExcludeChannelBreakerByRule(c, rule) || !channelError.AutoBan || channelError.SkipBreaker {
 		return false, ""
 	}
 	channelError, ok := normalizeChannelBreakerTarget(channelError, rule)
@@ -211,7 +211,7 @@ func RecordChannelBreakerFailure(c *gin.Context, channelError types.ChannelError
 
 func RecordChannelBreakerSuccess(c *gin.Context, channelError types.ChannelError) {
 	rule := resolveChannelBreakerRule(c, channelError)
-	if !rule.Enabled || shouldExcludeChannelBreakerByRule(c, rule) {
+	if !rule.Enabled || shouldExcludeChannelBreakerByRule(c, rule) || channelError.SkipBreaker {
 		return
 	}
 	channelError, ok := normalizeChannelBreakerTarget(channelError, rule)

@@ -244,5 +244,6 @@ func typesChannelError(channel *model.Channel) types.ChannelError {
 		ChannelName: channel.Name,
 		IsMultiKey:  channel.ChannelInfo.IsMultiKey,
 		AutoBan:     channel.GetAutoBan(),
+		SkipBreaker: common.IsChannelBreakerExemptChannel(channel.Id),
 	}
 }

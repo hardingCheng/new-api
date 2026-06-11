@@ -949,8 +949,8 @@ func testAllChannels(notify bool) error {
 			}
 
 			// disable channel
-			if isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
-				processChannelError(result.context, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+			if isChannelEnabled && shouldBanChannel && channel.GetAutoBan() && !common.IsChannelBreakerExemptChannel(channel.Id) {
+				processChannelError(result.context, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.GetAutoBan(), common.IsChannelBreakerExemptChannel(channel.Id)), newAPIError)
 			}
 
 			// enable channel
