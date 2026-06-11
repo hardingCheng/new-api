@@ -1,5 +1,8 @@
 {
   "translation": {
+    "渠道号": "ID du canal",
+    "收入": "Revenu",
+    "总收入": "Revenu total",
     "熔断豁免渠道": "Canaux exemptés du disjoncteur",
     "在此选择的渠道：报错不会触发熔断，也不会被自动禁用（上游余额不足仍会立即禁用）。适用于报错属于正常现象的渠道，例如部分会主动返回错误的上游。": "Canaux sélectionnés ici : leurs erreurs ne déclenchent pas le disjoncteur ni la désactivation automatique (la désactivation immédiate pour solde insuffisant en amont s'applique toujours). À utiliser pour les canaux où les erreurs sont normales.",
     "豁免渠道": "Canaux exemptés",

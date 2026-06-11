@@ -92,17 +92,21 @@ const UsageLogsStatDrawer = ({ t }) => {
     return record.name && record.name !== '' ? record.name : '-';
   };
 
+  // 收入 = 消耗 - 退款
+  const incomeOf = (r) => (r.consume_quota || 0) - (r.refund_quota || 0);
+
   const columns = [
-    {
-      title:
-        dimension === 'channel'
-          ? t('渠道')
-          : dimension === 'model'
-            ? t('模型')
-            : t('用户'),
-      dataIndex: 'name',
-      render: (_, record) => <Text strong>{rowName(record)}</Text>,
-    },
+    dimension === 'channel'
+      ? {
+          title: t('渠道号'),
+          dataIndex: 'channel_id',
+          render: (text) => <Text strong>#{text}</Text>,
+        }
+      : {
+          title: dimension === 'model' ? t('模型') : t('用户'),
+          dataIndex: 'name',
+          render: (_, record) => <Text strong>{rowName(record)}</Text>,
+        },
     {
       title: t('消耗额度'),
       dataIndex: 'consume_quota',
@@ -127,6 +131,16 @@ const UsageLogsStatDrawer = ({ t }) => {
         ),
     },
     {
+      title: t('收入'),
+      dataIndex: 'income',
+      sorter: (a, b) => incomeOf(a) - incomeOf(b),
+      render: (_, record) => (
+        <Tag color='orange' type='light' shape='circle'>
+          {renderQuota(incomeOf(record))}
+        </Tag>
+      ),
+    },
+    {
       title: t('次数'),
       dataIndex: 'count',
       sorter: (a, b) => a.count - b.count,
@@ -135,6 +149,7 @@ const UsageLogsStatDrawer = ({ t }) => {
 
   const totalConsume = rows.reduce((s, r) => s + (r.consume_quota || 0), 0);
   const totalRefund = rows.reduce((s, r) => s + (r.refund_quota || 0), 0);
+  const totalIncome = totalConsume - totalRefund;
 
   return (
     <>
@@ -171,6 +186,9 @@ const UsageLogsStatDrawer = ({ t }) => {
           </Tag>
           <Tag color='green' type='light' shape='circle'>
             {t('总退款')}: {renderQuota(totalRefund)}
+          </Tag>
+          <Tag color='orange' type='light' shape='circle'>
+            {t('总收入')}: {renderQuota(totalIncome)}
           </Tag>
         </Space>
 

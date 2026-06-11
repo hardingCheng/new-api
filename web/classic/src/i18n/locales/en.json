@@ -1,5 +1,8 @@
 {
   "translation": {
+    "渠道号": "Channel ID",
+    "收入": "Revenue",
+    "总收入": "Total revenue",
     "熔断豁免渠道": "Breaker-exempt channels",
     "在此选择的渠道：报错不会触发熔断，也不会被自动禁用（上游余额不足仍会立即禁用）。适用于报错属于正常现象的渠道，例如部分会主动返回错误的上游。": "Channels selected here: their errors will not trip the circuit breaker or auto-disable them (upstream insufficient-balance disable still applies immediately). Use for channels where errors are normal, e.g. upstreams that intentionally return errors.",
     "豁免渠道": "Exempt channels",
