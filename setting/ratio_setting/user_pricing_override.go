@@ -11,7 +11,41 @@ const (
 	UserPricingRuleRatio      = "ratio"
 	UserPricingRuleModelPrice = "model_price"
 	UserPricingRuleModelRatio = "model_ratio"
+
+	// 参考视频秒数定价：仅作用于「参考视频」那部分秒数（reference_video_seconds），
+	// 不影响生成秒数。四种模式互斥，同一用户+模型只取最高优先级的一条。
+	// A：参考秒 × value（0=免费，0.5=半价，1=原价）
+	UserPricingRuleVideoRefFactor = "video_ref_factor"
+	// B：参考秒固定单价（美元/秒），与生成秒单价脱钩
+	UserPricingRuleVideoRefPrice = "video_ref_price"
+	// C：参考整段固定总价（美元），不论参考多少秒
+	UserPricingRuleVideoRefFlat = "video_ref_flat"
+	// D：参考秒数封顶（秒），参考最多按 value 秒计
+	UserPricingRuleVideoRefCap = "video_ref_cap"
 )
+
+// 参考视频计价模式（PriceData.VideoRefMode 取值）。
+const (
+	VideoRefModeNone   = ""
+	VideoRefModeFactor = "factor"
+	VideoRefModePrice  = "price"
+	VideoRefModeFlat   = "flat"
+	VideoRefModeCap    = "cap"
+)
+
+func referenceRuleMode(ruleType string) string {
+	switch ruleType {
+	case UserPricingRuleVideoRefFactor:
+		return VideoRefModeFactor
+	case UserPricingRuleVideoRefPrice:
+		return VideoRefModePrice
+	case UserPricingRuleVideoRefFlat:
+		return VideoRefModeFlat
+	case UserPricingRuleVideoRefCap:
+		return VideoRefModeCap
+	}
+	return VideoRefModeNone
+}
 
 type UserPricingRule struct {
 	UserID       int     `json:"user_id"`
@@ -21,7 +55,10 @@ type UserPricingRule struct {
 	ModelPattern string  `json:"model_pattern,omitempty"`
 	Type         string  `json:"type"`
 	Value        float64 `json:"value"`
-	Disabled     bool    `json:"disabled,omitempty"`
+	// ApplyGroupRatio 仅对参考固定单价/固定总价（video_ref_price / video_ref_flat）生效：
+	// false（默认）=绝对值，不受分组折扣影响；true=参考价也乘以分组倍率。
+	ApplyGroupRatio bool `json:"apply_group_ratio,omitempty"`
+	Disabled        bool `json:"disabled,omitempty"`
 }
 
 type UserPricingOverrideConfig struct {
@@ -99,10 +136,30 @@ func MatchUserPricingOverride(userID int, username, userGroup, usingGroup, model
 	return matches
 }
 
-func ApplyUserPricingOverrides(userID int, username, userGroup, usingGroup, modelName string, usePrice bool, modelPrice, modelRatio, groupRatio float64) (bool, float64, float64, float64, []UserPricingOverrideMatch) {
+// UserPricingOverrideResult 携带命中的价格覆盖结果。
+// VideoRefMode 为空表示未命中参考视频规则。
+type UserPricingOverrideResult struct {
+	UsePrice      bool
+	ModelPrice    float64
+	ModelRatio    float64
+	GroupRatio    float64
+	VideoRefMode  string  // "", factor, price, flat, cap
+	VideoRefValue float64 // 对应模式的数值（倍率/单价/总价/封顶秒数）
+	// VideoRefApplyGroupRatio 仅对 price/flat 生效：参考固定价是否也乘分组倍率。
+	VideoRefApplyGroupRatio bool
+	Matches                 []UserPricingOverrideMatch
+}
+
+func ApplyUserPricingOverrides(userID int, username, userGroup, usingGroup, modelName string, usePrice bool, modelPrice, modelRatio, groupRatio float64) UserPricingOverrideResult {
+	result := UserPricingOverrideResult{
+		UsePrice:   usePrice,
+		ModelPrice: modelPrice,
+		ModelRatio: modelRatio,
+		GroupRatio: groupRatio,
+	}
 	matches := MatchUserPricingOverride(userID, username, userGroup, usingGroup, modelName)
 	if len(matches) == 0 {
-		return usePrice, modelPrice, modelRatio, groupRatio, nil
+		return result
 	}
 
 	bestRatio, hasRatio := bestUserPricingMatch(matches, UserPricingRuleRatio)
@@ -123,7 +180,10 @@ func ApplyUserPricingOverrides(userID int, username, userGroup, usingGroup, mode
 		modelPrice = -1
 	}
 
-	applied := make([]UserPricingOverrideMatch, 0, 2)
+	// 参考视频规则：4 种模式互斥，取最高优先级的一条。
+	bestRef, hasRef := bestReferenceMatch(matches)
+
+	applied := make([]UserPricingOverrideMatch, 0, 3)
 	if hasRatio {
 		applied = append(applied, bestRatio)
 	}
@@ -132,8 +192,36 @@ func ApplyUserPricingOverrides(userID int, username, userGroup, usingGroup, mode
 	} else if !usePrice && hasModelRatio {
 		applied = append(applied, bestModelRatio)
 	}
+	if hasRef {
+		result.VideoRefMode = referenceRuleMode(bestRef.Rule.Type)
+		result.VideoRefValue = bestRef.Rule.Value
+		result.VideoRefApplyGroupRatio = bestRef.Rule.ApplyGroupRatio
+		applied = append(applied, bestRef)
+	}
 
-	return usePrice, modelPrice, modelRatio, groupRatio, applied
+	result.UsePrice = usePrice
+	result.ModelPrice = modelPrice
+	result.ModelRatio = modelRatio
+	result.GroupRatio = groupRatio
+	result.Matches = applied
+	return result
+}
+
+// bestReferenceMatch 在所有命中规则里挑出优先级最高的参考视频规则（4 种模式任一）。
+func bestReferenceMatch(matches []UserPricingOverrideMatch) (UserPricingOverrideMatch, bool) {
+	bestScore := -1
+	var best UserPricingOverrideMatch
+	for _, match := range matches {
+		switch match.Rule.Type {
+		case UserPricingRuleVideoRefFactor, UserPricingRuleVideoRefPrice, UserPricingRuleVideoRefFlat, UserPricingRuleVideoRefCap:
+			score := matchPriority(match.Rule)
+			if score > bestScore {
+				bestScore = score
+				best = match
+			}
+		}
+	}
+	return best, bestScore >= 0
 }
 
 func normalizeUserPricingOverrideConfig(cfg UserPricingOverrideConfig) UserPricingOverrideConfig {
@@ -168,6 +256,14 @@ func normalizeUserPricingRuleType(ruleType string) string {
 		return UserPricingRuleModelPrice
 	case UserPricingRuleModelRatio, "model-ratio", "模型倍率":
 		return UserPricingRuleModelRatio
+	case UserPricingRuleVideoRefFactor, "video-ref-factor", "ref_factor", "参考秒倍率", "参考秒打折":
+		return UserPricingRuleVideoRefFactor
+	case UserPricingRuleVideoRefPrice, "video-ref-price", "ref_price", "参考秒单价", "参考固定单价":
+		return UserPricingRuleVideoRefPrice
+	case UserPricingRuleVideoRefFlat, "video-ref-flat", "ref_flat", "参考整段固定价", "参考固定总价":
+		return UserPricingRuleVideoRefFlat
+	case UserPricingRuleVideoRefCap, "video-ref-cap", "ref_cap", "参考秒封顶", "参考秒数封顶":
+		return UserPricingRuleVideoRefCap
 	default:
 		return ""
 	}

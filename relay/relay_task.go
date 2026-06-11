@@ -193,9 +193,36 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 
 	// 6. 将 OtherRatios 应用到基础额度；按次计费的视频任务不受 seconds 等倍率影响。
 	if ratio_setting.IsVideoBillingPerSecond(modelName) {
-		for _, ra := range info.PriceData.OtherRatios {
-			if ra != 1.0 {
-				info.PriceData.Quota = int(float64(info.PriceData.Quota) * ra)
+		genSec := c.GetInt("generated_video_seconds")
+		refSec := c.GetInt("reference_video_seconds")
+		if genSec > 0 || refSec > 0 {
+			// 视频按秒计费：把「生成秒」与「参考秒」拆开分别计价。
+			// basePerSec 是每秒基础额度（已含 group ratio）；参考秒按用户级规则计价。
+			basePerSec := float64(info.PriceData.Quota)
+			sizeRatio := 1.0
+			if s, ok := info.PriceData.OtherRatios["size"]; ok && s > 0 {
+				sizeRatio = s
+			}
+			genCost := basePerSec * float64(genSec) * sizeRatio
+			refCost := referenceVideoCost(info.PriceData.VideoRefMode, info.PriceData.VideoRefValue, float64(refSec), basePerSec, sizeRatio, info.PriceData.GroupRatioInfo.GroupRatio, info.PriceData.VideoRefApplyGroupRatio)
+			info.PriceData.Quota = int(genCost + refCost)
+			// 参考固定单价/总价可能在「免费基础模型」上产生正额度，
+			// 必须清掉 FreeModel，否则预扣会被跳过导致漏扣。
+			if info.PriceData.Quota > 0 {
+				info.PriceData.FreeModel = false
+			}
+			// 用「等效秒数」回写 seconds 倍率，便于日志透明与潜在的 token 重算保持一致。
+			if basePerSec > 0 && sizeRatio > 0 {
+				effSec := (genCost + refCost) / basePerSec / sizeRatio
+				info.PriceData.AddOtherRatio("seconds", effSec)
+				c.Set("billable_video_seconds", int(effSec))
+			}
+		} else {
+			// 回退：没有 generated/reference 秒数上下文（如 remix），按 OtherRatios 连乘。
+			for _, ra := range info.PriceData.OtherRatios {
+				if ra != 1.0 {
+					info.PriceData.Quota = int(float64(info.PriceData.Quota) * ra)
+				}
 			}
 		}
 	}
@@ -260,6 +287,45 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		Platform:       platform,
 		Quota:          finalQuota,
 	}, nil
+}
+
+// referenceVideoCost 计算「参考视频秒数」那部分的额度（不含生成秒）。
+//   - basePerSec：每秒基础额度（已含 group ratio）
+//   - sizeRatio：分辨率倍率（仅作用于按秒的相对模式 factor/cap）
+//   - groupRatio / applyGroupRatio：仅对 price/flat 生效——是否让固定参考价也乘分组倍率。
+//
+// 模式：
+//
+//	factor → 参考秒 × value（0=免费,0.5=半价）；天然跟随基础价/分组折扣
+//	price  → 参考每秒固定单价（绝对值；applyGroupRatio=true 时再乘分组倍率）
+//	flat   → 参考整段固定总价（绝对值；applyGroupRatio=true 时再乘分组倍率）
+//	cap    → 参考秒数封顶为 value 秒；天然跟随基础价/分组折扣
+//	""     → 参考秒按原价全额计
+//
+// 无参考秒（refSec<=0）时一律不收参考费。
+func referenceVideoCost(mode string, value, refSec, basePerSec, sizeRatio, groupRatio float64, applyGroupRatio bool) float64 {
+	if refSec <= 0 {
+		return 0
+	}
+	groupMul := 1.0
+	if applyGroupRatio {
+		groupMul = groupRatio
+	}
+	switch mode {
+	case ratio_setting.VideoRefModeFactor:
+		return basePerSec * refSec * value * sizeRatio
+	case ratio_setting.VideoRefModePrice:
+		return value * common.QuotaPerUnit * refSec * groupMul
+	case ratio_setting.VideoRefModeFlat:
+		return value * common.QuotaPerUnit * groupMul
+	case ratio_setting.VideoRefModeCap:
+		if refSec > value {
+			refSec = value
+		}
+		return basePerSec * refSec * sizeRatio
+	default:
+		return basePerSec * refSec * sizeRatio
+	}
 }
 
 // recalcQuotaFromRatios 根据 adjustedRatios 重新计算 quota。

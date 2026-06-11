@@ -27,6 +27,13 @@ type PriceData struct {
 	Quota                int // 按次计费的最终额度（MJ / Task）
 	QuotaToPreConsume    int // 按量计费的预消耗额度
 	GroupRatioInfo       GroupRatioInfo
+	// VideoRefMode 用户级「参考视频秒数」定价模式：""=无 / factor / price / flat / cap。
+	// 仅作用于参考视频那部分秒数，不影响生成秒数。
+	VideoRefMode string
+	// VideoRefValue 对应模式的数值（倍率 / 每秒单价$ / 整段总价$ / 封顶秒数）。
+	VideoRefValue float64
+	// VideoRefApplyGroupRatio 仅对 price/flat 生效：参考固定价是否也乘分组倍率（默认 false=绝对值）。
+	VideoRefApplyGroupRatio bool
 }
 
 func (p *PriceData) AddOtherRatio(key string, ratio float64) {

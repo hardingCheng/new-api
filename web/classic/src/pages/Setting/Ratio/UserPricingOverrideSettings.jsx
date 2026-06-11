@@ -29,6 +29,7 @@ import {
   Select,
   Space,
   Spin,
+  Switch,
   Table,
   Tag,
 } from '@douyinfe/semi-ui';
@@ -39,10 +40,35 @@ import { API, showError, showSuccess } from '../../../helpers';
 const TYPE_RATIO = 'ratio';
 const TYPE_MODEL_PRICE = 'model_price';
 const TYPE_MODEL_RATIO = 'model_ratio';
+// 参考视频秒数定价：仅作用于参考视频那部分秒数。
+const TYPE_VIDEO_REF_FACTOR = 'video_ref_factor';
+const TYPE_VIDEO_REF_PRICE = 'video_ref_price';
+const TYPE_VIDEO_REF_FLAT = 'video_ref_flat';
+const TYPE_VIDEO_REF_CAP = 'video_ref_cap';
+const VIDEO_REF_TYPES = [TYPE_VIDEO_REF_FACTOR, TYPE_VIDEO_REF_PRICE, TYPE_VIDEO_REF_FLAT, TYPE_VIDEO_REF_CAP];
+const isVideoRefType = (type) => VIDEO_REF_TYPES.includes(type);
+
 const SCENARIO_ALL_DISCOUNT = 'all_discount';
 const SCENARIO_GROUP_DISCOUNT = 'group_discount';
 const SCENARIO_MODEL_FIXED_PRICE = 'model_fixed_price';
 const SCENARIO_MODEL_RATIO = 'model_ratio';
+const SCENARIO_VIDEO_REFERENCE = 'video_reference';
+
+// 需要选择具体模型（而非整体/分组）的场景。
+const MODEL_SCOPED_SCENARIOS = [
+  SCENARIO_MODEL_FIXED_PRICE,
+  SCENARIO_MODEL_RATIO,
+  SCENARIO_VIDEO_REFERENCE,
+];
+const isModelScoped = (scenario) => MODEL_SCOPED_SCENARIOS.includes(scenario);
+
+// 参考视频计价方式下拉选项。
+const videoRefModeOptions = (t) => [
+  { value: TYPE_VIDEO_REF_FACTOR, label: t('参考秒打折/倍率（0=免费,0.5=半价）') },
+  { value: TYPE_VIDEO_REF_PRICE, label: t('参考秒固定单价') },
+  { value: TYPE_VIDEO_REF_FLAT, label: t('参考整段固定总价') },
+  { value: TYPE_VIDEO_REF_CAP, label: t('参考秒数封顶（秒）') },
+];
 
 const parseConfig = (raw) => {
   if (!raw || raw.trim() === '') {
@@ -68,6 +94,7 @@ const normalizeRules = (rules) =>
     model_pattern: rule.model_pattern || '',
     type: rule.type || TYPE_RATIO,
     value: rule.value ?? 1,
+    apply_group_ratio: Boolean(rule.apply_group_ratio),
     disabled: Boolean(rule.disabled),
   }));
 
@@ -83,6 +110,7 @@ const buildRawValue = (rules) =>
           model_pattern: String(rule.model_pattern || '').trim(),
           type: rule.type,
           value: Number(rule.value) || 0,
+          apply_group_ratio: Boolean(rule.apply_group_ratio),
           disabled: Boolean(rule.disabled),
         }))
         .filter((rule) => rule.user_id > 0 && rule.type),
@@ -94,7 +122,19 @@ const buildRawValue = (rules) =>
 const typeText = (type, t) => {
   if (type === TYPE_MODEL_PRICE) return t('固定单价');
   if (type === TYPE_MODEL_RATIO) return t('按量倍率');
+  if (type === TYPE_VIDEO_REF_FACTOR) return t('参考秒倍率');
+  if (type === TYPE_VIDEO_REF_PRICE) return t('参考秒单价');
+  if (type === TYPE_VIDEO_REF_FLAT) return t('参考整段固定价');
+  if (type === TYPE_VIDEO_REF_CAP) return t('参考秒封顶');
   return t('整体倍率');
+};
+
+// 参考视频规则的数值标签。
+const videoRefValueLabel = (type, t) => {
+  if (type === TYPE_VIDEO_REF_PRICE) return t('参考每秒单价');
+  if (type === TYPE_VIDEO_REF_FLAT) return t('参考整段固定总价');
+  if (type === TYPE_VIDEO_REF_CAP) return t('参考秒数封顶（秒）');
+  return t('参考秒倍率（0=免费,0.5=半价）');
 };
 
 const matchText = (value, fallback, t) =>
@@ -108,6 +148,7 @@ const emptyRule = {
   model_pattern: '',
   type: TYPE_RATIO,
   value: 1,
+  apply_group_ratio: false,
   disabled: false,
 };
 
@@ -178,6 +219,7 @@ const buildOverrideModelInfo = (originalInfo, rule) => {
 const inferScenario = (rule) => {
   if (rule.type === TYPE_MODEL_PRICE) return SCENARIO_MODEL_FIXED_PRICE;
   if (rule.type === TYPE_MODEL_RATIO) return SCENARIO_MODEL_RATIO;
+  if (isVideoRefType(rule.type)) return SCENARIO_VIDEO_REFERENCE;
   if (rule.group_pattern) return SCENARIO_GROUP_DISCOUNT;
   return SCENARIO_ALL_DISCOUNT;
 };
@@ -188,6 +230,10 @@ const applyScenario = (rule, scenario) => {
   }
   if (scenario === SCENARIO_MODEL_RATIO) {
     return { ...rule, type: TYPE_MODEL_RATIO };
+  }
+  if (scenario === SCENARIO_VIDEO_REFERENCE) {
+    // 默认参考秒倍率，进入后可在「参考计价方式」下拉里切换。
+    return { ...rule, type: isVideoRefType(rule.type) ? rule.type : TYPE_VIDEO_REF_FACTOR };
   }
   if (scenario === SCENARIO_ALL_DISCOUNT) {
     return { ...rule, type: TYPE_RATIO, group_pattern: '', model_pattern: '' };
@@ -200,6 +246,7 @@ const scenarioOptions = (t) => [
   { value: SCENARIO_MODEL_FIXED_PRICE, label: t('给用户某个模型设置固定单价') },
   { value: SCENARIO_ALL_DISCOUNT, label: t('给用户全部使用打折') },
   { value: SCENARIO_MODEL_RATIO, label: t('给用户某个按量模型设置倍率') },
+  { value: SCENARIO_VIDEO_REFERENCE, label: t('给用户视频参考秒单独定价') },
 ];
 
 const formatScope = (group, model, t) => `${group || t('全部分组')} / ${model || t('全部模型')}`;
@@ -216,6 +263,34 @@ const ruleSummary = (rule, t) => {
   }
   if (rule.type === TYPE_MODEL_RATIO) {
     return t('用户价格规则预览：{{user}} 使用 {{scope}} 时，按量模型倍率使用 {{value}}。', {
+      user,
+      scope,
+      value: rule.value || 0,
+    });
+  }
+  if (rule.type === TYPE_VIDEO_REF_FACTOR) {
+    return t('用户价格规则预览：{{user}} 使用 {{scope}} 时，参考视频秒数按 ×{{value}} 计价（0=免费,0.5=半价）。', {
+      user,
+      scope,
+      value: rule.value || 0,
+    });
+  }
+  if (rule.type === TYPE_VIDEO_REF_PRICE) {
+    return t('用户价格规则预览：{{user}} 使用 {{scope}} 时，参考视频秒数按每秒 {{value}} 计价（与生成秒脱钩）。', {
+      user,
+      scope,
+      value: rule.value || 0,
+    });
+  }
+  if (rule.type === TYPE_VIDEO_REF_FLAT) {
+    return t('用户价格规则预览：{{user}} 使用 {{scope}} 时，参考视频部分固定收 {{value}}（不论参考多少秒）。', {
+      user,
+      scope,
+      value: rule.value || 0,
+    });
+  }
+  if (rule.type === TYPE_VIDEO_REF_CAP) {
+    return t('用户价格规则预览：{{user}} 使用 {{scope}} 时，参考视频秒数最多按 {{value}} 秒计（超出不收）。', {
       user,
       scope,
       value: rule.value || 0,
@@ -308,7 +383,7 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
   const batchPreview = useMemo(() => {
     const userCount = selectedUsers.length || (ruleForm.user_id ? 1 : 0);
     const modelCount =
-      scenario === SCENARIO_MODEL_FIXED_PRICE || scenario === SCENARIO_MODEL_RATIO
+      isModelScoped(scenario)
         ? selectedModels.length || (ruleForm.model_pattern ? 1 : 0)
         : 1;
     const ruleCount = userCount * modelCount;
@@ -320,7 +395,7 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
   const priceComparisonRows = useMemo(() => {
     if (userContexts.length === 0) return [];
     const models =
-      scenario === SCENARIO_MODEL_FIXED_PRICE || scenario === SCENARIO_MODEL_RATIO
+      isModelScoped(scenario)
         ? selectedModels.length > 0
           ? selectedModels
           : ruleForm.model_pattern
@@ -437,7 +512,7 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
       return;
     }
     if (
-      (scenario === SCENARIO_MODEL_FIXED_PRICE || scenario === SCENARIO_MODEL_RATIO) &&
+      (isModelScoped(scenario)) &&
       selectedModels.length === 0 &&
       !String(ruleForm.model_pattern || '').trim()
     ) {
@@ -452,7 +527,7 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
         group: String(ruleForm.user_group || '').trim(),
       }];
     const targetModels =
-      scenario === SCENARIO_MODEL_FIXED_PRICE || scenario === SCENARIO_MODEL_RATIO
+      isModelScoped(scenario)
         ? selectedModels.length > 0
           ? selectedModels
           : [String(ruleForm.model_pattern || '').trim()]
@@ -674,7 +749,7 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
                 </Select>
               </>
             ) : null}
-            {scenario === SCENARIO_MODEL_FIXED_PRICE || scenario === SCENARIO_MODEL_RATIO ? (
+            {isModelScoped(scenario) ? (
               <>
                 <div className='mb-2 font-medium text-gray-700'>{t('适用模型')}</div>
                 <Select
@@ -710,8 +785,28 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
                 />
               </>
             ) : null}
+            {scenario === SCENARIO_VIDEO_REFERENCE ? (
+              <>
+                <div className='mb-2 font-medium text-gray-700'>{t('参考计价方式')}</div>
+                <Select
+                  value={isVideoRefType(ruleForm.type) ? ruleForm.type : TYPE_VIDEO_REF_FACTOR}
+                  style={{ width: '100%', marginBottom: 16 }}
+                  onChange={(value) => setRuleForm({ ...ruleForm, type: value })}
+                >
+                  {videoRefModeOptions(t).map((item) => (
+                    <Select.Option key={item.value} value={item.value}>
+                      {item.label}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </>
+            ) : null}
             <div className='mb-2 font-medium text-gray-700'>
-              {ruleForm.type === TYPE_MODEL_PRICE ? t('固定单价') : t('倍率数值')}
+              {ruleForm.type === TYPE_MODEL_PRICE
+                ? t('固定单价')
+                : isVideoRefType(ruleForm.type)
+                  ? videoRefValueLabel(ruleForm.type, t)
+                  : t('倍率数值')}
             </div>
             <InputNumber
               value={ruleForm.value}
@@ -723,8 +818,30 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
             <div className='mt-3 text-sm text-gray-500'>
               {ruleForm.type === TYPE_MODEL_PRICE
                 ? t('固定单价会直接替换模型原来的固定价格。')
-                : t('倍率填写 0.8 表示八折，1 表示原价，0 表示免费。')}
+                : ruleForm.type === TYPE_VIDEO_REF_FACTOR
+                  ? t('参考秒倍率：0=参考秒免费，0.5=半价，1=与生成秒同价；只影响参考视频那部分秒数。')
+                  : ruleForm.type === TYPE_VIDEO_REF_PRICE
+                    ? t('参考每秒单价：参考视频按此单价计，与生成秒的价格脱钩。')
+                    : ruleForm.type === TYPE_VIDEO_REF_FLAT
+                      ? t('参考整段固定总价：不论参考多少秒，参考部分固定收这么多。')
+                      : ruleForm.type === TYPE_VIDEO_REF_CAP
+                        ? t('参考秒数封顶（秒）：参考最多按这么多秒计，超出不收。')
+                        : t('倍率填写 0.8 表示八折，1 表示原价，0 表示免费。')}
             </div>
+            {ruleForm.type === TYPE_VIDEO_REF_PRICE || ruleForm.type === TYPE_VIDEO_REF_FLAT ? (
+              <div className='mt-4 flex items-center justify-between'>
+                <div>
+                  <div className='font-medium text-gray-700'>{t('固定价同时享受分组折扣')}</div>
+                  <div className='text-sm text-gray-500'>
+                    {t('默认关闭：你填多少就收多少；开启后参考固定价会再乘以用户的分组倍率。')}
+                  </div>
+                </div>
+                <Switch
+                  checked={Boolean(ruleForm.apply_group_ratio)}
+                  onChange={(checked) => setRuleForm({ ...ruleForm, apply_group_ratio: checked })}
+                />
+              </div>
+            ) : null}
             {selectedGroupRatios.length > 1 && valuesDiffer(selectedGroupRatios.map((item) => item.ratio)) ? (
               <Card className='mt-4' bodyStyle={{ padding: 12 }}>
                 <div className='mb-2 font-medium text-red-600'>{t('分组倍率不一致')}</div>

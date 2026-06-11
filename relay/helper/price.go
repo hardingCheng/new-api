@@ -77,15 +77,9 @@ func applyUserPricingOverridesToPriceData(info *relaycommon.RelayInfo, priceData
 			modelNames = append(modelNames, info.ChannelMeta.UpstreamModelName)
 		}
 	}
-	var (
-		usePrice   bool
-		modelPrice float64
-		modelRatio float64
-		groupRatio float64
-		matches    []ratio_setting.UserPricingOverrideMatch
-	)
+	var result ratio_setting.UserPricingOverrideResult
 	for _, modelName := range modelNames {
-		usePrice, modelPrice, modelRatio, groupRatio, matches = ratio_setting.ApplyUserPricingOverrides(
+		result = ratio_setting.ApplyUserPricingOverrides(
 			info.UserId,
 			info.UserEmail,
 			info.UserGroup,
@@ -96,20 +90,23 @@ func applyUserPricingOverridesToPriceData(info *relaycommon.RelayInfo, priceData
 			priceData.ModelRatio,
 			priceData.GroupRatioInfo.GroupRatio,
 		)
-		if len(matches) > 0 {
+		if len(result.Matches) > 0 {
 			break
 		}
 	}
-	if len(matches) == 0 {
+	if len(result.Matches) == 0 {
 		return
 	}
-	priceData.UsePrice = usePrice
-	priceData.ModelPrice = modelPrice
-	priceData.ModelRatio = modelRatio
-	priceData.GroupRatioInfo.GroupRatio = groupRatio
-	priceData.GroupRatioInfo.UserOverrideRatio = groupRatio
+	priceData.UsePrice = result.UsePrice
+	priceData.ModelPrice = result.ModelPrice
+	priceData.ModelRatio = result.ModelRatio
+	priceData.GroupRatioInfo.GroupRatio = result.GroupRatio
+	priceData.GroupRatioInfo.UserOverrideRatio = result.GroupRatio
 	priceData.GroupRatioInfo.HasUserOverride = true
-	info.UserPricingOverrides = matches
+	priceData.VideoRefMode = result.VideoRefMode
+	priceData.VideoRefValue = result.VideoRefValue
+	priceData.VideoRefApplyGroupRatio = result.VideoRefApplyGroupRatio
+	info.UserPricingOverrides = result.Matches
 }
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
