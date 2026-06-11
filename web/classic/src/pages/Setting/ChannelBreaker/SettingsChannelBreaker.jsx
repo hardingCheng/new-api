@@ -63,8 +63,7 @@ const OPTION_KEYS = [
   'monitor_setting.low_balance_threshold_cny',
   'monitor_setting.channel_breaker_alert_enabled',
   'AutomaticDisableKeywords',
-  'AutomaticDisableStatusCodes',
-  'AutomaticRetryStatusCodes',
+  'ChannelBreakerFailureStatusCodes',
 ];
 
 const defaultInputs = {
@@ -82,8 +81,7 @@ const defaultInputs = {
   'monitor_setting.low_balance_threshold_cny': 10,
   'monitor_setting.channel_breaker_alert_enabled': true,
   AutomaticDisableKeywords: '',
-  AutomaticDisableStatusCodes: '401',
-  AutomaticRetryStatusCodes:
+  ChannelBreakerFailureStatusCodes:
     '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
 };
 
@@ -188,19 +186,13 @@ export default function SettingsChannelBreaker(props) {
   const [inputsRow, setInputsRow] = useState(defaultInputs);
   const refForm = useRef();
 
-  const parsedFailureStatusCodes = parseHttpStatusCodeRules(
-    inputs.AutomaticDisableStatusCodes || '',
-  );
-  const parsedRetryStatusCodes = parseHttpStatusCodeRules(
-    inputs.AutomaticRetryStatusCodes || '',
+  const parsedChannelBreakerStatusCodes = parseHttpStatusCodeRules(
+    inputs.ChannelBreakerFailureStatusCodes || '',
   );
 
   function normalizeValue(key, value) {
-    if (key === 'AutomaticDisableStatusCodes') {
-      return parsedFailureStatusCodes.normalized;
-    }
-    if (key === 'AutomaticRetryStatusCodes') {
-      return parsedRetryStatusCodes.normalized;
+    if (key === 'ChannelBreakerFailureStatusCodes') {
+      return parsedChannelBreakerStatusCodes.normalized;
     }
     if (typeof value === 'boolean') {
       return String(value);
@@ -318,19 +310,12 @@ export default function SettingsChannelBreaker(props) {
   async function onSubmit() {
     const updateArray = compareObjects(inputs, inputsRow);
     if (!updateArray.length) return showWarning(t('你似乎并没有修改什么'));
-    if (!parsedFailureStatusCodes.ok) {
+    if (!parsedChannelBreakerStatusCodes.ok) {
       const details =
-        parsedFailureStatusCodes.invalidTokens?.length > 0
-          ? `: ${parsedFailureStatusCodes.invalidTokens.join(', ')}`
+        parsedChannelBreakerStatusCodes.invalidTokens?.length > 0
+          ? `: ${parsedChannelBreakerStatusCodes.invalidTokens.join(', ')}`
           : '';
-      return showError(`${t('失败状态码格式不正确')}${details}`);
-    }
-    if (!parsedRetryStatusCodes.ok) {
-      const details =
-        parsedRetryStatusCodes.invalidTokens?.length > 0
-          ? `: ${parsedRetryStatusCodes.invalidTokens.join(', ')}`
-          : '';
-      return showError(`${t('自动重试状态码格式不正确')}${details}`);
+      return showError(`${t('熔断失败状态码格式不正确')}${details}`);
     }
 
     const requestQueue = updateArray.map((item) =>
@@ -1035,30 +1020,20 @@ export default function SettingsChannelBreaker(props) {
             <Row gutter={16}>
               <Col xs={24} sm={16}>
                 <HttpStatusCodeRulesInput
-                  label={t('失败状态码')}
+                  label={t('熔断失败状态码')}
                   placeholder={t('例如：401, 403, 429, 500-599')}
                   extraText={t(
-                    '这些状态码会被视为渠道失败，用于自动禁用和熔断失败计数。',
+                    '仅用于熔断失败计数，由熔断功能单独维护，与自动重试、自动禁用状态码互不影响。',
                   )}
-                  field='AutomaticDisableStatusCodes'
+                  field='ChannelBreakerFailureStatusCodes'
                   onChange={(value) =>
-                    setInputs({ ...inputs, AutomaticDisableStatusCodes: value })
+                    setInputs({
+                      ...inputs,
+                      ChannelBreakerFailureStatusCodes: value,
+                    })
                   }
-                  parsed={parsedFailureStatusCodes}
-                  invalidText={t('失败状态码格式不正确')}
-                />
-                <HttpStatusCodeRulesInput
-                  label={t('自动重试状态码')}
-                  placeholder={t('例如：401, 403, 429, 500-599')}
-                  extraText={t(
-                    '支持填写单个状态码或范围（含首尾），使用逗号分隔；504 和 524 始终不重试，不受此处配置影响',
-                  )}
-                  field='AutomaticRetryStatusCodes'
-                  onChange={(value) =>
-                    setInputs({ ...inputs, AutomaticRetryStatusCodes: value })
-                  }
-                  parsed={parsedRetryStatusCodes}
-                  invalidText={t('自动重试状态码格式不正确')}
+                  parsed={parsedChannelBreakerStatusCodes}
+                  invalidText={t('熔断失败状态码格式不正确')}
                 />
                 <Form.TextArea
                   label={t('失败关键词')}

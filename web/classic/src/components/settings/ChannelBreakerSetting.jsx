@@ -32,8 +32,7 @@ const ChannelBreakerSetting = () => {
     ChannelBreakerExcludePaths: '/v1/videos',
     ChannelBreakerRules: '[]',
     AutomaticDisableKeywords: '',
-    AutomaticDisableStatusCodes: '401',
-    AutomaticRetryStatusCodes:
+    ChannelBreakerFailureStatusCodes:
       '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
     'monitor_setting.bark_alert_enabled': true,
     'monitor_setting.bark_alert_url':

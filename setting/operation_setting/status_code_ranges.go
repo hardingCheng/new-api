@@ -29,14 +29,28 @@ var defaultAutomaticRetryStatusCodeRanges = []StatusCodeRange{
 	{Start: 525, End: 599},
 }
 
+// 熔断失败状态码：专供熔断失败计数使用，与自动重试、自动禁用状态码完全解耦，单独维护。
+// 默认值与重试默认串一致。
+var defaultChannelBreakerFailureStatusCodeRanges = []StatusCodeRange{
+	{Start: 100, End: 199},
+	{Start: 300, End: 399},
+	{Start: 401, End: 407},
+	{Start: 409, End: 499},
+	{Start: 500, End: 503},
+	{Start: 505, End: 523},
+	{Start: 525, End: 599},
+}
+
 var (
-	automaticDisableStatusCodeRanges atomic.Value
-	automaticRetryStatusCodeRanges   atomic.Value
+	automaticDisableStatusCodeRanges      atomic.Value
+	automaticRetryStatusCodeRanges        atomic.Value
+	channelBreakerFailureStatusCodeRanges atomic.Value
 )
 
 func init() {
 	SetAutomaticDisableStatusCodeRanges(defaultAutomaticDisableStatusCodeRanges)
 	SetAutomaticRetryStatusCodeRanges(defaultAutomaticRetryStatusCodeRanges)
+	SetChannelBreakerFailureStatusCodeRanges(defaultChannelBreakerFailureStatusCodeRanges)
 }
 
 var alwaysSkipRetryStatusCodes = map[int]struct{}{
@@ -93,6 +107,31 @@ func ShouldRetryByStatusCode(code int) bool {
 		return false
 	}
 	return shouldMatchStatusCodeRanges(GetAutomaticRetryStatusCodeRanges(), code)
+}
+
+func ChannelBreakerFailureStatusCodesToString() string {
+	return statusCodeRangesToString(GetChannelBreakerFailureStatusCodeRanges())
+}
+
+func ChannelBreakerFailureStatusCodesFromString(s string) error {
+	ranges, err := ParseHTTPStatusCodeRanges(s)
+	if err != nil {
+		return err
+	}
+	SetChannelBreakerFailureStatusCodeRanges(ranges)
+	return nil
+}
+
+func GetChannelBreakerFailureStatusCodeRanges() []StatusCodeRange {
+	ranges, ok := channelBreakerFailureStatusCodeRanges.Load().([]StatusCodeRange)
+	if !ok {
+		return nil
+	}
+	return copyStatusCodeRanges(ranges)
+}
+
+func SetChannelBreakerFailureStatusCodeRanges(ranges []StatusCodeRange) {
+	channelBreakerFailureStatusCodeRanges.Store(copyStatusCodeRanges(ranges))
 }
 
 func GetAutomaticDisableStatusCodeRanges() []StatusCodeRange {

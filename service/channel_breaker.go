@@ -699,7 +699,7 @@ func defaultChannelBreakerRuntimeRule() channelBreakerRuntimeRule {
 		Cooldown:                  getChannelBreakerCooldown(),
 		ProbeCount:                common.GetChannelBreakerProbeCount(),
 		ProbeSuccessCount:         common.GetChannelBreakerProbeSuccessCount(),
-		FailureStatusCodes:        operation_setting.GetAutomaticDisableStatusCodeRanges(),
+		FailureStatusCodes:        operation_setting.GetChannelBreakerFailureStatusCodeRanges(),
 		FailureKeywords:           operation_setting.GetAutomaticDisableKeywords(),
 		ExcludePaths:              common.GetChannelBreakerExcludePaths(),
 		InstantDisableEnabled:     true,
