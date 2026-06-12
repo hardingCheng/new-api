@@ -175,10 +175,17 @@ func GetLogsStatBreakdown(c *gin.Context) {
 			}
 		}
 	}
+	// 额外返回不分组的真实总额（与日志页 SumUsedQuota 同口径，不受分组 1000 条上限影响），
+	// 供弹窗合计直接使用，保证与 /console/log 统计一致。
+	totalStat, _ := model.SumUsedQuota(0, startTimestamp, endTimestamp, modelName, username, usernames, tokenName, channel, group)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    rows,
+		"data": gin.H{
+			"rows":          rows,
+			"total_consume": totalStat.Quota,
+			"total_refund":  totalStat.RefundQuota,
+		},
 	})
 	return
 }

@@ -53,6 +53,11 @@ const UsageLogsStatDrawer = ({ t }) => {
   const [range, setRange] = useState(defaultRange());
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState([]);
+  // 后端返回的不分组真实总额（与日志页同口径，不受分组 1000 条上限影响）
+  const [serverTotals, setServerTotals] = useState({
+    consume: null,
+    refund: null,
+  });
 
   const fetchData = useCallback(async () => {
     if (!Array.isArray(range) || range.length !== 2 || !range[0] || !range[1]) {
@@ -66,7 +71,17 @@ const UsageLogsStatDrawer = ({ t }) => {
       const res = await API.get(url);
       const { success, message, data } = res.data;
       if (success) {
-        setRows(Array.isArray(data) ? data : []);
+        // 兼容两种返回：旧版直接是数组；新版是 { rows, total_consume, total_refund }
+        const list = Array.isArray(data) ? data : data?.rows || [];
+        setRows(list);
+        setServerTotals(
+          Array.isArray(data)
+            ? { consume: null, refund: null }
+            : {
+                consume: data?.total_consume ?? null,
+                refund: data?.total_refund ?? null,
+              },
+        );
       } else {
         showError(message);
       }
@@ -160,8 +175,11 @@ const UsageLogsStatDrawer = ({ t }) => {
     },
   ];
 
-  const totalConsume = rows.reduce((s, r) => s + (r.consume_quota || 0), 0);
-  const totalRefund = rows.reduce((s, r) => s + (r.refund_quota || 0), 0);
+  // 优先用后端真实总额；旧版/异常时回退为当前行求和。
+  const sumConsume = rows.reduce((s, r) => s + (r.consume_quota || 0), 0);
+  const sumRefund = rows.reduce((s, r) => s + (r.refund_quota || 0), 0);
+  const totalConsume = serverTotals.consume ?? sumConsume;
+  const totalRefund = serverTotals.refund ?? sumRefund;
   const totalIncome = totalConsume - totalRefund;
 
   return (
