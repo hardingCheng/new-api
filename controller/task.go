@@ -82,6 +82,38 @@ func GetUserTask(c *gin.Context) {
 	common.ApiSuccess(c, pageInfo)
 }
 
+// GetAllTaskExport 一次性返回所有匹配的任务（不分页），供后台导出报表使用。
+// 不受每页 100 条上限约束，数据量由时间范围等过滤条件自然限制。
+func GetAllTaskExport(c *gin.Context) {
+	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	queryParams := model.SyncTaskQueryParams{
+		Platform:       constant.TaskPlatform(c.Query("platform")),
+		TaskID:         c.Query("task_id"),
+		Status:         c.Query("status"),
+		Action:         c.Query("action"),
+		ModelName:      strings.TrimSpace(c.Query("model_name")),
+		StartTimestamp: startTimestamp,
+		EndTimestamp:   endTimestamp,
+		ChannelID:      c.Query("channel_id"),
+	}
+	if username := strings.TrimSpace(c.Query("username")); username != "" {
+		userIDs, err := model.SearchUserIDsByUsername(username, 1000)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		queryParams.UserIDs = userIDs
+		if len(userIDs) == 0 {
+			common.ApiSuccess(c, gin.H{"items": []*dto.TaskDto{}})
+			return
+		}
+	}
+	// num = -1 表示不限制条数（GORM 取消 LIMIT），一次查询取全部。
+	items := model.TaskGetAllTasks(0, -1, queryParams)
+	common.ApiSuccess(c, gin.H{"items": tasksToDto(items, true)})
+}
+
 func GetModelQuotaPoolUsage(c *gin.Context) {
 	userID := c.GetInt("id")
 	includeAllUserPools := c.GetInt("role") >= common.RoleAdminUser

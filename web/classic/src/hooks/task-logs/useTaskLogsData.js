@@ -31,10 +31,7 @@ import {
 } from '../../helpers';
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
-import {
-  buildTaskExportRows,
-  EXPORT_PAGE_SIZE,
-} from '../../components/table/task-logs/taskLogsExport';
+import { buildTaskExportRows } from '../../components/table/task-logs/taskLogsExport';
 
 export const useTaskLogsData = () => {
   const { t } = useTranslation();
@@ -348,39 +345,27 @@ export const useTaskLogsData = () => {
       const localStartTimestamp = parseInt(Date.parse(start_timestamp) / 1000);
       const localEndTimestamp = parseInt(Date.parse(end_timestamp) / 1000);
 
-      let page = 1;
-      let total = Infinity;
-      const allItems = [];
-      while (allItems.length < total) {
-        const params = new URLSearchParams({
-          p: String(page),
-          page_size: String(EXPORT_PAGE_SIZE),
-          task_id,
-          start_timestamp: String(localStartTimestamp),
-          end_timestamp: String(localEndTimestamp),
-        });
-        if (isAdminUser) {
-          params.set('channel_id', channel_id);
-          params.set('status', status);
-          params.set('username', username);
-          params.set('model_name', model_name);
-        }
-        const url = isAdminUser
-          ? `/api/task/?${params.toString()}`
-          : `/api/task/self?${params.toString()}`;
-        const res = await API.get(url);
-        const { success, message, data } = res.data;
-        if (!success) {
-          showError(message);
-          return;
-        }
-        const items = data.items || [];
-        total = data.total || 0;
-        allItems.push(...items);
-        if (items.length === 0) break;
-        page += 1;
-        if (page > 2000) break; // 安全上限，避免异常分页造成死循环
+      // 一次请求拉取全部匹配记录（后端专用导出接口不分页），由所选时间范围自然约束数据量。
+      const params = new URLSearchParams({
+        task_id,
+        start_timestamp: String(localStartTimestamp),
+        end_timestamp: String(localEndTimestamp),
+      });
+      if (isAdminUser) {
+        params.set('channel_id', channel_id);
+        params.set('status', status);
+        params.set('username', username);
+        params.set('model_name', model_name);
       }
+      // 导出按钮仅管理员可见，固定走管理员导出接口。
+      const url = `/api/task/export?${params.toString()}`;
+      const res = await API.get(url);
+      const { success, message, data } = res.data;
+      if (!success) {
+        showError(message);
+        return;
+      }
+      const allItems = data.items || [];
 
       if (allItems.length === 0) {
         showWarning(t('没有可导出的数据'));
