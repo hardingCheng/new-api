@@ -187,6 +187,8 @@ export default function SettingsChannelBreaker(props) {
   const [inputs, setInputs] = useState(defaultInputs);
   const [inputsRow, setInputsRow] = useState(defaultInputs);
   const [exemptChannelOptions, setExemptChannelOptions] = useState([]);
+  const [exemptChannelNameMap, setExemptChannelNameMap] = useState({});
+  const [pendingExemptIds, setPendingExemptIds] = useState([]);
   const refForm = useRef();
 
   function parseExemptChannels(value) {
@@ -202,13 +204,24 @@ export default function SettingsChannelBreaker(props) {
 
   const exemptChannelIds = parseExemptChannels(inputs.ChannelBreakerExemptChannels);
 
-  // 已选渠道至少展示 #id，搜索到的会带上渠道名。
-  const exemptChannelOptionList = (() => {
-    const map = new Map();
-    exemptChannelIds.forEach((id) => map.set(id, { value: id, label: `#${id}` }));
-    exemptChannelOptions.forEach((opt) => map.set(opt.value, opt));
-    return Array.from(map.values());
-  })();
+  // 表格数据：每个豁免渠道一行，展示渠道号与渠道名（名称按搜索结果回填）。
+  const exemptChannelRows = exemptChannelIds.map((id) => ({
+    channel_id: id,
+    name: exemptChannelNameMap[id] || '',
+  }));
+
+  // 添加器选项：排除已在豁免名单里的渠道。
+  const exemptAddOptions = exemptChannelOptions.filter(
+    (opt) => !exemptChannelIds.includes(opt.value),
+  );
+
+  function setExemptIds(ids) {
+    const unique = Array.from(new Set(ids.filter((id) => id > 0)));
+    setInputs({
+      ...inputs,
+      ChannelBreakerExemptChannels: JSON.stringify(unique),
+    });
+  }
 
   async function searchExemptChannels(keyword = '') {
     try {
@@ -218,21 +231,34 @@ export default function SettingsChannelBreaker(props) {
       const { success, data } = res.data;
       if (!success) return;
       const items = Array.isArray(data?.items) ? data.items : data || [];
+      const valid = items.filter((c) => c && c.id);
       setExemptChannelOptions(
-        items
-          .filter((c) => c && c.id)
-          .map((c) => ({ value: c.id, label: `#${c.id} ${c.name || ''}`.trim() })),
+        valid.map((c) => ({
+          value: c.id,
+          label: `#${c.id} ${c.name || ''}`.trim(),
+        })),
       );
+      // 缓存渠道名，供表格展示已选渠道名称。
+      setExemptChannelNameMap((prev) => {
+        const next = { ...prev };
+        valid.forEach((c) => {
+          if (c.name) next[c.id] = c.name;
+        });
+        return next;
+      });
     } catch (error) {
       // 忽略搜索错误，不阻塞配置
     }
   }
 
-  function onChangeExemptChannels(values) {
-    const ids = (Array.isArray(values) ? values : [])
-      .map((id) => Number(id))
-      .filter((id) => id > 0);
-    setInputs({ ...inputs, ChannelBreakerExemptChannels: JSON.stringify(ids) });
+  function addPendingExemptChannels() {
+    if (!pendingExemptIds.length) return;
+    setExemptIds([...exemptChannelIds, ...pendingExemptIds]);
+    setPendingExemptIds([]);
+  }
+
+  function removeExemptChannel(id) {
+    setExemptIds(exemptChannelIds.filter((cid) => cid !== id));
   }
 
   async function saveExemptChannelsOnly() {
@@ -994,33 +1020,37 @@ export default function SettingsChannelBreaker(props) {
                 '在此选择的渠道：报错不会触发熔断，也不会被自动禁用（上游余额不足仍会立即禁用）。适用于报错属于正常现象的渠道，例如部分会主动返回错误的上游。',
               )}
             />
-            <Row gutter={16} style={{ marginTop: 12 }}>
-              <Col xs={24} sm={16}>
+            <Space style={{ margin: '12px 0' }} wrap align='end'>
+              <div>
                 <Text strong style={{ display: 'block', marginBottom: 6 }}>
-                  {t('豁免渠道')}
+                  {t('添加豁免渠道')}
                 </Text>
                 <Select
                   multiple
                   filter
                   remote
-                  style={{ width: '100%' }}
+                  style={{ width: 360 }}
                   placeholder={t('搜索并选择渠道（按渠道名或 ID）')}
-                  value={exemptChannelIds}
-                  optionList={exemptChannelOptionList}
+                  value={pendingExemptIds}
+                  optionList={exemptAddOptions}
                   onSearch={(keyword) => searchExemptChannels(keyword)}
-                  onChange={onChangeExemptChannels}
+                  onChange={(values) =>
+                    setPendingExemptIds(
+                      (Array.isArray(values) ? values : [])
+                        .map((id) => Number(id))
+                        .filter((id) => id > 0),
+                    )
+                  }
                   showClear
                 />
-                <Text
-                  type='tertiary'
-                  size='small'
-                  style={{ display: 'block', marginTop: 4 }}
-                >
-                  {t('已选渠道的报错不计入熔断失败，也不会被自动禁用。')}
-                </Text>
-              </Col>
-            </Row>
-            <Row style={{ marginTop: 12 }}>
+              </div>
+              <Button
+                type='primary'
+                disabled={pendingExemptIds.length === 0}
+                onClick={addPendingExemptChannels}
+              >
+                {t('添加')}
+              </Button>
               <Button
                 theme='solid'
                 type='secondary'
@@ -1029,7 +1059,48 @@ export default function SettingsChannelBreaker(props) {
               >
                 {t('保存豁免渠道')}
               </Button>
-            </Row>
+            </Space>
+            <Table
+              size='small'
+              columns={[
+                {
+                  title: t('渠道号'),
+                  dataIndex: 'channel_id',
+                  width: 120,
+                  render: (text) => <Text strong>#{text}</Text>,
+                },
+                {
+                  title: t('渠道名称'),
+                  dataIndex: 'name',
+                  render: (text) => text || '-',
+                },
+                {
+                  title: t('操作'),
+                  dataIndex: 'operate',
+                  width: 120,
+                  render: (_, record) => (
+                    <Button
+                      size='small'
+                      type='danger'
+                      onClick={() => removeExemptChannel(record.channel_id)}
+                    >
+                      {t('去除')}
+                    </Button>
+                  ),
+                },
+              ]}
+              dataSource={exemptChannelRows}
+              rowKey='channel_id'
+              pagination={false}
+              empty={t('当前没有豁免渠道')}
+            />
+            <Text
+              type='tertiary'
+              size='small'
+              style={{ display: 'block', marginTop: 8 }}
+            >
+              {t('修改后需点击「保存豁免渠道」才会生效。已选渠道的报错不计入熔断失败，也不会被自动禁用。')}
+            </Text>
           </Form.Section>
 
           <Form.Section text={t('全局熔断参数')}>

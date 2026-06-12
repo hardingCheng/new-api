@@ -1,5 +1,9 @@
 {
   "translation": {
+    "添加豁免渠道": "Thêm kênh được miễn",
+    "去除": "Xóa",
+    "当前没有豁免渠道": "Chưa có kênh được miễn",
+    "修改后需点击「保存豁免渠道」才会生效。已选渠道的报错不计入熔断失败，也不会被自动禁用。": "Thay đổi chỉ có hiệu lực sau khi nhấn « Lưu kênh được miễn ». Lỗi của các kênh đã chọn không được tính là lỗi ngắt mạch và không tự động vô hiệu hóa.",
     "渠道号": "ID kênh",
     "收入": "Doanh thu",
     "总收入": "Tổng doanh thu",

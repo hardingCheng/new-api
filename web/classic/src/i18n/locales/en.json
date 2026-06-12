@@ -1,5 +1,9 @@
 {
   "translation": {
+    "添加豁免渠道": "Add exempt channel",
+    "去除": "Remove",
+    "当前没有豁免渠道": "No exempt channels yet",
+    "修改后需点击「保存豁免渠道」才会生效。已选渠道的报错不计入熔断失败，也不会被自动禁用。": "Changes take effect only after clicking \"Save exempt channels\". Errors from selected channels are not counted as breaker failures and won't auto-disable them.",
     "渠道号": "Channel ID",
     "收入": "Revenue",
     "总收入": "Total revenue",

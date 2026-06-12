@@ -1,5 +1,9 @@
 {
   "translation": {
+    "添加豁免渠道": "Ajouter un canal exempté",
+    "去除": "Retirer",
+    "当前没有豁免渠道": "Aucun canal exempté pour le moment",
+    "修改后需点击「保存豁免渠道」才会生效。已选渠道的报错不计入熔断失败，也不会被自动禁用。": "Les modifications ne prennent effet qu'après avoir cliqué sur « Enregistrer les canaux exemptés ». Les erreurs des canaux sélectionnés ne comptent pas comme des échecs du disjoncteur et ne les désactivent pas automatiquement.",
     "渠道号": "ID du canal",
     "收入": "Revenu",
     "总收入": "Revenu total",
