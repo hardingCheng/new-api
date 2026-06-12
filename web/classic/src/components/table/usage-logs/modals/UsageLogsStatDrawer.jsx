@@ -96,17 +96,30 @@ const UsageLogsStatDrawer = ({ t }) => {
   const incomeOf = (r) => (r.consume_quota || 0) - (r.refund_quota || 0);
 
   const columns = [
-    dimension === 'channel'
-      ? {
-          title: t('渠道号'),
-          dataIndex: 'channel_id',
-          render: (text) => <Text strong>#{text}</Text>,
-        }
-      : {
-          title: dimension === 'model' ? t('模型') : t('用户'),
-          dataIndex: 'name',
-          render: (_, record) => <Text strong>{rowName(record)}</Text>,
-        },
+    ...(dimension === 'channel'
+      ? [
+          {
+            title: t('渠道名称'),
+            dataIndex: 'name',
+            render: (_, record) => (
+              <Text strong>
+                {record.name && record.name !== '' ? record.name : '-'}
+              </Text>
+            ),
+          },
+          {
+            title: t('渠道号'),
+            dataIndex: 'channel_id',
+            render: (text) => <Text>#{text}</Text>,
+          },
+        ]
+      : [
+          {
+            title: dimension === 'model' ? t('模型') : t('用户'),
+            dataIndex: 'name',
+            render: (_, record) => <Text strong>{rowName(record)}</Text>,
+          },
+        ]),
     {
       title: t('消耗额度'),
       dataIndex: 'consume_quota',
