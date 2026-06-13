@@ -344,6 +344,35 @@ function getImageResolution(record) {
   return match ? match[1] : '';
 }
 
+// 将分辨率映射为 K 档位 + 原始分辨率，如 "2K (1024x1024)"。
+// 以较长边为准：≤1024→1K、≤2048→2K、≤4096→4K、更大→8K。
+// 宽高比（如 1:1）或本身已是 1K/2K 的原样返回。
+function formatImageResolution(raw) {
+  const value = String(raw || '').trim();
+  if (!value) {
+    return '';
+  }
+  if (/^\d+\s*[kK]$/.test(value)) {
+    return value.toUpperCase().replace(/\s+/g, '');
+  }
+  const match = /^(\d+)\s*[x×]\s*(\d+)$/i.exec(value);
+  if (!match) {
+    return value;
+  }
+  const width = parseInt(match[1], 10);
+  const height = parseInt(match[2], 10);
+  const maxDim = Math.max(width, height);
+  let tier = '8K';
+  if (maxDim <= 1024) {
+    tier = '1K';
+  } else if (maxDim <= 2048) {
+    tier = '2K';
+  } else if (maxDim <= 4096) {
+    tier = '4K';
+  }
+  return `${tier} (${width}x${height})`;
+}
+
 function toTokenNumber(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -714,7 +743,7 @@ export const getLogsColumns = ({
         if (!isAdminUser) {
           return <></>;
         }
-        const resolution = getImageResolution(record);
+        const resolution = formatImageResolution(getImageResolution(record));
         if (!resolution) {
           return <></>;
         }
