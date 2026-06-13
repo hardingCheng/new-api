@@ -63,6 +63,10 @@ const OPTION_KEYS = [
   'monitor_setting.low_balance_alert_enabled',
   'monitor_setting.low_balance_threshold_cny',
   'monitor_setting.channel_breaker_alert_enabled',
+  'monitor_setting.channel_disable_alert_enabled',
+  'monitor_setting.channel_disable_alert_cooldown_second',
+  'monitor_setting.retest_disabled_channel_enabled',
+  'monitor_setting.retest_disabled_channel_seconds',
   'AutomaticDisableKeywords',
   'ChannelBreakerFailureStatusCodes',
 ];
@@ -82,6 +86,10 @@ const defaultInputs = {
   'monitor_setting.low_balance_alert_enabled': true,
   'monitor_setting.low_balance_threshold_cny': 10,
   'monitor_setting.channel_breaker_alert_enabled': true,
+  'monitor_setting.channel_disable_alert_enabled': true,
+  'monitor_setting.channel_disable_alert_cooldown_second': 300,
+  'monitor_setting.retest_disabled_channel_enabled': false,
+  'monitor_setting.retest_disabled_channel_seconds': 15,
   AutomaticDisableKeywords: '',
   ChannelBreakerFailureStatusCodes:
     '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
@@ -842,7 +850,9 @@ export default function SettingsChannelBreaker(props) {
         key === 'ChannelBreakerEnabled' ||
         key === 'monitor_setting.bark_alert_enabled' ||
         key === 'monitor_setting.low_balance_alert_enabled' ||
-        key === 'monitor_setting.channel_breaker_alert_enabled'
+        key === 'monitor_setting.channel_breaker_alert_enabled' ||
+        key === 'monitor_setting.channel_disable_alert_enabled' ||
+        key === 'monitor_setting.retest_disabled_channel_enabled'
       ) {
         currentInputs[key] = toBoolean(props.options[key]);
       } else {
@@ -1293,6 +1303,42 @@ export default function SettingsChannelBreaker(props) {
                 </Col>
               </Row>
               <Row gutter={16}>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.Switch
+                    field='monitor_setting.channel_disable_alert_enabled'
+                    label={t('渠道禁用告警')}
+                    size='default'
+                    checkedText='｜'
+                    uncheckedText='〇'
+                    extraText={t('渠道被自动禁用时（如余额不足 403）发送 Bark 严重告警，需先配置 Bark 告警地址')}
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.channel_disable_alert_enabled': value,
+                      })
+                    }
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.InputNumber
+                    label={t('禁用告警冷却时间')}
+                    step={1}
+                    min={0}
+                    suffix={t('秒')}
+                    extraText={t('同一渠道两次禁用告警的最小间隔，避免短时间重复告警')}
+                    placeholder=''
+                    field='monitor_setting.channel_disable_alert_cooldown_second'
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.channel_disable_alert_cooldown_second':
+                          parseInt(value),
+                      })
+                    }
+                  />
+                </Col>
+              </Row>
+              <Row gutter={16}>
                 <Col xs={24} sm={16}>
                   <Form.Input
                     label={t('Bark API 地址')}
@@ -1323,6 +1369,51 @@ export default function SettingsChannelBreaker(props) {
                         ...inputs,
                         'monitor_setting.low_balance_threshold_cny':
                           Number(value),
+                      })
+                    }
+                  />
+                </Col>
+              </Row>
+            </Form.Section>
+
+            <Form.Section text={t('已禁用渠道自动复测')}>
+              <Banner
+                fullMode={false}
+                type='info'
+                description={t(
+                  '定时复测被系统自动禁用和熔断的渠道，恢复后自动重新启用（受“成功时自动启用通道”约束，手动禁用的渠道不复测）',
+                )}
+              />
+              <Row gutter={16} style={{ marginTop: 12 }}>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.Switch
+                    field='monitor_setting.retest_disabled_channel_enabled'
+                    label={t('复测已禁用渠道')}
+                    size='default'
+                    checkedText='｜'
+                    uncheckedText='〇'
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.retest_disabled_channel_enabled': value,
+                      })
+                    }
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.InputNumber
+                    label={t('复测已禁用渠道间隔时间')}
+                    step={1}
+                    min={5}
+                    suffix={t('秒')}
+                    extraText={t('每隔多少秒复测一次已禁用渠道，逐个测试渠道全部模型，任一通过即恢复')}
+                    placeholder=''
+                    field='monitor_setting.retest_disabled_channel_seconds'
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.retest_disabled_channel_seconds':
+                          parseInt(value),
                       })
                     }
                   />

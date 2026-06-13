@@ -44,10 +44,6 @@ export default function SettingsMonitoring(props) {
       '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
     'monitor_setting.auto_test_channel_enabled': false,
     'monitor_setting.auto_test_channel_minutes': 10,
-    'monitor_setting.retest_disabled_channel_enabled': false,
-    'monitor_setting.retest_disabled_channel_seconds': 15,
-    'monitor_setting.channel_disable_alert_enabled': true,
-    'monitor_setting.channel_disable_alert_cooldown_second': 300,
   });
   const refForm = useRef();
   const [inputsRow, setInputsRow] = useState(inputs);
@@ -163,82 +159,6 @@ export default function SettingsMonitoring(props) {
                     setInputs({
                       ...inputs,
                       'monitor_setting.auto_test_channel_minutes':
-                        parseInt(value),
-                    })
-                  }
-                />
-              </Col>
-            </Row>
-            <Row gutter={16}>
-              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
-                <Form.Switch
-                  field={'monitor_setting.retest_disabled_channel_enabled'}
-                  label={t('复测已禁用渠道')}
-                  size='default'
-                  checkedText='｜'
-                  uncheckedText='〇'
-                  extraText={t(
-                    '定时复测被系统自动禁用和熔断的渠道，恢复后自动重新启用（受“成功时自动启用通道”约束，手动禁用的渠道不复测）',
-                  )}
-                  onChange={(value) =>
-                    setInputs({
-                      ...inputs,
-                      'monitor_setting.retest_disabled_channel_enabled': value,
-                    })
-                  }
-                />
-              </Col>
-              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
-                <Form.InputNumber
-                  label={t('复测已禁用渠道间隔时间')}
-                  step={1}
-                  min={5}
-                  suffix={t('秒')}
-                  extraText={t('每隔多少秒复测一次已禁用渠道，逐个测试渠道全部模型，任一通过即恢复')}
-                  placeholder={''}
-                  field={'monitor_setting.retest_disabled_channel_seconds'}
-                  onChange={(value) =>
-                    setInputs({
-                      ...inputs,
-                      'monitor_setting.retest_disabled_channel_seconds':
-                        parseInt(value),
-                    })
-                  }
-                />
-              </Col>
-            </Row>
-            <Row gutter={16}>
-              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
-                <Form.Switch
-                  field={'monitor_setting.channel_disable_alert_enabled'}
-                  label={t('渠道禁用告警')}
-                  size='default'
-                  checkedText='｜'
-                  uncheckedText='〇'
-                  extraText={t(
-                    '渠道被自动禁用时（如余额不足 403）发送 Bark 严重告警，需先配置 Bark 告警地址',
-                  )}
-                  onChange={(value) =>
-                    setInputs({
-                      ...inputs,
-                      'monitor_setting.channel_disable_alert_enabled': value,
-                    })
-                  }
-                />
-              </Col>
-              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
-                <Form.InputNumber
-                  label={t('禁用告警冷却时间')}
-                  step={1}
-                  min={0}
-                  suffix={t('秒')}
-                  extraText={t('同一渠道两次禁用告警的最小间隔，避免短时间重复告警')}
-                  placeholder={''}
-                  field={'monitor_setting.channel_disable_alert_cooldown_second'}
-                  onChange={(value) =>
-                    setInputs({
-                      ...inputs,
-                      'monitor_setting.channel_disable_alert_cooldown_second':
                         parseInt(value),
                     })
                   }
