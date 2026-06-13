@@ -73,16 +73,6 @@ const monitoringSchema = z
         .number()
         .int()
         .min(1, 'Interval must be at least 1 minute'),
-      channel_disable_alert_enabled: z.boolean(),
-      channel_disable_alert_cooldown_second: z.coerce
-        .number()
-        .int()
-        .min(0, 'Cooldown must be zero or greater'),
-      retest_disabled_channel_enabled: z.boolean(),
-      retest_disabled_channel_seconds: z.coerce
-        .number()
-        .int()
-        .min(5, 'Interval must be at least 5 seconds'),
     }),
   })
   .superRefine((values, ctx) => {
@@ -133,10 +123,6 @@ type MonitoringSettingsSectionProps = {
     ChannelBreakerExcludePaths: string
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
-    'monitor_setting.channel_disable_alert_enabled': boolean
-    'monitor_setting.channel_disable_alert_cooldown_second': number
-    'monitor_setting.retest_disabled_channel_enabled': boolean
-    'monitor_setting.retest_disabled_channel_seconds': number
   }
 }
 
@@ -160,10 +146,6 @@ type NormalizedMonitoringValues = {
   ChannelBreakerExcludePaths: string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
-  'monitor_setting.channel_disable_alert_enabled': boolean
-  'monitor_setting.channel_disable_alert_cooldown_second': number
-  'monitor_setting.retest_disabled_channel_enabled': boolean
-  'monitor_setting.retest_disabled_channel_seconds': number
 }
 
 const buildFormDefaults = (
@@ -192,14 +174,6 @@ const buildFormDefaults = (
       defaults['monitor_setting.auto_test_channel_enabled'],
     auto_test_channel_minutes:
       defaults['monitor_setting.auto_test_channel_minutes'],
-    channel_disable_alert_enabled:
-      defaults['monitor_setting.channel_disable_alert_enabled'],
-    channel_disable_alert_cooldown_second:
-      defaults['monitor_setting.channel_disable_alert_cooldown_second'],
-    retest_disabled_channel_enabled:
-      defaults['monitor_setting.retest_disabled_channel_enabled'],
-    retest_disabled_channel_seconds:
-      defaults['monitor_setting.retest_disabled_channel_seconds'],
   },
 })
 
@@ -237,14 +211,6 @@ const normalizeDefaults = (
     defaults['monitor_setting.auto_test_channel_enabled'],
   'monitor_setting.auto_test_channel_minutes':
     defaults['monitor_setting.auto_test_channel_minutes'],
-  'monitor_setting.channel_disable_alert_enabled':
-    defaults['monitor_setting.channel_disable_alert_enabled'],
-  'monitor_setting.channel_disable_alert_cooldown_second':
-    defaults['monitor_setting.channel_disable_alert_cooldown_second'],
-  'monitor_setting.retest_disabled_channel_enabled':
-    defaults['monitor_setting.retest_disabled_channel_enabled'],
-  'monitor_setting.retest_disabled_channel_seconds':
-    defaults['monitor_setting.retest_disabled_channel_seconds'],
 })
 
 const normalizeFormValues = (
@@ -276,14 +242,6 @@ const normalizeFormValues = (
     values.monitor_setting.auto_test_channel_enabled,
   'monitor_setting.auto_test_channel_minutes':
     values.monitor_setting.auto_test_channel_minutes,
-  'monitor_setting.channel_disable_alert_enabled':
-    values.monitor_setting.channel_disable_alert_enabled,
-  'monitor_setting.channel_disable_alert_cooldown_second':
-    values.monitor_setting.channel_disable_alert_cooldown_second,
-  'monitor_setting.retest_disabled_channel_enabled':
-    values.monitor_setting.retest_disabled_channel_enabled,
-  'monitor_setting.retest_disabled_channel_seconds':
-    values.monitor_setting.retest_disabled_channel_seconds,
 })
 
 export function MonitoringSettingsSection({
@@ -387,96 +345,6 @@ export function MonitoringSettingsSection({
                   </FormControl>
                   <FormDescription>
                     {t('How frequently the system tests all channels')}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-
-          <div className='grid gap-6 md:grid-cols-2'>
-            <FormField
-              control={form.control}
-              name='monitor_setting.retest_disabled_channel_enabled'
-              render={({ field }) => (
-                <SettingsSwitchItem>
-                  <SettingsSwitchContent>
-                    <FormLabel>{t('Re-test disabled channels')}</FormLabel>
-                    <FormDescription>
-                      {t('Frequently re-test auto-disabled and circuit-broken channels so they recover quickly')}
-                    </FormDescription>
-                  </SettingsSwitchContent>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </SettingsSwitchItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name='monitor_setting.retest_disabled_channel_seconds'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Re-test interval (seconds)')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      type='number'
-                      min={5}
-                      step={1}
-                      {...safeNumberFieldProps(field)}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t('How frequently disabled channels are re-tested for recovery')}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-
-          <div className='grid gap-6 md:grid-cols-2'>
-            <FormField
-              control={form.control}
-              name='monitor_setting.channel_disable_alert_enabled'
-              render={({ field }) => (
-                <SettingsSwitchItem>
-                  <SettingsSwitchContent>
-                    <FormLabel>{t('Channel disabled alert')}</FormLabel>
-                    <FormDescription>
-                      {t('Send a Bark critical alert when a channel is automatically disabled (e.g. out of balance)')}
-                    </FormDescription>
-                  </SettingsSwitchContent>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </SettingsSwitchItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name='monitor_setting.channel_disable_alert_cooldown_second'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Disabled alert cooldown (seconds)')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      type='number'
-                      min={0}
-                      step={1}
-                      {...safeNumberFieldProps(field)}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t('Minimum interval between disable alerts for the same channel')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

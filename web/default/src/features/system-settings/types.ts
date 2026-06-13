@@ -288,10 +288,6 @@ export type OperationsSettings = {
   ChannelBreakerExcludePaths: string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
-  'monitor_setting.channel_disable_alert_enabled': boolean
-  'monitor_setting.channel_disable_alert_cooldown_second': number
-  'monitor_setting.retest_disabled_channel_enabled': boolean
-  'monitor_setting.retest_disabled_channel_seconds': number
   SMTPServer: string
   SMTPPort: string
   SMTPAccount: string
