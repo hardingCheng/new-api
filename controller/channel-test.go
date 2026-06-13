@@ -981,6 +981,134 @@ func TestAllChannels(c *gin.Context) {
 	})
 }
 
+var retestDisabledChannelsLock sync.Mutex
+var retestDisabledChannelsRunning bool = false
+
+// testChannelAnyModel 逐个测试渠道的全部模型，任一成功即返回该成功结果（早退）；
+// 全部失败则返回最后一次结果。用于复测恢复：只要有一个模型能通就认为渠道已恢复
+// （对“没钱”这类账号级故障，充值后任一模型都会通过）。
+func testChannelAnyModel(channel *model.Channel, testUserID int) testResult {
+	models := channel.GetModels()
+	isStream := shouldUseStreamForAutomaticChannelTest(channel)
+	if len(models) == 0 {
+		return testChannel(channel, testUserID, "", "", isStream)
+	}
+	var last testResult
+	for i, m := range models {
+		m = strings.TrimSpace(m)
+		if m == "" {
+			continue
+		}
+		last = testChannel(channel, testUserID, m, "", isStream)
+		if last.newAPIError == nil {
+			return last
+		}
+		if i < len(models)-1 {
+			time.Sleep(common.RequestInterval)
+		}
+	}
+	return last
+}
+
+// retestRecoverableChannels 仅复测"已自动禁用"和"熔断打开"的渠道并尝试恢复，
+// 区别于 testAllChannels（测全部渠道）。用于渠道充值/恢复后快速重新上线。
+func retestRecoverableChannels() error {
+	testUserID, err := resolveChannelTestUserID(nil)
+	if err != nil {
+		return err
+	}
+
+	retestDisabledChannelsLock.Lock()
+	if retestDisabledChannelsRunning {
+		retestDisabledChannelsLock.Unlock()
+		return errors.New("复测已在运行中")
+	}
+	retestDisabledChannelsRunning = true
+	retestDisabledChannelsLock.Unlock()
+
+	channels, getChannelErr := model.GetAllChannels(0, 0, true, false)
+	if getChannelErr != nil {
+		retestDisabledChannelsLock.Lock()
+		retestDisabledChannelsRunning = false
+		retestDisabledChannelsLock.Unlock()
+		return getChannelErr
+	}
+
+	gopool.Go(func() {
+		defer func() {
+			retestDisabledChannelsLock.Lock()
+			retestDisabledChannelsRunning = false
+			retestDisabledChannelsLock.Unlock()
+		}()
+
+		channelById := make(map[int]*model.Channel, len(channels))
+		for _, channel := range channels {
+			channelById[channel.Id] = channel
+		}
+
+		// 1) 复测已自动禁用的渠道，任一模型通过则重新启用
+		for _, channel := range channels {
+			if channel.Status != common.ChannelStatusAutoDisabled {
+				continue
+			}
+			result := testChannelAnyModel(channel, testUserID)
+			if service.ShouldEnableChannel(result.newAPIError, channel.Status) {
+				service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
+			}
+			time.Sleep(common.RequestInterval)
+		}
+
+		// 2) 复测熔断打开的渠道（状态仍为启用），任一模型通过则清除熔断
+		testedOk := make(map[int]bool)
+		for _, status := range service.ListChannelBreakerStatuses() {
+			channel := channelById[status.ChannelId]
+			if channel == nil || channel.Status != common.ChannelStatusEnabled {
+				continue
+			}
+			ok, tested := testedOk[status.ChannelId]
+			if !tested {
+				result := testChannelAnyModel(channel, testUserID)
+				ok = result.newAPIError == nil
+				testedOk[status.ChannelId] = ok
+				time.Sleep(common.RequestInterval)
+			}
+			if ok {
+				service.ClearChannelBreakerByStateKey(status.StateKey)
+			}
+		}
+	})
+	return nil
+}
+
+var autoRetestDisabledChannelsOnce sync.Once
+
+// AutomaticallyRetestDisabledChannels 定时复测已禁用/熔断渠道，默认 30s，仅 master 节点运行。
+func AutomaticallyRetestDisabledChannels() {
+	if !common.IsMasterNode {
+		return
+	}
+	autoRetestDisabledChannelsOnce.Do(func() {
+		for {
+			setting := operation_setting.GetMonitorSetting()
+			if !setting.RetestDisabledChannelEnabled {
+				time.Sleep(1 * time.Minute)
+				continue
+			}
+			seconds := setting.RetestDisabledChannelSeconds
+			if seconds < 5 {
+				seconds = 5
+			}
+			time.Sleep(time.Duration(seconds) * time.Second)
+			if !operation_setting.GetMonitorSetting().RetestDisabledChannelEnabled {
+				continue
+			}
+			if err := retestRecoverableChannels(); err != nil {
+				common.SysLog(fmt.Sprintf("retest disabled channels skipped: %s", err.Error()))
+			}
+		}
+	})
+}
+
 var autoTestChannelsOnce sync.Once
 
 func AutomaticallyTestChannels() {

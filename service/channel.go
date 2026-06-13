@@ -3,6 +3,8 @@ package service
 import (
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -11,6 +13,10 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 )
+
+// channelDisableNotifyMemory 记录每个渠道上次禁用告警时间，用于按冷却窗口去重，
+// 避免同一渠道反复禁用/抖动时刷屏。key=channelId，value=time.Time。
+var channelDisableNotifyMemory sync.Map
 
 type ChannelBreakerNotificationContext struct {
 	ChannelError types.ChannelError
@@ -91,7 +97,52 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 		subject := fmt.Sprintf("通道「%s」（#%d）已被禁用", channelError.ChannelName, channelError.ChannelId)
 		content := fmt.Sprintf("通道「%s」（#%d）已被禁用，原因：%s", channelError.ChannelName, channelError.ChannelId, reason)
 		NotifyRootUser(formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), subject, content)
+		notifyChannelDisabledBark(channelError, reason)
 	}
+}
+
+// notifyChannelDisabledBark 渠道被自动禁用时发送系统级 Bark 严重告警（独立于 NotifyRootUser，
+// 用于"渠道没钱被禁用"这类需要立即感知的场景）。受 BarkAlertEnabled 与 ChannelDisableAlertEnabled
+// 控制，并按 ChannelDisableAlertCooldownSecond 做每渠道去重。仅在真正发生状态变更时调用。
+func notifyChannelDisabledBark(channelError types.ChannelError, reason string) {
+	monitorSetting := operation_setting.GetMonitorSetting()
+	if !monitorSetting.BarkAlertEnabled || !monitorSetting.ChannelDisableAlertEnabled {
+		return
+	}
+	if !allowChannelDisableNotify(channelError.ChannelId, monitorSetting.ChannelDisableAlertCooldownSecond) {
+		return
+	}
+	subject := fmt.Sprintf("通道「%s」（#%d）已被禁用", channelError.ChannelName, channelError.ChannelId)
+	body := buildChannelDisabledBarkBody(channelError, reason)
+	if err := SendSystemBarkNotify(subject, body, "new-api 渠道禁用告警", "critical"); err != nil {
+		common.SysError(fmt.Sprintf("failed to send channel disabled bark notify for channel %d: %s", channelError.ChannelId, err.Error()))
+	}
+}
+
+// allowChannelDisableNotify 判断该渠道是否已过冷却窗口，过则记录本次时间并放行。
+func allowChannelDisableNotify(channelId int, cooldownSecond int) bool {
+	if cooldownSecond <= 0 {
+		return true
+	}
+	now := time.Now()
+	cooldown := time.Duration(cooldownSecond) * time.Second
+	if last, ok := channelDisableNotifyMemory.Load(channelId); ok {
+		if lastTime, ok := last.(time.Time); ok && now.Sub(lastTime) < cooldown {
+			return false
+		}
+	}
+	channelDisableNotifyMemory.Store(channelId, now)
+	return true
+}
+
+func buildChannelDisabledBarkBody(channelError types.ChannelError, reason string) string {
+	channelTypeName := constant.GetChannelTypeName(channelError.ChannelType)
+	lines := []string{
+		fmt.Sprintf("渠道：%s (#%d)", channelError.ChannelName, channelError.ChannelId),
+		fmt.Sprintf("类型：%s (%d)", channelTypeName, channelError.ChannelType),
+		fmt.Sprintf("原因：%s", reason),
+	}
+	return strings.Join(lines, "\n")
 }
 
 func EnableChannel(channelId int, usingKey string, channelName string) {
