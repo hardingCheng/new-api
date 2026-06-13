@@ -333,6 +333,17 @@ function renderModelName(record, copyText, t, isAdminUser) {
   }
 }
 
+// 从日志中提取生图分辨率：优先结构化字段 other.image_size，
+// 兜底从 content 文本解析后端写入的「大小 xxx」（出图日志在 image_handler 统一写入）。
+function getImageResolution(record) {
+  const other = getLogOther(record.other);
+  if (other?.image_size) {
+    return String(other.image_size);
+  }
+  const match = /大小\s*([^\s，,；;]+)/.exec(record?.content || '');
+  return match ? match[1] : '';
+}
+
 function toTokenNumber(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -692,6 +703,31 @@ export const getLogsColumns = ({
           <>{renderModelName(record, copyText, t, isAdminUser)}</>
         ) : (
           <></>
+        );
+      },
+    },
+    {
+      key: COLUMN_KEYS.RESOLUTION,
+      title: t('分辨率'),
+      dataIndex: 'resolution',
+      render: (text, record, index) => {
+        if (!isAdminUser) {
+          return <></>;
+        }
+        const resolution = getImageResolution(record);
+        if (!resolution) {
+          return <></>;
+        }
+        return (
+          <Tag
+            color='violet'
+            shape='circle'
+            onClick={(event) => {
+              copyText(event, resolution);
+            }}
+          >
+            {resolution}
+          </Tag>
         );
       },
     },

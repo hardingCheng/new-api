@@ -128,6 +128,7 @@ export const useLogsData = () => {
     GROUP: 'group',
     TYPE: 'type',
     MODEL: 'model',
+    RESOLUTION: 'resolution',
     USE_TIME: 'use_time',
     PROMPT: 'prompt',
     COMPLETION: 'completion',
@@ -220,6 +221,7 @@ export const useLogsData = () => {
       [COLUMN_KEYS.GROUP]: true,
       [COLUMN_KEYS.TYPE]: true,
       [COLUMN_KEYS.MODEL]: true,
+      [COLUMN_KEYS.RESOLUTION]: isAdminUser,
       [COLUMN_KEYS.USE_TIME]: true,
       [COLUMN_KEYS.PROMPT]: true,
       [COLUMN_KEYS.COMPLETION]: true,
@@ -246,6 +248,7 @@ export const useLogsData = () => {
         merged[COLUMN_KEYS.CHANNEL] = false;
         merged[COLUMN_KEYS.USERNAME] = false;
         merged[COLUMN_KEYS.RETRY] = false;
+        merged[COLUMN_KEYS.RESOLUTION] = false;
       }
 
       return merged;
