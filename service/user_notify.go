@@ -28,12 +28,14 @@ const (
 var lowBalanceNotifyMemory sync.Map
 
 type barkPayload struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
-	Group string `json:"group,omitempty"`
-	Level string `json:"level,omitempty"`
-	Sound string `json:"sound,omitempty"`
-	URL   string `json:"url,omitempty"`
+	Title  string `json:"title"`
+	Body   string `json:"body"`
+	Group  string `json:"group,omitempty"`
+	Level  string `json:"level,omitempty"`
+	Sound  string `json:"sound,omitempty"`
+	Volume int    `json:"volume,omitempty"`
+	Call   string `json:"call,omitempty"`
+	URL    string `json:"url,omitempty"`
 }
 
 func NotifyRootUser(t string, subject string, content string) {
@@ -225,6 +227,9 @@ func SendSystemBarkNotify(title string, body string, group string, level string)
 	}
 	if level == "critical" {
 		payload.Sound = "alarm"
+		// critical 级别带上最大音量并以来电方式重复响铃，确保静音/勿扰下也能引起注意
+		payload.Volume = 10
+		payload.Call = "1"
 	}
 	payloadBytes, err := common.Marshal(payload)
 	if err != nil {
