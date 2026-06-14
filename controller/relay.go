@@ -703,6 +703,10 @@ func RelayTask(c *gin.Context) {
 			task.Properties.HasReferenceVideo = true
 			task.Properties.ReferenceVideoSeconds = referenceSeconds
 		}
+		// 提交时即记录用户请求的生成时长，便于任务创建后立刻展示视频时长。
+		if genSeconds := c.GetInt("generated_video_seconds"); genSeconds > 0 {
+			task.Properties.VideoSeconds = genSeconds
+		}
 		if insertErr := task.Insert(); insertErr != nil {
 			common.SysError("insert task error: " + insertErr.Error())
 		}

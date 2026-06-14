@@ -810,15 +810,19 @@ func taskModelName(task *model.Task) string {
 }
 
 func taskVideoDuration(task *model.Task) int {
-	var data map[string]any
-	if err := common.Unmarshal(task.Data, &data); err != nil {
-		return 0
-	}
 	var maxDuration int
-	for _, key := range []string{"video_duration", "duration", "seconds"} {
-		if duration := intFromAny(data[key]); duration > maxDuration {
-			maxDuration = duration
+	var data map[string]any
+	if err := common.Unmarshal(task.Data, &data); err == nil {
+		for _, key := range []string{"video_duration", "duration", "seconds"} {
+			if duration := intFromAny(data[key]); duration > maxDuration {
+				maxDuration = duration
+			}
 		}
+	}
+	// 上游未回写时长时（如刚提交、data 为空、或上游把时长放在嵌套结构里），
+	// 回退到提交时记录的请求时长，保证任务创建后即可展示时长。
+	if maxDuration == 0 && task.Properties.VideoSeconds > 0 {
+		maxDuration = task.Properties.VideoSeconds
 	}
 	return maxDuration
 }

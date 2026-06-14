@@ -101,6 +101,11 @@ const getTaskModelName = (record) => {
 };
 
 const getVideoDurationSeconds = (record) => {
+  // 优先用后端计算的 video_duration（提交时即含用户请求时长，无需等上游回写）
+  const fromBackend = Number(record?.video_duration);
+  if (Number.isFinite(fromBackend) && fromBackend > 0) {
+    return fromBackend;
+  }
   const data = record?.data;
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return null;
@@ -108,6 +113,8 @@ const getVideoDurationSeconds = (record) => {
   const raw =
     data.duration ??
     data.seconds ??
+    data.video?.duration ??
+    data.video?.seconds ??
     data.metadata?.duration ??
     data.metadata?.seconds ??
     data.metadata?.durationSeconds;
