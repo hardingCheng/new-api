@@ -226,10 +226,9 @@ func SendSystemBarkNotify(title string, body string, group string, level string)
 		Level: level,
 	}
 	if level == "critical" {
+		// critical 级别突破静音/勿扰并带声音，音量保持较低即可
 		payload.Sound = "alarm"
-		// critical 级别带上最大音量并以来电方式重复响铃，确保静音/勿扰下也能引起注意
-		payload.Volume = 10
-		payload.Call = "1"
+		payload.Volume = 1
 	}
 	payloadBytes, err := common.Marshal(payload)
 	if err != nil {
@@ -319,7 +318,7 @@ func CheckAndSendSystemLowBalanceNotify(userId int, userEmail string, remainingQ
 		body += "\n邮箱：" + userEmail
 	}
 	body += fmt.Sprintf("\n剩余额度：%s\n预警阈值：%s", logger.FormatQuota(remainingQuota), logger.FormatQuota(threshold))
-	if err := SendSystemBarkNotify(title, body, "new-api 余额预警", "timeSensitive"); err != nil {
+	if err := SendSystemBarkNotify(title, body, "new-api 余额预警", "critical"); err != nil {
 		common.SysError(fmt.Sprintf("failed to send system low balance bark notify for user %d: %s", userId, err.Error()))
 	}
 }
