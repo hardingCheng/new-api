@@ -60,9 +60,13 @@ const OPTION_KEYS = [
   'ChannelBreakerExemptChannels',
   'monitor_setting.bark_alert_enabled',
   'monitor_setting.bark_alert_url',
+  'monitor_setting.bark_alert_volume',
   'monitor_setting.low_balance_alert_enabled',
   'monitor_setting.low_balance_threshold_cny',
+  'monitor_setting.low_balance_alert_sound',
   'monitor_setting.channel_breaker_alert_enabled',
+  'monitor_setting.channel_breaker_alert_sound',
+  'monitor_setting.channel_disable_alert_sound',
   'monitor_setting.channel_disable_alert_enabled',
   'monitor_setting.channel_disable_alert_cooldown_second',
   'monitor_setting.retest_disabled_channel_enabled',
@@ -83,9 +87,13 @@ const defaultInputs = {
   'monitor_setting.bark_alert_enabled': true,
   'monitor_setting.bark_alert_url':
     'https://bark.aigod.one/kFRNZMUXcuQ6c4ccrUgQ3W/',
+  'monitor_setting.bark_alert_volume': 5,
   'monitor_setting.low_balance_alert_enabled': true,
   'monitor_setting.low_balance_threshold_cny': 10,
+  'monitor_setting.low_balance_alert_sound': 'alarm',
   'monitor_setting.channel_breaker_alert_enabled': true,
+  'monitor_setting.channel_breaker_alert_sound': 'alarm',
+  'monitor_setting.channel_disable_alert_sound': 'alarm',
   'monitor_setting.channel_disable_alert_enabled': true,
   'monitor_setting.channel_disable_alert_cooldown_second': 300,
   'monitor_setting.retest_disabled_channel_enabled': false,
@@ -94,6 +102,31 @@ const defaultInputs = {
   ChannelBreakerFailureStatusCodes:
     '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
 };
+
+// Bark 内置铃声（节选常用）；silence 为静音
+const BARK_SOUND_OPTIONS = [
+  'alarm',
+  'bell',
+  'birdsong',
+  'bloom',
+  'calypso',
+  'chime',
+  'electronic',
+  'fanfare',
+  'glass',
+  'horn',
+  'ladder',
+  'minuet',
+  'newsflash',
+  'noir',
+  'paymentsuccess',
+  'shake',
+  'suspense',
+  'telegraph',
+  'typewriters',
+  'update',
+  'silence',
+].map((s) => ({ label: s, value: s }));
 
 const scopeOptions = [
   { label: '全局', value: 'global' },
@@ -1369,6 +1402,70 @@ export default function SettingsChannelBreaker(props) {
                         ...inputs,
                         'monitor_setting.low_balance_threshold_cny':
                           Number(value),
+                      })
+                    }
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.InputNumber
+                    label={t('Bark 告警音量')}
+                    step={1}
+                    min={0}
+                    max={10}
+                    extraText={t('critical 级告警的音量(0-10),仅对 critical 生效,需 Bark App 允许关键警告')}
+                    placeholder=''
+                    field='monitor_setting.bark_alert_volume'
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.bark_alert_volume': Number(value),
+                      })
+                    }
+                  />
+                </Col>
+              </Row>
+              <Row gutter={16}>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.Select
+                    label={t('渠道禁用告警铃声')}
+                    optionList={BARK_SOUND_OPTIONS}
+                    filter
+                    style={{ width: '100%' }}
+                    field='monitor_setting.channel_disable_alert_sound'
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.channel_disable_alert_sound': value,
+                      })
+                    }
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.Select
+                    label={t('熔断告警铃声')}
+                    optionList={BARK_SOUND_OPTIONS}
+                    filter
+                    style={{ width: '100%' }}
+                    field='monitor_setting.channel_breaker_alert_sound'
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.channel_breaker_alert_sound': value,
+                      })
+                    }
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.Select
+                    label={t('低余额告警铃声')}
+                    optionList={BARK_SOUND_OPTIONS}
+                    filter
+                    style={{ width: '100%' }}
+                    field='monitor_setting.low_balance_alert_sound'
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.low_balance_alert_sound': value,
                       })
                     }
                   />

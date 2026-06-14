@@ -12,10 +12,14 @@ type MonitorSetting struct {
 	AutoTestChannelMinutes            float64 `json:"auto_test_channel_minutes"`
 	BarkAlertEnabled                  bool    `json:"bark_alert_enabled"`
 	BarkAlertUrl                      string  `json:"bark_alert_url"`
+	BarkAlertVolume                   int     `json:"bark_alert_volume"`
 	LowBalanceAlertEnabled            bool    `json:"low_balance_alert_enabled"`
 	LowBalanceThresholdCny            float64 `json:"low_balance_threshold_cny"`
+	LowBalanceAlertSound              string  `json:"low_balance_alert_sound"`
 	ChannelBreakerAlertEnabled        bool    `json:"channel_breaker_alert_enabled"`
+	ChannelBreakerAlertSound          string  `json:"channel_breaker_alert_sound"`
 	ChannelDisableAlertEnabled        bool    `json:"channel_disable_alert_enabled"`
+	ChannelDisableAlertSound          string  `json:"channel_disable_alert_sound"`
 	ChannelDisableAlertCooldownSecond int     `json:"channel_disable_alert_cooldown_second"`
 	RetestDisabledChannelEnabled      bool    `json:"retest_disabled_channel_enabled"`
 	RetestDisabledChannelSeconds      int     `json:"retest_disabled_channel_seconds"`
@@ -27,10 +31,14 @@ var monitorSetting = MonitorSetting{
 	AutoTestChannelMinutes:            10,
 	BarkAlertEnabled:                  true,
 	BarkAlertUrl:                      "https://bark.aigod.one/kFRNZMUXcuQ6c4ccrUgQ3W/",
+	BarkAlertVolume:                   5,
 	LowBalanceAlertEnabled:            true,
 	LowBalanceThresholdCny:            10,
+	LowBalanceAlertSound:              "alarm",
 	ChannelBreakerAlertEnabled:        true,
+	ChannelBreakerAlertSound:          "alarm",
 	ChannelDisableAlertEnabled:        true,
+	ChannelDisableAlertSound:          "alarm",
 	ChannelDisableAlertCooldownSecond: 300,
 	RetestDisabledChannelEnabled:      false,
 	RetestDisabledChannelSeconds:      15,

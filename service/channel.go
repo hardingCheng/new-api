@@ -42,7 +42,7 @@ func NotifyChannelBreakerOpen(ctx ChannelBreakerNotificationContext) {
 	content := fmt.Sprintf("通道「%s」（#%d）已进入熔断，原因：%s", channelError.ChannelName, channelError.ChannelId, reason)
 	if operation_setting.GetMonitorSetting().ChannelBreakerAlertEnabled {
 		body := buildChannelBreakerBarkBody(ctx)
-		if err := SendSystemBarkNotify(subject, body, "new-api 熔断告警", "critical"); err != nil {
+		if err := SendSystemBarkNotify(subject, body, "new-api 熔断告警", "critical", operation_setting.GetMonitorSetting().ChannelBreakerAlertSound); err != nil {
 			common.SysError(fmt.Sprintf("failed to send channel breaker bark notify for channel %d: %s", channelError.ChannelId, err.Error()))
 		}
 	}
@@ -114,7 +114,7 @@ func notifyChannelDisabledBark(channelError types.ChannelError, reason string) {
 	}
 	subject := fmt.Sprintf("通道「%s」（#%d）已被禁用", channelError.ChannelName, channelError.ChannelId)
 	body := buildChannelDisabledBarkBody(channelError, reason)
-	if err := SendSystemBarkNotify(subject, body, "new-api 渠道禁用告警", "critical"); err != nil {
+	if err := SendSystemBarkNotify(subject, body, "new-api 渠道禁用告警", "critical", monitorSetting.ChannelDisableAlertSound); err != nil {
 		common.SysError(fmt.Sprintf("failed to send channel disabled bark notify for channel %d: %s", channelError.ChannelId, err.Error()))
 	}
 }
