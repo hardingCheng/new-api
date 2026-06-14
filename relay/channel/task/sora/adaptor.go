@@ -487,5 +487,13 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 		}
 	}
 
+	// 透传上游原生结构时，删除可能携带的内部计费字段，避免把上游成本
+	// （如 xAI 的 usage.cost_in_usd_ticks）暴露给调用方。
+	if gjson.GetBytes(data, "usage").Exists() {
+		if data, err = sjson.DeleteBytes(data, "usage"); err != nil {
+			return nil, errors.Wrap(err, "delete usage failed")
+		}
+	}
+
 	return data, nil
 }
