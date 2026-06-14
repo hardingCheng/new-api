@@ -66,19 +66,27 @@ type TaskDto struct {
 type VideoTaskPublicDto struct {
 	// ID 对外返回 task_xxxx 字符串（与 OpenAI Video API 一致），
 	// 不再暴露数据库自增主键，避免下游按字符串解析数字 id 失败。
-	ID               string          `json:"id"`
-	CreatedAt        int64           `json:"created_at"`
-	UpdatedAt        int64           `json:"updated_at"`
-	TaskID           string          `json:"task_id"`
-	Action           string          `json:"action"`
-	Status           string          `json:"status"`
-	FailReason       string          `json:"fail_reason"`
-	ResultURL        string          `json:"result_url,omitempty"`
-	URL              string          `json:"url,omitempty"`
-	VideoURL         string          `json:"video_url,omitempty"`
-	SubmitTime       int64           `json:"submit_time"`
-	StartTime        int64           `json:"start_time"`
-	FinishTime       int64           `json:"finish_time"`
+	ID string `json:"id"`
+	// Object/Model/CompletedAt/Seconds/Size/Error 为 OpenAI Video API 兼容字段，
+	// 让 OpenAI SDK 直连也能正常解析；OpenAI SDK 会忽略下方 new-api 扩展字段。
+	Object      string            `json:"object"`
+	Model       string            `json:"model,omitempty"`
+	CompletedAt int64             `json:"completed_at,omitempty"`
+	Seconds     string            `json:"seconds,omitempty"`
+	Size        string            `json:"size,omitempty"`
+	Error       *OpenAIVideoError `json:"error,omitempty"`
+	CreatedAt   int64             `json:"created_at"`
+	UpdatedAt   int64             `json:"updated_at"`
+	TaskID      string            `json:"task_id"`
+	Action      string            `json:"action"`
+	Status      string            `json:"status"`
+	FailReason  string            `json:"fail_reason"`
+	ResultURL   string            `json:"result_url,omitempty"`
+	URL         string            `json:"url,omitempty"`
+	VideoURL    string            `json:"video_url,omitempty"`
+	SubmitTime  int64             `json:"submit_time"`
+	StartTime   int64             `json:"start_time"`
+	FinishTime  int64             `json:"finish_time"`
 	// Progress 输出为数字（0-100），与 OpenAI Video API 一致，
 	// 避免下游按 int 解析 "100%" 字符串失败。
 	Progress         int             `json:"progress"`

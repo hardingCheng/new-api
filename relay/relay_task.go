@@ -15,7 +15,6 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -454,18 +453,10 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 		return
 	}
 
-	// /v1/videos/:task_id 直接透传上游原生 OpenAI Video 结构（由适配器的
-	// ConvertToOpenAIVideo 完成），避免重拼字段导致内部字段泄露、status 被翻译成
-	// "unknown" 等下游 new-api 无法解析的问题。仅当适配器未实现转换器时回退到精简 DTO。
+	// /v1/videos/:task_id 统一返回精简的 VideoTaskPublicDto，不再按渠道透传上游
+	// 原生结构，避免 xAI 等上游把 usage/object/video 等内部字段直接暴露给调用方。
+	// 视频地址由 TaskModel2Dto 从 task.Data 递归归一化进 result_url/url/video_url。
 	if isOpenAIVideoAPI {
-		if adaptor := GetTaskAdaptor(originTask.Platform); adaptor != nil {
-			if converter, ok := adaptor.(channel.OpenAIVideoConverter); ok {
-				if converted, convErr := converter.ConvertToOpenAIVideo(originTask); convErr == nil {
-					respBody = converted
-					return
-				}
-			}
-		}
 		respBody, err = common.Marshal(TaskModel2PublicVideoDto(originTask))
 		if err != nil {
 			taskResp = service.TaskErrorWrapper(err, "marshal_response_failed", http.StatusInternalServerError)
@@ -643,15 +634,23 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 // 不暴露 platform / user_id / group / channel_id / quota 等内部信息。
 func TaskModel2PublicVideoDto(task *model.Task) *dto.VideoTaskPublicDto {
 	full := TaskModel2Dto(task)
-	return &dto.VideoTaskPublicDto{
-		ID:               full.TaskID,
+	seconds, size := extractVideoSecondsSize(task.Data)
+	if seconds == "" && full.VideoDuration > 0 {
+		seconds = strconv.Itoa(full.VideoDuration)
+	}
+	out := &dto.VideoTaskPublicDto{
+		ID:     full.TaskID,
+		Object: "video",
+		Model:  full.ModelName,
+		// status 映射为 OpenAI 小写（queued/in_progress/completed/failed），
+		// 让 OpenAI SDK 与下游 new-api 的 sora 解析器都能正确识别任务完成/失败。
+		Status:           task.Status.ToVideoStatus(),
+		Seconds:          seconds,
+		Size:             size,
 		CreatedAt:        full.CreatedAt,
 		UpdatedAt:        full.UpdatedAt,
 		TaskID:           full.TaskID,
 		Action:           full.Action,
-		// status 映射为 OpenAI 小写（queued/in_progress/completed/failed），
-		// 让下游 new-api 的 sora 解析器能正确识别任务完成/失败。
-		Status:           task.Status.ToVideoStatus(),
 		FailReason:       full.FailReason,
 		ResultURL:        full.ResultURL,
 		URL:              full.URL,
@@ -659,13 +658,75 @@ func TaskModel2PublicVideoDto(task *model.Task) *dto.VideoTaskPublicDto {
 		SubmitTime:       full.SubmitTime,
 		StartTime:        full.StartTime,
 		FinishTime:       full.FinishTime,
-		Progress:         parseProgressPercent(full.Progress),
+		Progress:         publicVideoProgress(task, full.Progress),
 		Properties:       full.Properties,
 		ModelName:        full.ModelName,
 		VideoDuration:    full.VideoDuration,
-		Data:             full.Data,
+		Data:             stripTaskDataSensitiveFields(full.Data),
 		Timestamp2String: full.Timestamp2String,
 	}
+	if task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure {
+		out.CompletedAt = full.FinishTime
+	}
+	if task.Status == model.TaskStatusFailure {
+		message := full.FailReason
+		if message == "" {
+			message = "task failed"
+		}
+		out.Error = &dto.OpenAIVideoError{Message: message}
+	}
+	return out
+}
+
+// extractVideoSecondsSize 从上游 data 里取 OpenAI 视频对象的 seconds/size 字段（若有），
+// 用于补齐 OpenAI SDK 兼容字段。
+func extractVideoSecondsSize(data json.RawMessage) (string, string) {
+	if len(data) == 0 {
+		return "", ""
+	}
+	var m map[string]any
+	if err := common.Unmarshal(data, &m); err != nil {
+		return "", ""
+	}
+	seconds := ""
+	if v, ok := m["seconds"]; ok && v != nil {
+		seconds = strings.TrimSpace(fmt.Sprintf("%v", v))
+	}
+	size := ""
+	if v, ok := m["size"].(string); ok {
+		size = strings.TrimSpace(v)
+	}
+	return seconds, size
+}
+
+// stripTaskDataSensitiveFields 从对外返回的 data 中移除上游内部字段（如 usage 计费信息），
+// 避免把上游成本（xAI 的 usage.cost_in_usd_ticks 等）透传给调用方。
+func stripTaskDataSensitiveFields(data json.RawMessage) json.RawMessage {
+	if len(data) == 0 {
+		return data
+	}
+	var m map[string]any
+	if err := common.Unmarshal(data, &m); err != nil {
+		return data
+	}
+	if _, ok := m["usage"]; !ok {
+		return data
+	}
+	delete(m, "usage")
+	b, err := common.Marshal(m)
+	if err != nil {
+		return data
+	}
+	return json.RawMessage(b)
+}
+
+// publicVideoProgress 计算对外进度：终态（成功/失败）固定 100，
+// 否则解析存储的进度字符串。规避部分适配器在完成时不回写 progress 导致显示 0 的问题。
+func publicVideoProgress(task *model.Task, progress string) int {
+	if task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure {
+		return 100
+	}
+	return parseProgressPercent(progress)
 }
 
 // parseProgressPercent 将 "100%" / "50%" 这类进度字符串转为整数 0-100，
