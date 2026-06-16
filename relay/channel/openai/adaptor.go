@@ -446,13 +446,16 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		// 写入所有非文件字段
 		if mf != nil {
 			for key, values := range mf.Value {
-				if key == "model" {
+				if key == "model" || key == "response_format" {
 					continue
 				}
 				for _, value := range values {
 					writer.WriteField(key, value)
 				}
 			}
+		}
+		if request.ResponseFormat != "" {
+			writer.WriteField("response_format", request.ResponseFormat)
 		}
 
 		if mf != nil && mf.File != nil {

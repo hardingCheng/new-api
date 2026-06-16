@@ -153,9 +153,16 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			imageRequest.Model = formData.Get("model")
 			imageRequest.N = common.GetPointer(uint(common.String2Int(formData.Get("n"))))
 			imageRequest.Quality = formData.Get("quality")
+			imageRequest.ResponseFormat = formData.Get("response_format")
 			imageRequest.Size = formData.Get("size")
 			if imageValue := formData.Get("image"); imageValue != "" {
 				imageRequest.Image, _ = common.Marshal(imageValue)
+			}
+
+			if strings.HasPrefix(imageRequest.Model, "gpt-image-") {
+				if imageRequest.ResponseFormat == "" {
+					imageRequest.ResponseFormat = "b64_json"
+				}
 			}
 
 			if imageRequest.Model == "gpt-image-1" {
@@ -208,9 +215,14 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			if imageRequest.Size == "" {
 				imageRequest.Size = "1024x1024"
 			}
-		} else if imageRequest.Model == "gpt-image-1" {
-			if imageRequest.Quality == "" {
-				imageRequest.Quality = "auto"
+		} else if strings.HasPrefix(imageRequest.Model, "gpt-image-") {
+			if imageRequest.ResponseFormat == "" {
+				imageRequest.ResponseFormat = "b64_json"
+			}
+			if imageRequest.Model == "gpt-image-1" {
+				if imageRequest.Quality == "" {
+					imageRequest.Quality = "auto"
+				}
 			}
 		}
 
