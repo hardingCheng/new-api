@@ -164,7 +164,6 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 					imageRequest.ResponseFormat = "b64_json"
 				}
 			}
-			imageRequest.Prompt = dto.AppendImageQualityInstruction(imageRequest.Prompt)
 
 			if imageRequest.Model == "gpt-image-1" {
 				if imageRequest.Quality == "" {
@@ -226,7 +225,6 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 				}
 			}
 		}
-		imageRequest.Prompt = dto.AppendImageQualityInstruction(imageRequest.Prompt)
 
 		//if imageRequest.Prompt == "" {
 		//	return nil, errors.New("prompt is required")

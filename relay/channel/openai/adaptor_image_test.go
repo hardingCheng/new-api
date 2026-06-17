@@ -48,10 +48,9 @@ func TestConvertImageEditMultipartWritesDefaultResponseFormat(t *testing.T) {
 	}
 
 	adaptor := &Adaptor{}
-	prompt := "edit\n\n" + dto.ImageQualityInstruction
 	converted, err := adaptor.ConvertImageRequest(c, &relaycommon.RelayInfo{RelayMode: constant.RelayModeImagesEdits}, dto.ImageRequest{
 		Model:          "gpt-image-2",
-		Prompt:         prompt,
+		Prompt:         "edit",
 		ResponseFormat: "b64_json",
 	})
 	if err != nil {
@@ -78,8 +77,5 @@ func TestConvertImageEditMultipartWritesDefaultResponseFormat(t *testing.T) {
 	}
 	if got := form.Value["response_format"]; len(got) != 1 || got[0] != "b64_json" {
 		t.Fatalf("response_format = %#v, want [b64_json]", got)
-	}
-	if got := form.Value["prompt"]; len(got) != 1 || got[0] != prompt {
-		t.Fatalf("prompt = %#v, want quality instruction appended", got)
 	}
 }
