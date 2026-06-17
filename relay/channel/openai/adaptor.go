@@ -446,7 +446,7 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		// 写入所有非文件字段
 		if mf != nil {
 			for key, values := range mf.Value {
-				if key == "model" || key == "response_format" {
+				if key == "model" || key == "prompt" || key == "response_format" {
 					continue
 				}
 				for _, value := range values {
@@ -454,6 +454,7 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 				}
 			}
 		}
+		writer.WriteField("prompt", request.Prompt)
 		if request.ResponseFormat != "" {
 			writer.WriteField("response_format", request.ResponseFormat)
 		}
