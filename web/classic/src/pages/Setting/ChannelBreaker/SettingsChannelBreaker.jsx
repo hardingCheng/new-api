@@ -264,6 +264,32 @@ export default function SettingsChannelBreaker(props) {
     });
   }
 
+  async function hydrateExemptChannelNames(ids = exemptChannelIds) {
+    const missingIds = Array.from(
+      new Set(
+        ids
+          .map((id) => Number(id))
+          .filter((id) => id > 0 && !exemptChannelNameMap[id]),
+      ),
+    );
+    if (!missingIds.length) return;
+
+    const results = await Promise.allSettled(
+      missingIds.map((id) => API.get(`/api/channel/${id}`)),
+    );
+    const nextNames = {};
+    results.forEach((result) => {
+      if (result.status !== 'fulfilled') return;
+      const channel = result.value?.data?.data;
+      if (channel?.id && channel?.name) {
+        nextNames[channel.id] = channel.name;
+      }
+    });
+    if (Object.keys(nextNames).length > 0) {
+      setExemptChannelNameMap((prev) => ({ ...prev, ...nextNames }));
+    }
+  }
+
   async function searchExemptChannels(keyword = '') {
     try {
       const res = await API.get(
@@ -294,7 +320,8 @@ export default function SettingsChannelBreaker(props) {
 
   function addPendingExemptChannels() {
     if (!pendingExemptIds.length) return;
-    setExemptIds([...exemptChannelIds, ...pendingExemptIds]);
+    const nextIds = [...exemptChannelIds, ...pendingExemptIds];
+    setExemptIds(nextIds);
     setPendingExemptIds([]);
   }
 
@@ -905,6 +932,10 @@ export default function SettingsChannelBreaker(props) {
     fetchBreakerHistory(1);
     searchExemptChannels('');
   }, []);
+
+  useEffect(() => {
+    hydrateExemptChannelNames(exemptChannelIds);
+  }, [inputs.ChannelBreakerExemptChannels]);
 
   return (
     <Spin spinning={loading}>
