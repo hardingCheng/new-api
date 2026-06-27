@@ -229,6 +229,7 @@ export default function SettingsChannelBreaker(props) {
   const [inputsRow, setInputsRow] = useState(defaultInputs);
   const [exemptChannelOptions, setExemptChannelOptions] = useState([]);
   const [exemptChannelNameMap, setExemptChannelNameMap] = useState({});
+  const [serverExemptChannelRows, setServerExemptChannelRows] = useState([]);
   const [pendingExemptIds, setPendingExemptIds] = useState([]);
   const refForm = useRef();
 
@@ -245,11 +246,18 @@ export default function SettingsChannelBreaker(props) {
 
   const exemptChannelIds = parseExemptChannels(inputs.ChannelBreakerExemptChannels);
 
-  // 表格数据：每个豁免渠道一行，展示渠道号与渠道名（名称按搜索结果回填）。
-  const exemptChannelRows = exemptChannelIds.map((id) => ({
-    channel_id: id,
-    name: exemptChannelNameMap[id] || '',
-  }));
+  const serverExemptIds = serverExemptChannelRows.map((row) => row.channel_id);
+  const serverRowsMatchInputs =
+    serverExemptIds.length === exemptChannelIds.length &&
+    serverExemptIds.every((id) => exemptChannelIds.includes(id));
+
+  // 表格数据：已保存配置优先使用后端返回的 id/name；未保存本地编辑再用缓存名称兜底。
+  const exemptChannelRows = serverRowsMatchInputs
+    ? serverExemptChannelRows
+    : exemptChannelIds.map((id) => ({
+        channel_id: id,
+        name: exemptChannelNameMap[id] || '',
+      }));
 
   // 添加器选项：排除已在豁免名单里的渠道。
   const exemptAddOptions = exemptChannelOptions.filter(
@@ -264,29 +272,27 @@ export default function SettingsChannelBreaker(props) {
     });
   }
 
-  async function hydrateExemptChannelNames(ids = exemptChannelIds) {
-    const missingIds = Array.from(
-      new Set(
-        ids
-          .map((id) => Number(id))
-          .filter((id) => id > 0 && !exemptChannelNameMap[id]),
-      ),
-    );
-    if (!missingIds.length) return;
-
-    const results = await Promise.allSettled(
-      missingIds.map((id) => API.get(`/api/channel/${id}`)),
-    );
-    const nextNames = {};
-    results.forEach((result) => {
-      if (result.status !== 'fulfilled') return;
-      const channel = result.value?.data?.data;
-      if (channel?.id && channel?.name) {
-        nextNames[channel.id] = channel.name;
-      }
-    });
-    if (Object.keys(nextNames).length > 0) {
-      setExemptChannelNameMap((prev) => ({ ...prev, ...nextNames }));
+  async function fetchExemptChannelRows() {
+    try {
+      const res = await API.get('/api/channel/breaker_exempt');
+      const { success, data } = res.data;
+      if (!success || !Array.isArray(data)) return;
+      const rows = data
+        .map((channel) => ({
+          channel_id: Number(channel.id),
+          name: channel.name || '',
+        }))
+        .filter((row) => row.channel_id > 0);
+      setServerExemptChannelRows(rows);
+      setExemptChannelNameMap((prev) => {
+        const next = { ...prev };
+        rows.forEach((row) => {
+          if (row.name) next[row.channel_id] = row.name;
+        });
+        return next;
+      });
+    } catch (error) {
+      // 忽略名称回填错误，保留渠道 ID 仍可编辑保存
     }
   }
 
@@ -338,6 +344,7 @@ export default function SettingsChannelBreaker(props) {
       });
       if (res.data?.success) {
         showSuccess(t('熔断豁免渠道已保存'));
+        fetchExemptChannelRows();
         props.refresh();
       } else {
         showError(res.data?.message || t('保存失败'));
@@ -931,10 +938,11 @@ export default function SettingsChannelBreaker(props) {
     fetchBreakerStatuses();
     fetchBreakerHistory(1);
     searchExemptChannels('');
+    fetchExemptChannelRows();
   }, []);
 
   useEffect(() => {
-    hydrateExemptChannelNames(exemptChannelIds);
+    fetchExemptChannelRows();
   }, [inputs.ChannelBreakerExemptChannels]);
 
   return (

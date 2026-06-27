@@ -401,6 +401,49 @@ func GetChannel(c *gin.Context) {
 	return
 }
 
+func GetChannelBreakerExemptChannels(c *gin.Context) {
+	ids := common.GetChannelBreakerExemptChannels()
+	if len(ids) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"data":    []gin.H{},
+		})
+		return
+	}
+
+	channels, err := model.GetChannelsByIds(ids)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	nameByID := make(map[int]string, len(channels))
+	for _, channel := range channels {
+		if channel != nil {
+			nameByID[channel.Id] = channel.Name
+		}
+	}
+
+	data := make([]gin.H, 0, len(ids))
+	for _, id := range ids {
+		name := nameByID[id]
+		if name == "" {
+			name = fmt.Sprintf("渠道不存在或已删除 #%d", id)
+		}
+		data = append(data, gin.H{
+			"id":   id,
+			"name": name,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    data,
+	})
+}
+
 // GetChannelKey 获取渠道密钥（需要通过安全验证中间件）
 // 此函数依赖 SecureVerificationRequired 中间件，确保用户已通过安全验证
 func GetChannelKey(c *gin.Context) {
