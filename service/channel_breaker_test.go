@@ -285,6 +285,112 @@ func TestChannelBreakerGroupRuleOverridesDefault(t *testing.T) {
 	require.Equal(t, "vip", matched.Group)
 }
 
+func TestChannelBreakerProbeUsesStateRuleAfterConfigChange(t *testing.T) {
+	common.SetChannelBreakerEnabled(true)
+	common.SetChannelBreakerRules([]common.ChannelBreakerRule{
+		{
+			Id:                "vip-rule",
+			Name:              "VIP规则",
+			Enabled:           true,
+			Scope:             common.ChannelBreakerScopeGroup,
+			Targets:           []string{"vip"},
+			FailureLimit:      1,
+			CooldownSeconds:   1,
+			ProbeCount:        2,
+			ProbeSuccessCount: 2,
+		},
+	})
+	disableRedisForBreakerTest(t)
+	oldCooldown := channelBreakerCooldown
+	channelBreakerCooldown = time.Millisecond
+	t.Cleanup(func() {
+		common.SetChannelBreakerEnabled(false)
+		common.SetChannelBreakerRules(nil)
+		channelBreakerCooldown = oldCooldown
+	})
+
+	c := testBreakerContext("/v1/chat/completions")
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, "vip")
+	channelError := types.ChannelError{ChannelId: 1013, UsingKey: "key-a", AutoBan: true}
+	ClearChannelBreaker(channelError)
+
+	opened, _ := RecordChannelBreakerFailure(c, channelError, true)
+	require.True(t, opened)
+	setBreakerOpenedAtForTest(channelBreakerKey(channelError), time.Now().Add(-2*time.Second))
+
+	common.SetChannelBreakerRules([]common.ChannelBreakerRule{
+		{
+			Id:                "vip-rule",
+			Name:              "VIP规则",
+			Enabled:           true,
+			Scope:             common.ChannelBreakerScopeGroup,
+			Targets:           []string{"vip"},
+			FailureLimit:      1,
+			CooldownSeconds:   1,
+			ProbeCount:        5,
+			ProbeSuccessCount: 5,
+		},
+	})
+
+	for i := 0; i < 2; i++ {
+		require.True(t, AllowChannelByBreaker(c, channelError))
+		RecordChannelBreakerSuccess(c, channelError)
+	}
+	require.True(t, AllowChannelByBreaker(c, channelError))
+}
+
+func setBreakerOpenedAtForTest(key string, openedAt time.Time) {
+	channelBreakerMu.Lock()
+	defer channelBreakerMu.Unlock()
+
+	state := loadChannelBreakerStateLocked(key)
+	if state == nil {
+		return
+	}
+	state.OpenedAt = openedAt
+	saveChannelBreakerStateLocked(key, state)
+}
+
+func TestChannelBreakerStaleHalfOpenReopens(t *testing.T) {
+	common.SetChannelBreakerEnabled(true)
+	disableRedisForBreakerTest(t)
+	oldCooldown := channelBreakerCooldown
+	oldProbeTimeoutMin := channelBreakerProbeTimeoutMin
+	channelBreakerCooldown = time.Millisecond
+	channelBreakerProbeTimeoutMin = time.Millisecond
+	t.Cleanup(func() {
+		common.SetChannelBreakerEnabled(false)
+		channelBreakerCooldown = oldCooldown
+		channelBreakerProbeTimeoutMin = oldProbeTimeoutMin
+	})
+
+	c := testBreakerContext("/v1/chat/completions")
+	channelError := types.ChannelError{ChannelId: 1014, UsingKey: "key-a", AutoBan: true}
+	ClearChannelBreaker(channelError)
+
+	for i := 0; i < GetChannelBreakerFailureThreshold(); i++ {
+		RecordChannelBreakerFailure(c, channelError, true)
+	}
+	time.Sleep(2 * time.Millisecond)
+
+	require.True(t, AllowChannelByBreaker(c, channelError))
+	time.Sleep(2 * time.Millisecond)
+	require.False(t, CanUseChannelByBreaker(c, channelError))
+
+	var matched *ChannelBreakerStatus
+	for _, status := range ListChannelBreakerStatuses() {
+		if status.ChannelId == 1014 {
+			statusCopy := status
+			matched = &statusCopy
+			break
+		}
+	}
+	require.NotNil(t, matched)
+	require.Equal(t, ChannelBreakerStateOpen, matched.State)
+	require.Zero(t, matched.ProbeInFlight)
+	require.Zero(t, matched.ProbeTotal)
+}
+
 func TestChannelBreakerModelRuleCanDisableBreaker(t *testing.T) {
 	common.SetChannelBreakerEnabled(true)
 	common.SetChannelBreakerRules([]common.ChannelBreakerRule{

@@ -25,9 +25,10 @@ const (
 )
 
 var (
-	channelBreakerMu       sync.Mutex
-	channelBreakerStates   = map[string]*channelBreakerState{}
-	channelBreakerCooldown = time.Duration(0)
+	channelBreakerMu              sync.Mutex
+	channelBreakerStates          = map[string]*channelBreakerState{}
+	channelBreakerCooldown        = time.Duration(0)
+	channelBreakerProbeTimeoutMin = 30 * time.Second
 )
 
 type channelBreakerState struct {
@@ -113,13 +114,14 @@ func CanUseChannelByBreaker(c *gin.Context, channelError types.ChannelError) boo
 	if state == nil || state.State == ChannelBreakerStateClosed {
 		return true
 	}
+	maybeResetStaleHalfOpenLocked(key, state, rule)
 	if state.State == ChannelBreakerStateOpen {
-		return time.Since(state.OpenedAt) >= rule.Cooldown
+		return time.Since(state.OpenedAt) >= stateCooldown(state, rule)
 	}
 	if state.State != ChannelBreakerStateHalfOpen {
 		return true
 	}
-	return state.ProbeTotal+state.ProbeInFlight < rule.ProbeCount
+	return state.ProbeTotal+state.ProbeInFlight < stateProbeCount(state, rule)
 }
 
 func AcquireChannelBreakerProbe(c *gin.Context, channelError types.ChannelError) bool {
@@ -140,8 +142,9 @@ func AcquireChannelBreakerProbe(c *gin.Context, channelError types.ChannelError)
 	if state == nil || state.State == ChannelBreakerStateClosed {
 		return true
 	}
+	maybeResetStaleHalfOpenLocked(key, state, rule)
 	if state.State == ChannelBreakerStateOpen {
-		if time.Since(state.OpenedAt) < rule.Cooldown {
+		if time.Since(state.OpenedAt) < stateCooldown(state, rule) {
 			return false
 		}
 		state.State = ChannelBreakerStateHalfOpen
@@ -152,7 +155,7 @@ func AcquireChannelBreakerProbe(c *gin.Context, channelError types.ChannelError)
 		saveChannelBreakerStateLocked(key, state)
 	}
 	if state.State == ChannelBreakerStateHalfOpen {
-		if state.ProbeTotal+state.ProbeInFlight >= rule.ProbeCount {
+		if state.ProbeTotal+state.ProbeInFlight >= stateProbeCount(state, rule) {
 			return false
 		}
 		state.ProbeInFlight++
@@ -244,10 +247,10 @@ func IsChannelBreakerOpenForKey(channelId int, usingKey string) bool {
 	if state == nil || state.State == ChannelBreakerStateClosed {
 		return false
 	}
-	if state.State == ChannelBreakerStateOpen && time.Since(state.OpenedAt) >= getChannelBreakerCooldown() {
+	if state.State == ChannelBreakerStateOpen && time.Since(state.OpenedAt) >= stateCooldown(state, defaultChannelBreakerRuntimeRule()) {
 		return false
 	}
-	if state.State == ChannelBreakerStateHalfOpen && state.ProbeTotal+state.ProbeInFlight < common.GetChannelBreakerProbeCount() {
+	if state.State == ChannelBreakerStateHalfOpen && state.ProbeTotal+state.ProbeInFlight < stateProbeCount(state, defaultChannelBreakerRuntimeRule()) {
 		return false
 	}
 	return true
@@ -391,6 +394,7 @@ func ListChannelBreakerStatuses() []ChannelBreakerStatus {
 		if state == nil || state.State == ChannelBreakerStateClosed {
 			continue
 		}
+		maybeResetStaleHalfOpenLocked(key, state, defaultChannelBreakerRuntimeRule())
 		statuses = append(statuses, buildChannelBreakerStatus(key, state))
 	}
 	return statuses
@@ -427,8 +431,8 @@ func recordProbeLocked(state *channelBreakerState, success bool) {
 }
 
 func evaluateProbeLocked(key string, state *channelBreakerState, rule channelBreakerRuntimeRule) (bool, string) {
-	probeSuccesses := rule.ProbeSuccessCount
-	probeRequests := rule.ProbeCount
+	probeSuccesses := stateProbeSuccessCount(state, rule)
+	probeRequests := stateProbeCount(state, rule)
 	if state.ProbeSuccess >= probeSuccesses {
 		deleteChannelBreakerStateLocked(key)
 		return false, "channel breaker closed after probe"
@@ -441,6 +445,43 @@ func evaluateProbeLocked(key string, state *channelBreakerState, rule channelBre
 	}
 	saveChannelBreakerStateLocked(key, state)
 	return false, fmt.Sprintf("channel breaker probing (%d/%d successes, %d/%d completed)", state.ProbeSuccess, probeSuccesses, state.ProbeTotal, probeRequests)
+}
+
+func stateCooldown(state *channelBreakerState, rule channelBreakerRuntimeRule) time.Duration {
+	if state != nil && state.CooldownSecs > 0 {
+		return time.Duration(state.CooldownSecs) * time.Second
+	}
+	return rule.Cooldown
+}
+
+func stateProbeCount(state *channelBreakerState, rule channelBreakerRuntimeRule) int {
+	if state != nil && state.RuleProbeCount > 0 {
+		return state.RuleProbeCount
+	}
+	return rule.ProbeCount
+}
+
+func stateProbeSuccessCount(state *channelBreakerState, rule channelBreakerRuntimeRule) int {
+	if state != nil && state.RuleProbeNeed > 0 {
+		return state.RuleProbeNeed
+	}
+	return rule.ProbeSuccessCount
+}
+
+func maybeResetStaleHalfOpenLocked(key string, state *channelBreakerState, rule channelBreakerRuntimeRule) {
+	if state == nil || state.State != ChannelBreakerStateHalfOpen || state.ProbeStartedAt.IsZero() {
+		return
+	}
+	timeout := stateCooldown(state, rule)
+	if timeout < channelBreakerProbeTimeoutMin {
+		timeout = channelBreakerProbeTimeoutMin
+	}
+	if time.Since(state.ProbeStartedAt) < timeout {
+		return
+	}
+	recordChannelBreakerOpenLog(key, state, fmt.Sprintf("channel breaker probe timed out (%d/%d successes, %d/%d completed)", state.ProbeSuccess, stateProbeSuccessCount(state, rule), state.ProbeTotal, stateProbeCount(state, rule)))
+	openBreakerLocked(state)
+	saveChannelBreakerStateLocked(key, state)
 }
 
 // recordChannelBreakerOpenLog 在熔断器打开时异步记录一条历史日志。
@@ -815,7 +856,15 @@ func saveChannelBreakerStateLocked(key string, state *channelBreakerState) {
 		common.SysError("failed to marshal channel breaker: " + err.Error())
 		return
 	}
-	ttl := getChannelBreakerCooldown() + time.Duration(common.GetChannelBreakerProbeCount()+common.GetChannelBreakerFailureLimit()+60)*time.Second
+	cooldown := getChannelBreakerCooldown()
+	if state.CooldownSecs > 0 {
+		cooldown = time.Duration(state.CooldownSecs) * time.Second
+	}
+	probeCount := common.GetChannelBreakerProbeCount()
+	if state.RuleProbeCount > 0 {
+		probeCount = state.RuleProbeCount
+	}
+	ttl := cooldown + time.Duration(probeCount+common.GetChannelBreakerFailureLimit()+60)*time.Second
 	if err := common.RDB.Set(context.Background(), channelBreakerRedisKey(key), string(data), ttl).Err(); err != nil {
 		common.SysError("failed to save channel breaker to redis: " + err.Error())
 	}
