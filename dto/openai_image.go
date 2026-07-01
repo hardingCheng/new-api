@@ -39,6 +39,10 @@ type ImageRequest struct {
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
+func ImageModelOmitsResponseFormat(model string) bool {
+	return model == "gpt-image-2-token"
+}
+
 func (i *ImageRequest) UnmarshalJSON(data []byte) error {
 	// 先解析成 map[string]interface{}
 	var rawMap map[string]json.RawMessage
