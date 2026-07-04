@@ -87,6 +87,7 @@ const NotificationSettings = ({
       channel: true,
       models: true,
       deployment: true,
+      'channel-breaker': true,
       subscription: true,
       redemption: true,
       user: true,
@@ -171,6 +172,7 @@ const NotificationSettings = ({
         channel: true,
         models: true,
         deployment: true,
+        'channel-breaker': true,
         subscription: true,
         redemption: true,
         user: true,
@@ -298,6 +300,11 @@ const NotificationSettings = ({
           key: 'deployment',
           title: t('模型部署'),
           description: t('模型部署管理'),
+        },
+        {
+          key: 'channel-breaker',
+          title: t('分组容灾'),
+          description: t('熔断参数'),
         },
         {
           key: 'subscription',

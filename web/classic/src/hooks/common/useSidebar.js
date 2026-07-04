@@ -49,6 +49,7 @@ export const DEFAULT_ADMIN_CONFIG = {
     channel: true,
     models: true,
     deployment: true,
+    'channel-breaker': true,
     redemption: true,
     user: true,
     subscription: true,

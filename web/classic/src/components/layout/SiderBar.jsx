@@ -41,6 +41,7 @@ const routerMap = {
   log: '/console/log',
   midjourney: '/console/midjourney',
   setting: '/console/setting',
+  'channel-breaker': '/console/setting?tab=channel-breaker',
   about: '/about',
   detail: '/console',
   pricing: '/pricing',
@@ -157,6 +158,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('订阅管理'),
         itemKey: 'subscription',
         to: '/subscription',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('分组容灾'),
+        itemKey: 'channel-breaker',
+        to: '/setting?tab=channel-breaker',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {
@@ -278,9 +285,14 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   // 根据当前路径设置选中的菜单项
   useEffect(() => {
     const currentPath = location.pathname;
-    let matchingKey = Object.keys(routerMapState).find(
-      (key) => routerMapState[key] === currentPath,
-    );
+    const searchParams = new URLSearchParams(location.search);
+    const tab = searchParams.get('tab');
+    let matchingKey =
+      currentPath === '/console/setting' && tab === 'channel-breaker'
+        ? 'channel-breaker'
+        : Object.keys(routerMapState).find(
+            (key) => routerMapState[key] === currentPath,
+          );
 
     // 处理聊天路由
     if (!matchingKey && currentPath.startsWith('/console/chat/')) {
@@ -296,7 +308,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
     if (matchingKey) {
       setSelectedKeys([matchingKey]);
     }
-  }, [location.pathname, routerMapState]);
+  }, [location.pathname, location.search, routerMapState]);
 
   // 监控折叠状态变化以更新 body class
   useEffect(() => {

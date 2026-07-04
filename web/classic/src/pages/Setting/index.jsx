@@ -38,7 +38,7 @@ import {
 } from 'lucide-react';
 
 import SystemSetting from '../../components/settings/SystemSetting';
-import { isRoot } from '../../helpers';
+import { isAdmin, isRoot } from '../../helpers';
 import OtherSetting from '../../components/settings/OtherSetting';
 import OperationSetting from '../../components/settings/OperationSetting';
 import RateLimitSetting from '../../components/settings/RateLimitSetting';
@@ -70,6 +70,9 @@ const Setting = () => {
       content: <OperationSetting />,
       itemKey: 'operation',
     });
+  }
+
+  if (isAdmin()) {
     panes.push({
       tab: (
         <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -80,6 +83,9 @@ const Setting = () => {
       content: <ChannelBreakerSetting />,
       itemKey: 'channel-breaker',
     });
+  }
+
+  if (isRoot()) {
     panes.push({
       tab: (
         <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -201,12 +207,19 @@ const Setting = () => {
     navigate(`?${searchParams.toString()}`);
   };
   useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
+    const searchParams = new URLSearchParams(location.search);
     const tab = searchParams.get('tab');
-    if (tab) {
-      setTabActiveKey(tab);
-    } else {
-      onChangeTab('operation');
+    const firstPaneKey = panes[0]?.itemKey;
+    if (!firstPaneKey) return;
+
+    const nextTab =
+      tab && panes.some((pane) => pane.itemKey === tab) ? tab : firstPaneKey;
+
+    setTabActiveKey(nextTab);
+
+    if (tab !== nextTab) {
+      searchParams.set('tab', nextTab);
+      navigate(`?${searchParams.toString()}`, { replace: true });
     }
   }, [location.search]);
   return (
