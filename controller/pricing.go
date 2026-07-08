@@ -33,6 +33,67 @@ func filterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string
 	return filtered
 }
 
+func pricingGroupsForOverrides(item model.Pricing, groupRatio map[string]float64) []string {
+	if common.StringsContains(item.EnableGroup, "all") {
+		groups := make([]string, 0, len(groupRatio))
+		for group := range groupRatio {
+			groups = append(groups, group)
+		}
+		return groups
+	}
+	return item.EnableGroup
+}
+
+func applyUserPricingToPricingList(pricing []model.Pricing, user *model.UserBase, groupRatio map[string]float64) []model.Pricing {
+	if user == nil || len(pricing) == 0 || len(groupRatio) == 0 {
+		return pricing
+	}
+	if len(ratio_setting.GetUserPricingOverrideCopy().Rules) == 0 {
+		return pricing
+	}
+
+	result := make([]model.Pricing, len(pricing))
+	copy(result, pricing)
+	for i := range result {
+		item := &result[i]
+		if item.BillingMode == "tiered_expr" {
+			continue
+		}
+		groupOverrides := make(map[string]model.PricingUserPricingGroup)
+		for _, group := range pricingGroupsForOverrides(*item, groupRatio) {
+			baseGroupRatio, ok := groupRatio[group]
+			if !ok {
+				continue
+			}
+			usePrice := item.QuotaType == 1
+			override := ratio_setting.ApplyUserPricingOverrides(
+				user.Id,
+				user.Username,
+				user.Group,
+				group,
+				item.ModelName,
+				usePrice,
+				item.ModelPrice,
+				item.ModelRatio,
+				baseGroupRatio,
+			)
+			if len(override.Matches) == 0 {
+				continue
+			}
+			groupOverrides[group] = model.PricingUserPricingGroup{
+				UsePrice:   override.UsePrice,
+				ModelPrice: override.ModelPrice,
+				ModelRatio: override.ModelRatio,
+				GroupRatio: override.GroupRatio,
+			}
+		}
+		if len(groupOverrides) > 0 {
+			item.UserPricing = &model.PricingUserPricing{Groups: groupOverrides}
+		}
+	}
+	return result
+}
+
 func GetPricing(c *gin.Context) {
 	pricing := model.GetPricing()
 	userId, exists := c.Get("id")
@@ -42,9 +103,11 @@ func GetPricing(c *gin.Context) {
 		groupRatio[s] = f
 	}
 	var group string
+	var user *model.UserBase
 	if exists {
-		user, err := model.GetUserCache(userId.(int))
+		userCache, err := model.GetUserCache(userId.(int))
 		if err == nil {
+			user = userCache
 			group = user.Group
 			for g := range groupRatio {
 				ratio, ok := ratio_setting.GetGroupGroupRatio(group, g)
@@ -63,6 +126,7 @@ func GetPricing(c *gin.Context) {
 			delete(groupRatio, group)
 		}
 	}
+	pricing = applyUserPricingToPricingList(pricing, user, groupRatio)
 
 	c.JSON(200, gin.H{
 		"success":            true,

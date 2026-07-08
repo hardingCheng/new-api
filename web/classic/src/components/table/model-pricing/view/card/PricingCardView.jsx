@@ -153,20 +153,22 @@ const PricingCardView = ({
   };
 
   // 渲染标签
-  const renderTags = (record) => {
+  const renderTags = (record, priceData) => {
     // 计费类型标签（左边）
     let billingTag = (
       <Tag key='billing' shape='circle' color='white' size='small'>
         -
       </Tag>
     );
-    if (record.quota_type === 1) {
+    const effectiveQuotaType =
+      priceData?.effectiveQuotaType ?? record.quota_type;
+    if (effectiveQuotaType === 1) {
       billingTag = (
         <Tag key='billing' shape='circle' color='teal' size='small'>
           {t('按次计费')}
         </Tag>
       );
-    } else if (record.quota_type === 0) {
+    } else if (effectiveQuotaType === 0) {
       billingTag = (
         <Tag key='billing' shape='circle' color='violet' size='small'>
           {t('按量计费')}
@@ -268,11 +270,13 @@ const PricingCardView = ({
                         {model.model_name}
                       </h3>
                       <div className='flex flex-col gap-1 text-xs mt-1'>
-                        {priceData.isDynamicPricing ? (
-                          formatDynamicPriceSummary(priceData.billingExpr, t, priceData.usedGroupRatio)
-                        ) : (
-                          formatPriceInfo(priceData, t, siteDisplayType)
-                        )}
+                        {priceData.isDynamicPricing
+                          ? formatDynamicPriceSummary(
+                              priceData.billingExpr,
+                              t,
+                              priceData.usedGroupRatio,
+                            )
+                          : formatPriceInfo(priceData, t, siteDisplayType)}
                       </div>
                     </div>
                   </div>
@@ -316,7 +320,7 @@ const PricingCardView = ({
                 {/* 底部区域 */}
                 <div className='mt-auto'>
                   {/* 标签区域 */}
-                  {renderTags(model)}
+                  {renderTags(model, priceData)}
 
                   {/* 倍率信息（可选） */}
                   {showRatio && (
@@ -342,11 +346,13 @@ const PricingCardView = ({
                       <div className='grid grid-cols-3 gap-2 text-xs text-gray-600'>
                         <div>
                           {t('模型')}:{' '}
-                          {model.quota_type === 0 ? model.model_ratio : t('无')}
+                          {priceData?.effectiveQuotaType === 0
+                            ? (priceData.modelRatio ?? model.model_ratio)
+                            : t('无')}
                         </div>
                         <div>
                           {t('补全')}:{' '}
-                          {model.quota_type === 0
+                          {priceData?.effectiveQuotaType === 0
                             ? parseFloat(model.completion_ratio.toFixed(3))
                             : t('无')}
                         </div>

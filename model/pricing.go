@@ -35,7 +35,19 @@ type Pricing struct {
 	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
 	BillingMode            string                  `json:"billing_mode,omitempty"`
 	BillingExpr            string                  `json:"billing_expr,omitempty"`
+	UserPricing            *PricingUserPricing     `json:"user_pricing,omitempty"`
 	PricingVersion         string                  `json:"pricing_version,omitempty"`
+}
+
+type PricingUserPricing struct {
+	Groups map[string]PricingUserPricingGroup `json:"groups,omitempty"`
+}
+
+type PricingUserPricingGroup struct {
+	UsePrice   bool    `json:"use_price"`
+	ModelPrice float64 `json:"model_price"`
+	ModelRatio float64 `json:"model_ratio"`
+	GroupRatio float64 `json:"group_ratio"`
 }
 
 type PricingVendor struct {

@@ -20,7 +20,10 @@ For commercial licensing, please contact support@quantumnous.com
 import React from 'react';
 import { Avatar, Typography, Table, Tag } from '@douyinfe/semi-ui';
 import { IconCoinMoneyStroked } from '@douyinfe/semi-icons';
-import { calculateModelPrice, getModelPriceItems } from '../../../../../helpers';
+import {
+  calculateModelPrice,
+  getModelPriceItems,
+} from '../../../../../helpers';
 
 const { Text } = Typography;
 
@@ -69,13 +72,13 @@ const ModelPricingTable = ({
       return {
         key: group,
         group: group,
-        ratio: groupRatioValue,
+        ratio: priceData?.usedGroupRatio ?? groupRatioValue,
         billingType:
           modelData?.billing_mode === 'tiered_expr'
             ? t('动态计费')
-            : modelData?.quota_type === 0
+            : priceData?.effectiveQuotaType === 0
               ? t('按量计费')
-              : modelData?.quota_type === 1
+              : priceData?.effectiveQuotaType === 1
                 ? t('按次计费')
                 : '-',
         priceItems: getModelPriceItems(priceData, t, siteDisplayType),
