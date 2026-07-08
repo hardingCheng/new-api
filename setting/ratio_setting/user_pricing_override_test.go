@@ -11,7 +11,8 @@ func TestApplyUserPricingOverrides(t *testing.T) {
 		"rules": [
 			{"user_id":42,"type":"ratio","value":0.9},
 			{"user_id":42,"group_pattern":"sd2","type":"ratio","value":0.8},
-			{"user_id":42,"group_pattern":"sd2","model_pattern":"seedance-2.0-*","type":"model_price","value":0.25}
+			{"user_id":42,"group_pattern":"sd2","model_pattern":"seedance-2.0-*","type":"model_price","value":0.25},
+			{"user_id":42,"group_pattern":"sd2","model_pattern":"prism-3.0-*","type":"model_price","value":0.25}
 		]
 	}`)
 	if err != nil {
@@ -34,6 +35,11 @@ func TestApplyUserPricingOverrides(t *testing.T) {
 	if len(res.Matches) != 2 {
 		t.Fatalf("matches len = %d, want 2", len(res.Matches))
 	}
+
+	prismRes := ApplyUserPricingOverrides(42, "u", "vip", "sd2", "prism-3.0-480p", false, -1, 1.5, 1)
+	if !prismRes.UsePrice || prismRes.ModelPrice != 0.25 {
+		t.Fatalf("prism override = usePrice %v modelPrice %v, want true 0.25", prismRes.UsePrice, prismRes.ModelPrice)
+	}
 }
 
 func TestApplyUserPricingOverridesReferenceModes(t *testing.T) {
@@ -46,7 +52,8 @@ func TestApplyUserPricingOverridesReferenceModes(t *testing.T) {
 			{"user_id":1,"model_pattern":"seedance-*","type":"video_ref_factor","value":0.5},
 			{"user_id":2,"model_pattern":"seedance-*","type":"video_ref_price","value":0.02},
 			{"user_id":3,"model_pattern":"seedance-*","type":"video_ref_flat","value":1},
-			{"user_id":4,"model_pattern":"seedance-*","type":"video_ref_cap","value":5}
+			{"user_id":4,"model_pattern":"seedance-*","type":"video_ref_cap","value":5},
+			{"user_id":5,"model_pattern":"prism-*","type":"video_ref_factor","value":0.5}
 		]
 	}`); err != nil {
 		t.Fatalf("update user pricing override: %v", err)
@@ -61,9 +68,14 @@ func TestApplyUserPricingOverridesReferenceModes(t *testing.T) {
 		{2, VideoRefModePrice, 0.02},
 		{3, VideoRefModeFlat, 1},
 		{4, VideoRefModeCap, 5},
+		{5, VideoRefModeFactor, 0.5},
 	}
 	for _, tc := range cases {
-		res := ApplyUserPricingOverrides(tc.userID, "u", "default", "default", "seedance-2.0-480p", true, 0.1, 0, 1)
+		model := "seedance-2.0-480p"
+		if tc.userID == 5 {
+			model = "prism-3.0-480p"
+		}
+		res := ApplyUserPricingOverrides(tc.userID, "u", "default", "default", model, true, 0.1, 0, 1)
 		if res.VideoRefMode != tc.mode || res.VideoRefValue != tc.value {
 			t.Fatalf("user %d: mode=%q value=%v, want mode=%q value=%v", tc.userID, res.VideoRefMode, res.VideoRefValue, tc.mode, tc.value)
 		}

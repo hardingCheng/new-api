@@ -81,7 +81,9 @@ func validatePrompt(prompt string) *dto.TaskError {
 
 func IsSeedanceVideoModel(model string) bool {
 	model = strings.ToLower(strings.TrimSpace(model))
-	return strings.HasPrefix(model, "seedance-") || strings.HasPrefix(model, "doubao-seedance-")
+	return strings.HasPrefix(model, "seedance-") ||
+		strings.HasPrefix(model, "doubao-seedance-") ||
+		strings.HasPrefix(model, "prism-")
 }
 
 func IsGrokImagineVideoModel(model string) bool {

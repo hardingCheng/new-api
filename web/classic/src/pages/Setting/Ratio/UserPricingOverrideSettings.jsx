@@ -776,7 +776,7 @@ export default function UserPricingOverrideSettings({ options, refresh }) {
                 <div className='mb-2 font-medium text-gray-700'>{t('自定义模型通配符')}</div>
                 <Input
                   value={ruleForm.model_pattern}
-                  placeholder='seedance-*'
+                  placeholder='seedance-* 或 prism-*'
                   style={{ marginBottom: 16 }}
                   onChange={(value) => {
                     setSelectedModels(value ? [value] : []);

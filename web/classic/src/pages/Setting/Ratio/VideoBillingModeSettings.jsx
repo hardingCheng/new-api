@@ -257,7 +257,7 @@ export default function VideoBillingModeSettings({ options, refresh }) {
         </Space>
         <div className='mt-3 text-sm text-gray-500'>
           {t(
-            '仅影响 /v1/videos 接口。按秒计费 = 生成秒数 * 模型单价；按次计费 = 不管秒数直接按模型单价收费。模型名支持 seedance-* 这类通配符。',
+            '仅影响 /v1/videos 接口。按秒计费 = 生成秒数 * 模型单价；按次计费 = 不管秒数直接按模型单价收费。模型名支持 seedance-*、prism-* 这类通配符。',
           )}
         </div>
       </Card>
@@ -266,7 +266,7 @@ export default function VideoBillingModeSettings({ options, refresh }) {
         <Space vertical align='start' style={{ width: '100%' }}>
           <Input
             value={previewModel}
-            placeholder='seedance-2.0-480p'
+            placeholder='seedance-2.0-480p 或 prism-3.0-480p'
             onChange={setPreviewModel}
             style={{ maxWidth: 420 }}
             showClear
@@ -321,7 +321,7 @@ export default function VideoBillingModeSettings({ options, refresh }) {
           <Form.Input
             field='model'
             label={t('模型匹配规则')}
-            placeholder='seedance-*'
+            placeholder='seedance-* 或 prism-*'
             initValue={formState.model}
             onChange={(value) => setFormState({ ...formState, model: value })}
           />

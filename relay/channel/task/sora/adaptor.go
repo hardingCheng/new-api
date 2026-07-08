@@ -316,7 +316,7 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	// 使用公开 task_xxxx ID 返回给客户端
 	dResp.ID = flexString(info.PublicTaskID)
 	dResp.TaskID = info.PublicTaskID
-	// 用对外模型名覆盖上游真实模型名，避免泄露映射后的上游模型（如 wp/seedance-2.0-fast-480p）
+	// 用对外模型名覆盖上游真实模型名，避免泄露映射后的上游模型（如 wp/seedance-2.0-fast-480p、prism-3.0-fast-480p）
 	if info.OriginModelName != "" {
 		dResp.Model = info.OriginModelName
 	}

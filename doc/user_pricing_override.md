@@ -219,6 +219,7 @@ vip_seedance优惠
 ```text
 seedance-*
 doubao-seedance-*
+prism-*
 grok-imagine-*
 ```
 
@@ -226,6 +227,8 @@ grok-imagine-*
 
 ```text
 seedance-* 匹配所有以 seedance- 开头的模型
+doubao-seedance-* 匹配所有以 doubao-seedance- 开头的模型
+prism-* 匹配所有以 prism- 开头的模型
 ```
 
 运营如果不确定模型名，优先从模型下拉框里选择，不要手填。
@@ -326,12 +329,14 @@ grok-imagine-1.0-video：固定单价 0.4
 用户 42 全部使用 9 折
 用户 42 使用 sd2 分组 8 折
 用户 42 使用 sd2 + seedance-2.0-480p 固定单价 0.25
+用户 42 使用 sd2 + prism-3.0-480p 固定单价 0.25
 ```
 
 当用户 42 调用：
 
 ```text
 sd2 + seedance-2.0-480p
+sd2 + prism-3.0-480p
 ```
 
 最终用最具体的规则：

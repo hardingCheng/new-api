@@ -373,7 +373,7 @@ export default function ModelQuotaPoolSettings({ options, refresh }) {
           </div>
           <Input
             value={formState.model}
-            placeholder='seedance-2.0-fast-480p 或 seedance-*'
+            placeholder='seedance-2.0-fast-480p、prism-3.0-fast-480p 或 prism-*'
             style={{ marginBottom: 16 }}
             onChange={(value) => setFormState({ ...formState, model: value })}
           />

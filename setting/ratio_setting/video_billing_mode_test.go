@@ -16,6 +16,7 @@ func TestVideoBillingModeMatching(t *testing.T) {
 	constant.TaskPricePatches = []string{"legacy-fixed-video"}
 	if err := UpdateVideoBillingModeByJSONString(`{
 		"seedance-*": "per_second",
+		"prism-*": "per_second",
 		"grok-imagine-*": "per_call",
 		"grok-imagine-1.0-video": "per_second"
 	}`); err != nil {
@@ -28,6 +29,7 @@ func TestVideoBillingModeMatching(t *testing.T) {
 		want  string
 	}{
 		{name: "wildcard per second", model: "seedance-2.0-480p", want: VideoBillingModePerSecond},
+		{name: "prism wildcard per second", model: "prism-3.0-480p", want: VideoBillingModePerSecond},
 		{name: "wildcard per call", model: "grok-imagine-video", want: VideoBillingModePerCall},
 		{name: "exact beats wildcard", model: "grok-imagine-1.0-video", want: VideoBillingModePerSecond},
 		{name: "legacy patch default", model: "legacy-fixed-video", want: VideoBillingModePerCall},

@@ -16,7 +16,7 @@ type ModelLimitSetting struct {
 
 var modelLimitSetting = ModelLimitSetting{
 	SeedanceResourcePoolGuardEnabled: true,
-	SeedanceResourcePoolGuardModels:  "seedance-2.0-fast-480p",
+	SeedanceResourcePoolGuardModels:  "seedance-2.0-fast-480p\nprism-3.0-fast-480p",
 	SeedanceResourcePoolGuardUserIds: "42\n2113417732",
 	SeedanceResourcePoolGuardMessage: "此模型资源池已耗尽，请使用其他的模型。",
 }

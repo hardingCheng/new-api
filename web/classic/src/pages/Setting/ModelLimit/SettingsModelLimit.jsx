@@ -39,7 +39,7 @@ const OPTION_KEYS = [
 const defaultInputs = {
   'model_limit_setting.seedance_resource_pool_guard_enabled': true,
   'model_limit_setting.seedance_resource_pool_guard_models':
-    'seedance-2.0-fast-480p',
+    'seedance-2.0-fast-480p\nprism-3.0-fast-480p',
   'model_limit_setting.seedance_resource_pool_guard_user_ids': '42\n2113417732',
   'model_limit_setting.seedance_resource_pool_guard_message':
     '此模型资源池已耗尽，请使用其他的模型。',
@@ -146,7 +146,7 @@ export default function SettingsModelLimit(props) {
               <Form.TextArea
                 field='model_limit_setting.seedance_resource_pool_guard_models'
                 label={t('限制模型')}
-                placeholder={'seedance-2.0-fast-480p'}
+                placeholder={'seedance-2.0-fast-480p\nprism-3.0-fast-480p'}
                 autosize={{ minRows: 3, maxRows: 8 }}
                 extraText={t(
                   '命中这些模型的请求会被拦截，支持换行、逗号、分号或空格分隔，不区分大小写。',
