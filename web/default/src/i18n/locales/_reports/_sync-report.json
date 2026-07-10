@@ -1,9 +1,9 @@
 {
-  "base": "fr.json",
+  "base": "en.json",
   "locales": {
     "en": {
       "file": "en.json",
-      "missingCount": 17,
+      "missingCount": 0,
       "extrasCount": 0,
       "untranslatedCount": 0
     },
@@ -33,8 +33,8 @@
     },
     "zh-TW": {
       "file": "zh-TW.json",
-      "missingCount": 21,
-      "extrasCount": 1,
+      "missingCount": 0,
+      "extrasCount": 0,
       "untranslatedCount": 0
     },
     "zh": {

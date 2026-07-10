@@ -227,25 +227,6 @@ function BillingBreakdown(props: {
     })
   }
 
-  if (other.generated_video_seconds != null) {
-    rows.push({
-      label: t('Generated Video Seconds'),
-      value: `${other.generated_video_seconds}s`,
-    })
-  }
-  if (other.reference_video_seconds != null) {
-    rows.push({
-      label: t('Reference Video Seconds'),
-      value: `${other.reference_video_seconds}s`,
-    })
-  }
-  if (other.billable_video_seconds != null) {
-    rows.push({
-      label: t('Billable Video Seconds'),
-      value: `${other.billable_video_seconds}s`,
-    })
-  }
-
   if (!isTieredExpr && isClaude && hasAnyCacheTokens(other)) {
     if (other.cache_ratio != null && other.cache_ratio !== 1) {
       rows.push({
