@@ -42,6 +42,10 @@ type testResult struct {
 	newAPIError *types.NewAPIError
 }
 
+func (r testResult) successful() bool {
+	return r.context != nil && r.localErr == nil && r.newAPIError == nil
+}
+
 func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointType string) string {
 	normalized := strings.TrimSpace(endpointType)
 	if normalized != "" {
@@ -950,7 +954,7 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 			}
 		}
 
-		if newAPIError == nil {
+		if result.successful() {
 			summary.Succeeded++
 		} else {
 			summary.Failed++
@@ -964,7 +968,7 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 		}
 
 		// enable channel
-		if result.localErr == nil && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
+		if result.successful() && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
 			service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
 			summary.Enabled++
 		}
@@ -1078,7 +1082,7 @@ func testChannelAnyModel(ctx context.Context, channel *model.Channel, testUserID
 			continue
 		}
 		last = testChannel(ctx, channel, testUserID, modelName, "", isStream)
-		if last.newAPIError == nil {
+		if last.successful() {
 			return last
 		}
 		if i < len(models)-1 && common.RequestInterval > 0 {
@@ -1113,7 +1117,7 @@ func retestRecoverableChannels(ctx context.Context) error {
 			continue
 		}
 		result := testChannelAnyModel(ctx, channel, testUserID)
-		if service.ShouldEnableChannel(result.newAPIError, channel.Status) {
+		if result.successful() && service.ShouldEnableChannel(result.newAPIError, channel.Status) {
 			service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
 		}
 		if common.RequestInterval > 0 {
@@ -1130,7 +1134,7 @@ func retestRecoverableChannels(ctx context.Context) error {
 		ok, tested := testedOK[status.ChannelId]
 		if !tested {
 			result := testChannelAnyModel(ctx, channel, testUserID)
-			ok = result.newAPIError == nil
+			ok = result.successful()
 			testedOK[status.ChannelId] = ok
 			if common.RequestInterval > 0 {
 				time.Sleep(common.RequestInterval)

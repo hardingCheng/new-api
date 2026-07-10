@@ -1,11 +1,13 @@
 package controller
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -109,6 +111,19 @@ func TestSelectChannelsForAutomaticTestScheduledSkipsManualDisabled(t *testing.T
 	require.Len(t, selected, 2)
 	require.Equal(t, 1, selected[0].Id)
 	require.Equal(t, 2, selected[1].Id)
+}
+
+func TestUnsupportedChannelIsNotTreatedAsSuccessfulDuringRecovery(t *testing.T) {
+	channel := &model.Channel{
+		Type:   constant.ChannelTypeDoubaoVideo,
+		Models: "doubao-seedance-2-0-260128",
+	}
+
+	result := testChannelAnyModel(context.Background(), channel, 1)
+
+	require.Error(t, result.localErr)
+	require.Nil(t, result.context)
+	require.False(t, result.successful())
 }
 
 func TestTestAllChannelsRejectsExistingActiveTask(t *testing.T) {
