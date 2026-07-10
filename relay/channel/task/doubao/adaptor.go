@@ -52,13 +52,15 @@ type requestPayload struct {
 	Tools                 []struct {
 		Type string `json:"type,omitempty"`
 	} `json:"tools,omitempty"`
-	Resolution  string         `json:"resolution,omitempty"`
-	Ratio       string         `json:"ratio,omitempty"`
-	Duration    *dto.IntValue  `json:"duration,omitempty"`
-	Frames      *dto.IntValue  `json:"frames,omitempty"`
-	Seed        *dto.IntValue  `json:"seed,omitempty"`
-	CameraFixed *dto.BoolValue `json:"camera_fixed,omitempty"`
-	Watermark   *dto.BoolValue `json:"watermark,omitempty"`
+	SafetyIdentifier string         `json:"safety_identifier,omitempty"`
+	Priority         *dto.IntValue  `json:"priority,omitempty"`
+	Resolution       string         `json:"resolution,omitempty"`
+	Ratio            string         `json:"ratio,omitempty"`
+	Duration         *dto.IntValue  `json:"duration,omitempty"`
+	Frames           *dto.IntValue  `json:"frames,omitempty"`
+	Seed             *dto.IntValue  `json:"seed,omitempty"`
+	CameraFixed      *dto.BoolValue `json:"camera_fixed,omitempty"`
+	Watermark        *dto.BoolValue `json:"watermark,omitempty"`
 }
 
 type responsePayload struct {
@@ -132,26 +134,63 @@ func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *r
 	return nil
 }
 
+// EstimateBilling 根据请求 metadata 中的输出分辨率与是否包含视频输入，返回相对基准价的计费 OtherRatio。
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil
 	}
-	if !relaycommon.IsSeedanceVideoModel(info.OriginModelName) && !relaycommon.IsSeedanceVideoModel(req.Model) {
+	ratios := make(map[string]float64)
+	if relaycommon.IsSeedanceVideoModel(info.OriginModelName) || relaycommon.IsSeedanceVideoModel(req.Model) {
+		generatedSeconds := relaycommon.EffectiveTaskDuration(req)
+		referenceSeconds := service.SumReferenceVideoDurationSeconds(c, relaycommon.ExtractReferenceVideoURLs(req))
+		billableSeconds := generatedSeconds + referenceSeconds
+		if billableSeconds > 0 {
+			c.Set("generated_video_seconds", generatedSeconds)
+			c.Set("reference_video_seconds", referenceSeconds)
+			c.Set("billable_video_seconds", billableSeconds)
+			ratios["seconds"] = float64(billableSeconds)
+		}
+	}
+	hasVideo := hasVideoInMetadata(req.Metadata)
+	resolution, _ := req.Metadata["resolution"].(string)
+	ratio, ok := GetVideoInputRatio(info.OriginModelName, resolution, hasVideo)
+	if ok && ratio != 1.0 {
+		ratios["video_input"] = ratio
+	}
+	if len(ratios) == 0 {
 		return nil
 	}
-	generatedSeconds := relaycommon.EffectiveTaskDuration(req)
-	referenceSeconds := service.SumReferenceVideoDurationSeconds(c, relaycommon.ExtractReferenceVideoURLs(req))
-	billableSeconds := generatedSeconds + referenceSeconds
-	if billableSeconds <= 0 {
-		return nil
+	return ratios
+}
+
+// hasVideoInMetadata 直接检查 metadata 的 content 数组是否包含 video_url 条目，
+// 避免构建完整的上游 requestPayload。
+func hasVideoInMetadata(metadata map[string]interface{}) bool {
+	if metadata == nil {
+		return false
 	}
-	c.Set("generated_video_seconds", generatedSeconds)
-	c.Set("reference_video_seconds", referenceSeconds)
-	c.Set("billable_video_seconds", billableSeconds)
-	// Only billing uses generated + reference seconds. Upstream payload keeps
-	// req.Duration as the user's generated video duration.
-	return map[string]float64{"seconds": float64(billableSeconds)}
+	contentRaw, ok := metadata["content"]
+	if !ok {
+		return false
+	}
+	contentSlice, ok := contentRaw.([]interface{})
+	if !ok {
+		return false
+	}
+	for _, item := range contentSlice {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if itemMap["type"] == "video_url" {
+			return true
+		}
+		if _, has := itemMap["video_url"]; has {
+			return true
+		}
+	}
+	return false
 }
 
 // BuildRequestBody converts request into Doubao specific format.

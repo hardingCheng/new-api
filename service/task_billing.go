@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -22,9 +24,9 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	if videoBillingMode == ratio_setting.VideoBillingModePerCall {
 		logContent = fmt.Sprintf("%s，按次计费", logContent)
 	} else {
-		if len(info.PriceData.OtherRatios) > 0 {
+		if otherRatios := info.PriceData.OtherRatios(); len(otherRatios) > 0 {
 			var contents []string
-			for key, ra := range info.PriceData.OtherRatios {
+			for key, ra := range otherRatios {
 				if 1.0 != ra {
 					contents = append(contents, fmt.Sprintf("%s: %.2f", key, ra))
 				}
@@ -56,8 +58,8 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	if len(info.ModelQuotaPools) > 0 {
 		other["model_quota_pools"] = info.ModelQuotaPools
 	}
-	if len(info.PriceData.OtherRatios) > 0 {
-		for k, v := range info.PriceData.OtherRatios {
+	if otherRatios := info.PriceData.OtherRatios(); len(otherRatios) > 0 {
+		for k, v := range otherRatios {
 			other[k] = v
 		}
 	}
@@ -70,6 +72,7 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	if billableSeconds := c.GetInt("billable_video_seconds"); billableSeconds > 0 {
 		other["billable_video_seconds"] = billableSeconds
 	}
+	attachQuotaSaturation(c, info, other)
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 		ChannelId: info.ChannelId,
 		ModelName: info.OriginModelName,
@@ -154,8 +157,8 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 		if len(bc.ModelQuotaPools) > 0 {
 			other["model_quota_pools"] = bc.ModelQuotaPools
 		}
-		if len(bc.OtherRatios) > 0 {
-			for k, v := range bc.OtherRatios {
+		if priceData := taskBillingContextPriceData(bc); priceData != nil {
+			for k, v := range priceData.OtherRatios() {
 				other[k] = v
 			}
 		}
@@ -166,6 +169,17 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 		other["upstream_model_name"] = props.UpstreamModelName
 	}
 	return other
+}
+
+func taskBillingContextPriceData(bc *model.TaskBillingContext) *types.PriceData {
+	if bc == nil || len(bc.OtherRatios) == 0 {
+		return nil
+	}
+	priceData := &types.PriceData{}
+	if !priceData.ReplaceOtherRatios(bc.OtherRatios) {
+		return nil
+	}
+	return priceData
 }
 
 // taskModelName 从 BillingContext 或 Properties 中获取模型名称。
@@ -215,7 +229,8 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
 // RecalculateTaskQuota 通用的异步差额结算。
 // actualQuota 是任务完成后的实际应扣额度，与预扣额度 (task.Quota) 做差额结算。
 // reason 用于日志记录（例如 "token重算" 或 "adaptor调整"）。
-func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int, reason string) bool {
+// clamps 可选：若计算 actualQuota 时发生额度饱和，将其记入日志 admin_info（仅管理员可见）。
+func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int, reason string, clamps ...*common.QuotaClamp) bool {
 	if actualQuota <= 0 {
 		return false
 	}
@@ -247,6 +262,9 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 
 	task.Quota = actualQuota
 	AdjustTaskModelQuotaPoolQuota(task, actualQuota)
+	if err := task.UpdateQuota(); err != nil {
+		logger.LogError(ctx, fmt.Sprintf("差额结算回写 quota 失败 task %s: %s", task.TaskID, err.Error()))
+	}
 
 	var logType int
 	var logQuota int
@@ -263,6 +281,9 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	other["task_id"] = task.TaskID
 	other["pre_consumed_quota"] = preConsumedQuota
 	other["actual_quota"] = actualQuota
+	for _, clamp := range clamps {
+		attachQuotaSaturationToOther(other, clamp)
+	}
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 		UserId:    task.UserId,
 		LogType:   logType,
@@ -273,6 +294,7 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		TokenId:   task.PrivateData.TokenId,
 		Group:     task.Group,
 		Other:     other,
+		NodeName:  task.PrivateData.NodeName,
 	})
 	return true
 }
@@ -321,19 +343,15 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 
 	// 计算 OtherRatios 乘积（视频折扣、时长等）
 	otherMultiplier := 1.0
-	if bc := task.PrivateData.BillingContext; bc != nil {
-		for _, r := range bc.OtherRatios {
-			if r != 1.0 && r > 0 {
-				otherMultiplier *= r
-			}
-		}
+	if priceData := taskBillingContextPriceData(task.PrivateData.BillingContext); priceData != nil {
+		otherMultiplier = priceData.OtherRatioMultiplier()
 	}
 
-	// 计算实际应扣费额度: totalTokens * modelRatio * groupRatio * otherMultiplier
-	actualQuota := int(float64(totalTokens) * modelRatio * groupRatio * otherMultiplier)
+	// 计算实际应扣费额度（饱和转换，防止溢出成负数）
+	actualQuota, clamp := common.QuotaFromFloatChecked(float64(totalTokens) * modelRatio * groupRatio * otherMultiplier)
 
 	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f, otherMultiplier=%.4f", totalTokens, modelRatio, groupRatio, otherMultiplier)
-	if RecalculateTaskQuota(ctx, task, actualQuota, reason) {
+	if RecalculateTaskQuota(ctx, task, actualQuota, reason, clamp) {
 		AdjustTaskModelQuotaPoolTokens(task, totalTokens)
 	}
 }

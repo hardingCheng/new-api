@@ -7,6 +7,8 @@ import (
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 
 	"github.com/samber/lo"
 	"gorm.io/gorm"
@@ -103,11 +105,11 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 	return channelQuery, nil
 }
 
-func GetChannel(group string, model string, retry int) (*Channel, error) {
-	return GetChannelWithFilter(group, model, retry, nil)
+func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+	return GetChannelWithFilter(group, model, retry, requestPath, nil)
 }
 
-func GetChannelWithFilter(group string, model string, retry int, allowChannel func(*Channel) bool) (*Channel, error) {
+func GetChannelWithFilter(group string, model string, retry int, requestPath string, allowChannel func(*Channel) bool) (*Channel, error) {
 	var abilities []Ability
 
 	var err error = nil
@@ -115,7 +117,7 @@ func GetChannelWithFilter(group string, model string, retry int, allowChannel fu
 	if err != nil {
 		return nil, err
 	}
-	if common.UsingSQLite || common.UsingPostgreSQL {
+	if common.UsingMainDatabase(common.DatabaseTypeSQLite) || common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
 		err = channelQuery.Order("weight DESC").Find(&abilities).Error
 	} else {
 		err = channelQuery.Order("weight DESC").Find(&abilities).Error
@@ -123,6 +125,7 @@ func GetChannelWithFilter(group string, model string, retry int, allowChannel fu
 	if err != nil {
 		return nil, err
 	}
+	abilities = filterAbilitiesByRequestPath(abilities, requestPath)
 	if len(abilities) == 0 {
 		return nil, nil
 	}
@@ -165,6 +168,52 @@ func GetChannelWithFilter(group string, model string, retry int, allowChannel fu
 		}
 	}
 	return candidates[0].channel, nil
+}
+
+// filterAbilitiesByRequestPath restricts candidates by request path for the DB
+// (non-memory-cache) selection path. Only Advanced Custom (type 58) channels are
+// path-checked: kept only when one of their routes matches requestPath; all other
+// channel types always pass. When requestPath is empty, filtering is skipped.
+func filterAbilitiesByRequestPath(abilities []Ability, requestPath string) []Ability {
+	if requestPath == "" || len(abilities) == 0 {
+		return abilities
+	}
+
+	channelIds := make([]int, 0, len(abilities))
+	seen := make(map[int]struct{}, len(abilities))
+	for _, ability := range abilities {
+		if _, ok := seen[ability.ChannelId]; ok {
+			continue
+		}
+		seen[ability.ChannelId] = struct{}{}
+		channelIds = append(channelIds, ability.ChannelId)
+	}
+
+	var channels []*Channel
+	if err := DB.Where("id IN ?", channelIds).Find(&channels).Error; err != nil {
+		// On error, fall back to unfiltered candidates to avoid blocking selection
+		return abilities
+	}
+
+	advancedConfigs := make(map[int]*dto.AdvancedCustomConfig)
+	for _, channel := range channels {
+		if channel.Type == constant.ChannelTypeAdvancedCustom {
+			advancedConfigs[channel.Id] = channel.GetOtherSettings().AdvancedCustom
+		}
+	}
+
+	filtered := make([]Ability, 0, len(abilities))
+	for _, ability := range abilities {
+		config, isAdvancedCustom := advancedConfigs[ability.ChannelId]
+		if !isAdvancedCustom {
+			filtered = append(filtered, ability)
+			continue
+		}
+		if config != nil && config.SupportsPath(requestPath) {
+			filtered = append(filtered, ability)
+		}
+	}
+	return filtered
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
@@ -316,7 +365,7 @@ func FixAbility() (int, int, error) {
 	defer fixLock.Unlock()
 
 	// truncate abilities table
-	if common.UsingSQLite {
+	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
 		err := DB.Exec("DELETE FROM abilities").Error
 		if err != nil {
 			common.SysLog(fmt.Sprintf("Delete abilities failed: %s", err.Error()))

@@ -122,11 +122,16 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 			if seconds <= 0 {
 				seconds = 4
 			}
-			if info.PriceData.OtherRatios == nil {
-				info.PriceData.OtherRatios = map[string]float64{}
+			// 历史任务数据可能包含未经校验的时长，作为计费乘数前必须钳制
+			if seconds > relaycommon.MaxTaskDurationSeconds {
+				seconds = relaycommon.MaxTaskDurationSeconds
 			}
-			info.PriceData.OtherRatios["seconds"] = float64(seconds)
-			info.PriceData.OtherRatios["size"] = 1
+			sizeStr, _ := taskData["size"].(string)
+			info.PriceData.AddOtherRatio("seconds", float64(seconds))
+			info.PriceData.AddOtherRatio("size", 1)
+			if sizeStr == "1792x1024" || sizeStr == "1024x1792" {
+				info.PriceData.AddOtherRatio("size", 1.666667)
+			}
 		}
 	}
 
@@ -190,39 +195,45 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		}
 	}
 
+	perCallBilling := ratio_setting.IsVideoBillingPerCall(modelName) ||
+		(info.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(modelName))
+
 	// 6. 将 OtherRatios 应用到基础额度；按次计费的视频任务不受 seconds 等倍率影响。
-	if ratio_setting.IsVideoBillingPerSecond(modelName) {
+	if !perCallBilling {
 		genSec := c.GetInt("generated_video_seconds")
 		refSec := c.GetInt("reference_video_seconds")
 		if genSec > 0 || refSec > 0 {
 			// 视频按秒计费：把「生成秒」与「参考秒」拆开分别计价。
 			// basePerSec 是每秒基础额度（已含 group ratio）；参考秒按用户级规则计价。
 			basePerSec := float64(info.PriceData.Quota)
-			sizeRatio := 1.0
-			if s, ok := info.PriceData.OtherRatios["size"]; ok && s > 0 {
-				sizeRatio = s
+			relativeRatio := 1.0
+			for key, ratio := range info.PriceData.OtherRatios() {
+				if key != "seconds" && ratio != 1.0 {
+					relativeRatio *= ratio
+				}
 			}
-			genCost := basePerSec * float64(genSec) * sizeRatio
-			refCost := referenceVideoCost(info.PriceData.VideoRefMode, info.PriceData.VideoRefValue, float64(refSec), basePerSec, sizeRatio, info.PriceData.GroupRatioInfo.GroupRatio, info.PriceData.VideoRefApplyGroupRatio)
-			info.PriceData.Quota = int(genCost + refCost)
+			genCost := basePerSec * float64(genSec) * relativeRatio
+			refCost := referenceVideoCost(info.PriceData.VideoRefMode, info.PriceData.VideoRefValue, float64(refSec), basePerSec, relativeRatio, info.PriceData.GroupRatioInfo.GroupRatio, info.PriceData.VideoRefApplyGroupRatio)
+			quota, clamp := common.QuotaFromFloatChecked(genCost + refCost)
+			info.PriceData.Quota = quota
+			noteTaskQuotaClamp(info, clamp)
 			// 参考固定单价/总价可能在「免费基础模型」上产生正额度，
 			// 必须清掉 FreeModel，否则预扣会被跳过导致漏扣。
 			if info.PriceData.Quota > 0 {
 				info.PriceData.FreeModel = false
 			}
 			// 用「等效秒数」回写 seconds 倍率，便于日志透明与潜在的 token 重算保持一致。
-			if basePerSec > 0 && sizeRatio > 0 {
-				effSec := (genCost + refCost) / basePerSec / sizeRatio
+			if basePerSec > 0 && relativeRatio > 0 {
+				effSec := (genCost + refCost) / basePerSec / relativeRatio
 				info.PriceData.AddOtherRatio("seconds", effSec)
 				c.Set("billable_video_seconds", int(effSec))
 			}
 		} else {
 			// 回退：没有 generated/reference 秒数上下文（如 remix），按 OtherRatios 连乘。
-			for _, ra := range info.PriceData.OtherRatios {
-				if ra != 1.0 {
-					info.PriceData.Quota = int(float64(info.PriceData.Quota) * ra)
-				}
-			}
+			quotaWithRatios := info.PriceData.ApplyOtherRatiosToFloat(float64(info.PriceData.Quota))
+			quota, clamp := common.QuotaFromFloatChecked(quotaWithRatios)
+			info.PriceData.Quota = quota
+			noteTaskQuotaClamp(info, clamp)
 		}
 	}
 
@@ -256,7 +267,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	}
 
 	// 10. 返回 OtherRatios 给下游（header 必须在 DoResponse 写 body 之前设置）
-	otherRatios := info.PriceData.OtherRatios
+	otherRatios := info.PriceData.OtherRatios()
 	if otherRatios == nil {
 		otherRatios = map[string]float64{}
 	}
@@ -272,12 +283,16 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	// 11. 提交后计费调整：让适配器根据上游实际返回调整 OtherRatios
 	finalQuota := info.PriceData.Quota
 	if adjustedRatios := adaptor.AdjustBillingOnSubmit(info, taskData); len(adjustedRatios) > 0 {
-		if ratio_setting.IsVideoBillingPerSecond(modelName) {
-			// 基于调整后的 ratios 重新计算 quota
-			finalQuota = recalcQuotaFromRatios(info.PriceData.Quota, info.PriceData.OtherRatios, adjustedRatios)
-			info.PriceData.Quota = finalQuota
+		if !perCallBilling {
+			if adjustedQuota, ok := recalcQuotaFromRatios(info, adjustedRatios); ok {
+				// 基于调整后的 ratios 重新计算 quota
+				finalQuota = adjustedQuota
+				info.PriceData.ReplaceOtherRatios(adjustedRatios)
+				info.PriceData.Quota = finalQuota
+			}
+		} else {
+			info.PriceData.ReplaceOtherRatios(adjustedRatios)
 		}
-		info.PriceData.OtherRatios = adjustedRatios
 	}
 
 	return &TaskSubmitResult{
@@ -329,22 +344,30 @@ func referenceVideoCost(mode string, value, refSec, basePerSec, sizeRatio, group
 
 // recalcQuotaFromRatios 根据 adjustedRatios 重新计算 quota。
 // 公式: baseQuota × ∏(ratio) — 其中 baseQuota 是不含 OtherRatios 的基础额度。
-func recalcQuotaFromRatios(currentQuota int, oldRatios map[string]float64, newRatios map[string]float64) int {
-	baseQuota := float64(currentQuota)
-	// 先除掉原有的 OtherRatios 恢复基础额度
-	for _, ra := range oldRatios {
-		if ra != 1.0 && ra > 0 {
-			baseQuota = baseQuota / ra
-		}
+func recalcQuotaFromRatios(info *relaycommon.RelayInfo, ratios map[string]float64) (int, bool) {
+	// 从 PriceData 获取不含 OtherRatios 的基础价格
+	baseQuota := info.PriceData.RemoveOtherRatiosFromFloat(float64(info.PriceData.Quota))
+	priceData := info.PriceData
+	if !priceData.ReplaceOtherRatios(ratios) {
+		return 0, false
 	}
 	// 应用新的 ratios
-	result := baseQuota
-	for _, ra := range newRatios {
-		if ra != 1.0 {
-			result *= ra
-		}
+	result := priceData.ApplyOtherRatiosToFloat(baseQuota)
+	quota, clamp := common.QuotaFromFloatChecked(result)
+	noteTaskQuotaClamp(info, clamp)
+	return quota, true
+}
+
+// noteTaskQuotaClamp records the first quota saturation event onto the task's
+// RelayInfo so LogTaskConsumption can surface it on the submit log's
+// admin_info. First non-nil clamp wins.
+func noteTaskQuotaClamp(info *relaycommon.RelayInfo, clamp *common.QuotaClamp) {
+	if clamp == nil || info == nil {
+		return
 	}
-	return int(result)
+	if info.QuotaClamp == nil {
+		info.QuotaClamp = clamp
+	}
 }
 
 var fetchRespBuilders = map[int]func(c *gin.Context) (respBody []byte, taskResp *dto.TaskError){

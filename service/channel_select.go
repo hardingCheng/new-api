@@ -17,6 +17,7 @@ type RetryParam struct {
 	Ctx          *gin.Context
 	TokenGroup   string
 	ModelName    string
+	RequestPath  string
 	Retry        *int
 	resetNextTry bool
 }
@@ -170,7 +171,7 @@ func getRandomSatisfiedChannelByBreaker(param *RetryParam, group string, priorit
 	}
 	var lastErr error
 	for offset := 0; offset < maxAttempts; offset++ {
-		channel, err := model.GetRandomSatisfiedChannelWithFilter(group, param.ModelName, priorityRetry+offset, func(channel *model.Channel) bool {
+		channel, err := model.GetRandomSatisfiedChannelWithFilter(group, param.ModelName, priorityRetry+offset, param.RequestPath, func(channel *model.Channel) bool {
 			allowed := CanUseChannelByBreaker(param.Ctx, typesChannelError(channel))
 			if !allowed {
 				logger.LogWarn(param.Ctx, fmt.Sprintf("channel breaker skipped channel #%d", channel.Id))
