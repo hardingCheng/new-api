@@ -1671,6 +1671,7 @@ func ManageMultiKeys(c *gin.Context) {
 			return
 		}
 
+		service.MarkChannelBreakerQuarantine(channel.Id, channel.GetKeys()[keyIndex], true)
 		model.InitChannelCache()
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -1713,6 +1714,7 @@ func ManageMultiKeys(c *gin.Context) {
 			return
 		}
 
+		service.ClearChannelBreakerQuarantine(channel.Id, channel.GetKeys()[keyIndex], true)
 		model.InitChannelCache()
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -1737,6 +1739,9 @@ func ManageMultiKeys(c *gin.Context) {
 			return
 		}
 
+		for _, key := range channel.GetKeys() {
+			service.ClearChannelBreakerQuarantine(channel.Id, key, true)
+		}
 		model.InitChannelCache()
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -1784,6 +1789,9 @@ func ManageMultiKeys(c *gin.Context) {
 			return
 		}
 
+		for _, key := range channel.GetKeys() {
+			service.MarkChannelBreakerQuarantine(channel.Id, key, true)
+		}
 		model.InitChannelCache()
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,

@@ -239,11 +239,16 @@ func CanUseSelectedChannelKeyByBreaker(c *gin.Context, channel *model.Channel, k
 }
 
 func typesChannelError(channel *model.Channel) types.ChannelError {
+	usingKey := ""
+	if !channel.ChannelInfo.IsMultiKey {
+		usingKey = channel.Key
+	}
 	return types.ChannelError{
 		ChannelId:   channel.Id,
 		ChannelType: channel.Type,
 		ChannelName: channel.Name,
 		IsMultiKey:  channel.ChannelInfo.IsMultiKey,
+		UsingKey:    usingKey,
 		AutoBan:     channel.GetAutoBan(),
 		SkipBreaker: common.IsChannelBreakerExemptChannel(channel.Id),
 	}

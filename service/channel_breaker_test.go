@@ -1,17 +1,23 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,6 +60,23 @@ func TestChannelBreakerSuccessClearsFailures(t *testing.T) {
 	}
 }
 
+func TestChannelBreakerLateSuccessDoesNotCloseOpenState(t *testing.T) {
+	common.SetChannelBreakerEnabled(true)
+	disableRedisForBreakerTest(t)
+	t.Cleanup(func() { common.SetChannelBreakerEnabled(false) })
+
+	c := testBreakerContext("/v1/chat/completions")
+	channelError := types.ChannelError{ChannelId: 1021, UsingKey: "key-a", AutoBan: true}
+	ClearChannelBreaker(channelError)
+
+	for i := 0; i < GetChannelBreakerFailureThreshold(); i++ {
+		RecordChannelBreakerFailure(c, channelError, true)
+	}
+	RecordChannelBreakerSuccess(c, channelError)
+
+	require.False(t, AllowChannelByBreaker(c, channelError))
+}
+
 func TestChannelBreakerSeparatesKeys(t *testing.T) {
 	common.SetChannelBreakerEnabled(true)
 	disableRedisForBreakerTest(t)
@@ -71,6 +94,98 @@ func TestChannelBreakerSeparatesKeys(t *testing.T) {
 
 	require.False(t, AllowChannelByBreaker(c, keyA))
 	require.True(t, AllowChannelByBreaker(c, keyB))
+}
+
+func TestChannelBreakerWholeChannelWhenKeyIsolationDisabled(t *testing.T) {
+	common.SetChannelBreakerEnabled(true)
+	common.SetChannelBreakerRules([]common.ChannelBreakerRule{{
+		Id:             "whole-channel",
+		Name:           "整渠道熔断",
+		Enabled:        true,
+		Scope:          common.ChannelBreakerScopeGlobal,
+		FailureLimit:   1,
+		OnlyKeyBreaker: false,
+	}})
+	disableRedisForBreakerTest(t)
+	t.Cleanup(func() {
+		common.SetChannelBreakerEnabled(false)
+		common.SetChannelBreakerRules(nil)
+	})
+
+	c := testBreakerContext("/v1/chat/completions")
+	keyA := types.ChannelError{ChannelId: 1027, UsingKey: "key-a", AutoBan: true}
+	keyB := types.ChannelError{ChannelId: 1027, UsingKey: "key-b", AutoBan: true}
+	opened, _ := RecordChannelBreakerFailure(c, keyA, true)
+	require.True(t, opened)
+	require.False(t, AllowChannelByBreaker(c, keyB))
+}
+
+func TestChannelBreakerGroupRuleStateIsolation(t *testing.T) {
+	common.SetChannelBreakerEnabled(true)
+	common.SetChannelBreakerRules([]common.ChannelBreakerRule{{
+		Id:             "vip-isolated",
+		Name:           "VIP 独立熔断",
+		Enabled:        true,
+		Scope:          common.ChannelBreakerScopeGroup,
+		Targets:        []string{"vip"},
+		FailureLimit:   1,
+		OnlyKeyBreaker: true,
+	}})
+	disableRedisForBreakerTest(t)
+	t.Cleanup(func() {
+		common.SetChannelBreakerEnabled(false)
+		common.SetChannelBreakerRules(nil)
+	})
+
+	vipCtx := testBreakerContext("/v1/chat/completions")
+	common.SetContextKey(vipCtx, constant.ContextKeyUsingGroup, "vip")
+	defaultCtx := testBreakerContext("/v1/chat/completions")
+	common.SetContextKey(defaultCtx, constant.ContextKeyUsingGroup, "default")
+	channelError := types.ChannelError{ChannelId: 1028, UsingKey: "key-a", AutoBan: true}
+
+	opened, _ := RecordChannelBreakerFailure(vipCtx, channelError, true)
+	require.True(t, opened)
+	require.False(t, AllowChannelByBreaker(vipCtx, channelError))
+	require.True(t, AllowChannelByBreaker(defaultCtx, channelError))
+	ClearChannelBreaker(channelError)
+	require.True(t, AllowChannelByBreaker(vipCtx, channelError))
+}
+
+func TestChannelBreakerModelRuleStateIsolation(t *testing.T) {
+	common.SetChannelBreakerEnabled(true)
+	common.SetChannelBreakerRules([]common.ChannelBreakerRule{{
+		Id:             "video-isolated",
+		Name:           "视频模型独立熔断",
+		Enabled:        true,
+		Scope:          common.ChannelBreakerScopeModel,
+		Targets:        []string{"video-model"},
+		FailureLimit:   1,
+		OnlyKeyBreaker: true,
+	}})
+	disableRedisForBreakerTest(t)
+	t.Cleanup(func() {
+		common.SetChannelBreakerEnabled(false)
+		common.SetChannelBreakerRules(nil)
+	})
+
+	videoCtx := testBreakerContext("/v1/chat/completions")
+	common.SetContextKey(videoCtx, constant.ContextKeyOriginalModel, "video-model")
+	chatCtx := testBreakerContext("/v1/chat/completions")
+	common.SetContextKey(chatCtx, constant.ContextKeyOriginalModel, "chat-model")
+	channelError := types.ChannelError{ChannelId: 1031, UsingKey: "key-a", AutoBan: true}
+
+	opened, _ := RecordChannelBreakerFailure(videoCtx, channelError, true)
+	require.True(t, opened)
+	require.False(t, AllowChannelByBreaker(videoCtx, channelError))
+	require.True(t, AllowChannelByBreaker(chatCtx, channelError))
+}
+
+func TestTypesChannelErrorIncludesSingleChannelKey(t *testing.T) {
+	single := typesChannelError(&model.Channel{Id: 1029, Key: "key-a"})
+	require.Equal(t, "key-a", single.UsingKey)
+
+	multi := typesChannelError(&model.Channel{Id: 1030, Key: "key-a\nkey-b", ChannelInfo: model.ChannelInfo{IsMultiKey: true}})
+	require.Empty(t, multi.UsingKey)
 }
 
 func TestChannelBreakerExcludesVideos(t *testing.T) {
@@ -114,6 +229,220 @@ func TestChannelBreakerHalfOpenRestoresAfterMajoritySuccess(t *testing.T) {
 	}
 
 	require.True(t, AllowChannelByBreaker(c, channelError))
+}
+
+func TestChannelBreakerHalfOpenWaitsForAllProbeResults(t *testing.T) {
+	common.SetChannelBreakerEnabled(true)
+	disableRedisForBreakerTest(t)
+	oldCooldown := channelBreakerCooldown
+	channelBreakerCooldown = time.Millisecond
+	t.Cleanup(func() {
+		common.SetChannelBreakerEnabled(false)
+		channelBreakerCooldown = oldCooldown
+	})
+
+	channelError := types.ChannelError{ChannelId: 1022, UsingKey: "key-a", AutoBan: true}
+	for i := 0; i < GetChannelBreakerFailureThreshold(); i++ {
+		RecordChannelBreakerFailure(testBreakerContext("/v1/chat/completions"), channelError, true)
+	}
+	time.Sleep(2 * time.Millisecond)
+
+	for i := 0; i < common.GetChannelBreakerProbeSuccessCount(); i++ {
+		c := testBreakerContext("/v1/chat/completions")
+		require.True(t, AllowChannelByBreaker(c, channelError))
+		RecordChannelBreakerSuccess(c, channelError)
+	}
+	state, err := readChannelBreakerState(channelBreakerKey(channelError))
+	require.NoError(t, err)
+	require.Equal(t, ChannelBreakerStateHalfOpen, state.State)
+
+	for i := common.GetChannelBreakerProbeSuccessCount(); i < common.GetChannelBreakerProbeCount(); i++ {
+		c := testBreakerContext("/v1/chat/completions")
+		require.True(t, AllowChannelByBreaker(c, channelError))
+		RecordChannelBreakerSuccess(c, channelError)
+	}
+	state, err = readChannelBreakerState(channelBreakerKey(channelError))
+	require.NoError(t, err)
+	require.Nil(t, state)
+}
+
+func TestChannelBreakerHalfOpenNeutralErrorDoesNotCountAsSuccess(t *testing.T) {
+	common.SetChannelBreakerEnabled(true)
+	disableRedisForBreakerTest(t)
+	oldCooldown := channelBreakerCooldown
+	channelBreakerCooldown = time.Millisecond
+	t.Cleanup(func() {
+		common.SetChannelBreakerEnabled(false)
+		channelBreakerCooldown = oldCooldown
+	})
+
+	channelError := types.ChannelError{ChannelId: 1026, UsingKey: "key-a", AutoBan: true}
+	for i := 0; i < GetChannelBreakerFailureThreshold(); i++ {
+		RecordChannelBreakerFailure(testBreakerContext("/v1/chat/completions"), channelError, true)
+	}
+	time.Sleep(2 * time.Millisecond)
+
+	c := testBreakerContext("/v1/chat/completions")
+	require.True(t, AllowChannelByBreaker(c, channelError))
+	RecordChannelBreakerFailure(c, channelError, false)
+
+	state, err := readChannelBreakerState(channelBreakerKey(channelError))
+	require.NoError(t, err)
+	require.Equal(t, ChannelBreakerStateHalfOpen, state.State)
+	require.Zero(t, state.ProbeSuccess)
+	require.Zero(t, state.ProbeTotal)
+	require.Zero(t, state.ProbeInFlight)
+}
+
+func TestChannelBreakerSkipRetryChannelErrorDoesNotTrip(t *testing.T) {
+	common.SetChannelBreakerEnabled(true)
+	t.Cleanup(func() { common.SetChannelBreakerEnabled(false) })
+	c := testBreakerContext("/v1/chat/completions")
+	channelError := types.ChannelError{ChannelId: 1023, UsingKey: "key-a", AutoBan: true}
+	err := types.NewError(errors.New("invalid model mapping"), types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
+
+	require.False(t, ShouldTripChannelBreakerWithRule(c, channelError, err))
+}
+
+func TestInstantDisableTargetKeepsMultiKeyIsolation(t *testing.T) {
+	multiKey := instantDisableTarget(types.ChannelError{ChannelId: 1024, IsMultiKey: true, UsingKey: "key-a"})
+	require.Equal(t, "key-a", multiKey.UsingKey)
+	require.True(t, multiKey.AutoBan)
+	require.Equal(t, ChannelBreakerKeyHash("key-a"), instantDisableKeyHash(multiKey))
+
+	singleKey := instantDisableTarget(types.ChannelError{ChannelId: 1025, UsingKey: "key-a"})
+	require.Empty(t, singleKey.UsingKey)
+	require.True(t, singleKey.AutoBan)
+	require.Empty(t, instantDisableKeyHash(singleKey))
+}
+
+func TestChannelBreakerRedisConcurrentStateTransitions(t *testing.T) {
+	redisURL := os.Getenv("CHANNEL_BREAKER_REDIS_TEST_URL")
+	if redisURL == "" {
+		t.Skip("CHANNEL_BREAKER_REDIS_TEST_URL is not set")
+	}
+	options, err := redis.ParseURL(redisURL)
+	require.NoError(t, err)
+	client := redis.NewClient(options)
+	require.NoError(t, client.Ping(context.Background()).Err())
+	t.Cleanup(func() { _ = client.Close() })
+
+	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
+	oldCooldown := channelBreakerCooldown
+	common.RedisEnabled, common.RDB = true, client
+	common.SetChannelBreakerEnabled(true)
+	channelBreakerCooldown = time.Millisecond
+	t.Cleanup(func() {
+		common.RedisEnabled, common.RDB = oldRedisEnabled, oldRDB
+		common.SetChannelBreakerEnabled(false)
+		channelBreakerCooldown = oldCooldown
+	})
+
+	channelError := types.ChannelError{ChannelId: 91001, UsingKey: "cluster-key", AutoBan: true}
+	ClearChannelBreaker(channelError)
+	var wg sync.WaitGroup
+	for i := 0; i < 64; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			RecordChannelBreakerFailure(testBreakerContext("/v1/chat/completions"), channelError, true)
+		}()
+	}
+	wg.Wait()
+	state, err := readChannelBreakerState(channelBreakerKey(channelError))
+	require.NoError(t, err)
+	require.NotNil(t, state)
+	require.Equal(t, ChannelBreakerStateOpen, state.State)
+	redisNow, err := client.Time(context.Background()).Result()
+	require.NoError(t, err)
+	require.WithinDuration(t, redisNow, state.OpenedAt, time.Second)
+
+	time.Sleep(2 * time.Millisecond)
+	var allowed atomic.Int64
+	for i := 0; i < 64; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if AcquireChannelBreakerProbe(testBreakerContext("/v1/chat/completions"), channelError) {
+				allowed.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	require.Equal(t, int64(common.GetChannelBreakerProbeCount()), allowed.Load())
+	ClearChannelBreaker(channelError)
+
+	quarantined := types.ChannelError{ChannelId: 91002, UsingKey: "key-a", IsMultiKey: true, AutoBan: true}
+	otherKey := types.ChannelError{ChannelId: 91002, UsingKey: "key-b", IsMultiKey: true, AutoBan: true}
+	MarkChannelBreakerQuarantine(quarantined.ChannelId, quarantined.UsingKey, true)
+	require.False(t, CanUseChannelByBreaker(testBreakerContext("/v1/chat/completions"), quarantined))
+	require.True(t, CanUseChannelByBreaker(testBreakerContext("/v1/chat/completions"), otherKey))
+	ClearChannelBreakerQuarantine(quarantined.ChannelId, quarantined.UsingKey, true)
+	require.True(t, CanUseChannelByBreaker(testBreakerContext("/v1/chat/completions"), quarantined))
+
+	channelDisableNotifyMemory.Delete(91002)
+	require.NoError(t, client.Del(context.Background(), "channel_disable_notify:91002").Err())
+	var notifications atomic.Int64
+	for i := 0; i < 64; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if allowChannelDisableNotify(91002, 60) {
+				notifications.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	require.Equal(t, int64(1), notifications.Load())
+	require.NoError(t, client.Del(context.Background(), "channel_disable_notify:91002").Err())
+}
+
+func TestChannelBreakerRedisUnavailableFailsOpen(t *testing.T) {
+	client := redis.NewClient(&redis.Options{
+		Addr:         "127.0.0.1:1",
+		DialTimeout:  10 * time.Millisecond,
+		ReadTimeout:  10 * time.Millisecond,
+		WriteTimeout: 10 * time.Millisecond,
+		MaxRetries:   0,
+	})
+	t.Cleanup(func() { _ = client.Close() })
+
+	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
+	common.RedisEnabled, common.RDB = true, client
+	common.SetChannelBreakerEnabled(true)
+	t.Cleanup(func() {
+		common.RedisEnabled, common.RDB = oldRedisEnabled, oldRDB
+		common.SetChannelBreakerEnabled(false)
+	})
+
+	c := testBreakerContext("/v1/chat/completions")
+	channelError := types.ChannelError{ChannelId: 91003, UsingKey: "key-a", AutoBan: true}
+	require.True(t, CanUseChannelByBreaker(c, channelError))
+	require.True(t, AcquireChannelBreakerProbe(c, channelError))
+	opened, message := RecordChannelBreakerFailure(c, channelError, true)
+	require.False(t, opened)
+	require.Empty(t, message)
+}
+
+func TestChannelBreakerQuarantineKeyScope(t *testing.T) {
+	multiKey := types.ChannelError{ChannelId: 91004, UsingKey: "key-a", IsMultiKey: true}
+	require.Equal(t, "channel_breaker_quarantine:91004:"+ChannelBreakerKeyHash("key-a"), channelBreakerQuarantineKey(multiKey))
+	require.Empty(t, channelBreakerQuarantineKey(types.ChannelError{ChannelId: 91004, IsMultiKey: true}))
+	require.Equal(t, "channel_breaker_quarantine:91004", channelBreakerQuarantineKey(types.ChannelError{ChannelId: 91004}))
+	require.GreaterOrEqual(t, channelBreakerQuarantineTTL(), 130*time.Second)
+}
+
+func TestChannelDisableNotificationLocalDeduplication(t *testing.T) {
+	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
+	common.RedisEnabled, common.RDB = false, nil
+	channelDisableNotifyMemory.Delete(91005)
+	t.Cleanup(func() {
+		channelDisableNotifyMemory.Delete(91005)
+		common.RedisEnabled, common.RDB = oldRedisEnabled, oldRDB
+	})
+
+	require.True(t, allowChannelDisableNotify(91005, 60))
+	require.False(t, allowChannelDisableNotify(91005, 60))
 }
 
 func TestChannelBreakerHalfOpenRestoresWithMixedMajoritySuccess(t *testing.T) {
@@ -316,7 +645,10 @@ func TestChannelBreakerProbeUsesStateRuleAfterConfigChange(t *testing.T) {
 
 	opened, _ := RecordChannelBreakerFailure(c, channelError, true)
 	require.True(t, opened)
-	setBreakerOpenedAtForTest(channelBreakerKey(channelError), time.Now().Add(-2*time.Second))
+	rule := resolveChannelBreakerRule(c, channelError)
+	normalized, ok := normalizeChannelBreakerTarget(channelError, rule)
+	require.True(t, ok)
+	setBreakerOpenedAtForTest(channelBreakerStateKey(c, normalized, rule), time.Now().Add(-2*time.Second))
 
 	common.SetChannelBreakerRules([]common.ChannelBreakerRule{
 		{

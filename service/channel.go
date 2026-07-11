@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -124,6 +125,14 @@ func allowChannelDisableNotify(channelId int, cooldownSecond int) bool {
 	if cooldownSecond <= 0 {
 		return true
 	}
+	if channelBreakerRedisEnabled() {
+		key := fmt.Sprintf("channel_disable_notify:%d", channelId)
+		allowed, err := common.RDB.SetNX(context.Background(), key, "1", time.Duration(cooldownSecond)*time.Second).Result()
+		if err == nil {
+			return allowed
+		}
+		common.SysError(fmt.Sprintf("failed to deduplicate channel disable notification for channel %d: %s", channelId, err.Error()))
+	}
 	now := time.Now()
 	cooldown := time.Duration(cooldownSecond) * time.Second
 	if last, ok := channelDisableNotifyMemory.Load(channelId); ok {
@@ -148,6 +157,7 @@ func buildChannelDisabledBarkBody(channelError types.ChannelError, reason string
 func EnableChannel(channelId int, usingKey string, channelName string) {
 	success := model.UpdateChannelStatus(channelId, usingKey, common.ChannelStatusEnabled, "")
 	if success {
+		ClearChannelBreakerQuarantine(channelId, usingKey, usingKey != "")
 		ClearChannelBreaker(types.ChannelError{ChannelId: channelId, UsingKey: usingKey})
 		subject := fmt.Sprintf("通道「%s」（#%d）已被启用", channelName, channelId)
 		content := fmt.Sprintf("通道「%s」（#%d）已被启用", channelName, channelId)

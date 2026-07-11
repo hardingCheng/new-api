@@ -86,7 +86,7 @@ export const DEFAULT_BREAKER_RULE: BreakerRule = {
     'rate limit\ntemporarily unavailable\noverloaded\nserver error',
   exclude_paths: '/v1/videos',
   disable_breaker: false,
-  only_key_breaker: false,
+  only_key_breaker: true,
   ignore_client_error_4xx: false,
   instant_disable_enabled: false,
   instant_disable_status_codes: '',
