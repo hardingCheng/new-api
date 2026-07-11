@@ -27,6 +27,7 @@ import { CacheStatsDialog } from '@/features/system-settings/general/channel-aff
 import { useSidebarConfig } from '@/hooks/use-sidebar-config'
 
 import { UserInfoDialog } from './components/dialogs/user-info-dialog'
+import { ModelQuotaPoolSummary } from './components/model-quota-pool-summary'
 import {
   UsageLogsProvider,
   useUsageLogsContext,
@@ -129,6 +130,7 @@ function UsageLogsContent() {
                 </TabsList>
               </Tabs>
             )}
+            {activeCategory === 'task' ? <ModelQuotaPoolSummary /> : null}
             <div className='min-h-0 flex-1'>
               <UsageLogsTable logCategory={activeCategory} />
             </div>

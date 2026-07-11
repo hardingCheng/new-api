@@ -433,8 +433,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
     !!other?.expr_b64
   const hasAudioTokens = other?.ws || other?.audio
   const showTiming = isTimingLogType(props.log.type)
-  const showAdminIp =
-    !!props.log.ip && (showTiming || (props.isAdmin && isTopup))
+  const showIp = !!props.log.ip && props.log.type !== 7
   const adminInfo = other?.admin_info
   const topupAuditFields =
     isTopup && props.isAdmin && adminInfo
@@ -541,6 +540,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const useChannel = other?.admin_info?.use_channel
   const channelChain =
     useChannel && useChannel.length > 0 ? useChannel.join(' → ') : undefined
+  let videoBillingModeLabel = other?.video_billing_mode || ''
+  if (other?.video_billing_mode === 'per_call') {
+    videoBillingModeLabel = t('Per call')
+  } else if (other?.video_billing_mode === 'per_second') {
+    videoBillingModeLabel = t('Per second')
+  }
 
   return (
     <Dialog
@@ -618,7 +623,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
             />
           )}
 
-          {showAdminIp && (
+          {showIp && (
             <DetailRow
               label={t('IP Address')}
               value={
@@ -749,6 +754,51 @@ export function DetailsDialog(props: DetailsDialogProps) {
             <p className='text-xs wrap-break-word'>{other.reject_reason}</p>
           </DetailSection>
         )}
+
+        {props.isAdmin && isConsume && other?.video_billing_mode && (
+          <DetailRow
+            label={t('Video Billing Mode')}
+            value={videoBillingModeLabel}
+          />
+        )}
+
+        {props.isAdmin &&
+          isConsume &&
+          Array.isArray(other?.user_pricing_overrides) &&
+          other.user_pricing_overrides.length > 0 && (
+            <DetailSection label={t('User Pricing Override')}>
+              {other.user_pricing_overrides.map((match, index) => {
+                const rule = match.rule ?? {}
+                let type = t('Ratio')
+                if (rule.type === 'model_price') type = t('Fixed Price')
+                else if (rule.type === 'model_ratio') type = t('Model Ratio')
+                return (
+                  <DetailRow
+                    key={`${rule.user_id ?? ''}-${rule.group_pattern ?? ''}-${rule.model_pattern ?? ''}-${rule.type ?? 'unknown'}`}
+                    label={`${t('Rule')} ${index + 1}`}
+                    value={`${t('Group')}: ${rule.group_pattern || t('All Groups')} / ${t('Model')}: ${rule.model_pattern || t('All Models')} / ${type}: ${rule.value ?? '-'}`}
+                    mono
+                  />
+                )
+              })}
+            </DetailSection>
+          )}
+
+        {props.isAdmin &&
+          isConsume &&
+          Array.isArray(other?.model_quota_pools) &&
+          other.model_quota_pools.length > 0 && (
+            <DetailSection label={t('Model Quota Pool')}>
+              {other.model_quota_pools.map((pool) => (
+                <DetailRow
+                  key={`${pool.rule?.id || pool.rule?.model || 'unknown'}-${pool.scope || ''}-${pool.period_key || ''}`}
+                  label={pool.scope === 'user' ? t('User') : t('Global')}
+                  value={`${pool.rule?.model || '-'} / ${pool.period_key || '-'}: ${pool.used_after ?? '-'} / ${pool.limit ?? '-'}, ${t('Remaining')} ${pool.remaining ?? '-'}`}
+                  mono
+                />
+              ))}
+            </DetailSection>
+          )}
 
         {/* Violation fee info */}
         {isViolation && other && (
@@ -958,20 +1008,22 @@ export function DetailsDialog(props: DetailsDialogProps) {
         )}
 
         {/* Model mapping */}
-        {other?.is_model_mapped && other?.upstream_model_name && (
-          <DetailSection label={t('Model Mapping')}>
-            <DetailRow
-              label={t('Request Model')}
-              value={props.log.model_name}
-              mono
-            />
-            <DetailRow
-              label={t('Actual Model')}
-              value={other.upstream_model_name}
-              mono
-            />
-          </DetailSection>
-        )}
+        {props.isAdmin &&
+          other?.is_model_mapped &&
+          other?.upstream_model_name && (
+            <DetailSection label={t('Model Mapping')}>
+              <DetailRow
+                label={t('Request Model')}
+                value={props.log.model_name}
+                mono
+              />
+              <DetailRow
+                label={t('Actual Model')}
+                value={other.upstream_model_name}
+                mono
+              />
+            </DetailSection>
+          )}
 
         {/* Token breakdown (for consume/error types with token data) */}
         {isDisplayableType(props.log.type) && other && (

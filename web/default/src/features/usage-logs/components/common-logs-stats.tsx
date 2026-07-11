@@ -34,12 +34,14 @@ const route = getRouteApi('/_authenticated/usage-logs/$section')
 
 function StatBadge(props: {
   label: string
-  tone: 'usage' | 'rpm' | 'tpm'
+  tone: 'usage' | 'refund' | 'rpm' | 'tpm'
   value: string | number
 }) {
   let labelClassName = 'text-foreground'
   if (props.tone === 'usage') {
     labelClassName = 'text-status-info'
+  } else if (props.tone === 'refund') {
+    labelClassName = 'text-status-success'
   } else if (props.tone === 'rpm') {
     labelClassName = 'text-metric-rpm'
   }
@@ -86,6 +88,7 @@ export function CommonLogsStats() {
     return (
       <div className='flex items-center gap-2'>
         <Skeleton className='h-7 w-[150px] rounded-md' />
+        <Skeleton className='h-7 w-[150px] rounded-md' />
         <Skeleton className='h-7 w-[100px] rounded-md' />
         <Skeleton className='h-7 w-[120px] rounded-md' />
       </div>
@@ -98,6 +101,13 @@ export function CommonLogsStats() {
         label={t('Usage')}
         tone='usage'
         value={sensitiveVisible ? formatLogQuota(stats?.quota || 0) : '••••'}
+      />
+      <StatBadge
+        label={t('Refund')}
+        tone='refund'
+        value={
+          sensitiveVisible ? formatLogQuota(stats?.refund_quota || 0) : '••••'
+        }
       />
       <StatBadge label={t('RPM')} tone='rpm' value={stats?.rpm || 0} />
       <StatBadge label={t('TPM')} tone='tpm' value={stats?.tpm || 0} />

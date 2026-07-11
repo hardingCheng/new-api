@@ -25,6 +25,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/design-system/button'
+import { Combobox } from '@/components/design-system/combobox'
 import { Input } from '@/components/design-system/input'
 import {
   Select,
@@ -359,31 +360,24 @@ export function UsersMutateDrawer({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>{t('Group')}</FormLabel>
-                        <Select
-                          items={[
-                            ...groups.map((group) => ({
+                        <FormControl>
+                          <Combobox
+                            options={groups.map((group) => ({
                               value: group,
                               label: group,
-                            })),
-                          ]}
-                          onValueChange={field.onChange}
-                          value={field.value}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder={t('Select a group')} />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent alignItemWithTrigger={false}>
-                            <SelectGroup>
-                              {groups.map((group) => (
-                                <SelectItem key={group} value={group}>
-                                  {group}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
+                            }))}
+                            onValueChange={(value) =>
+                              field.onChange(value ?? '')
+                            }
+                            placeholder={t('Select a group')}
+                            emptyText={t('No matching groups')}
+                            allowCustomValue
+                            openOnFocus
+                            className='w-full'
+                            id={field.name}
+                            value={field.value}
+                          />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}

@@ -16,11 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQueryClient, useIsFetching } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { useNavigate, getRouteApi } from '@tanstack/react-router'
 import type { Table } from '@tanstack/react-table'
 import { Eye, EyeOff } from 'lucide-react'
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useDeferredValue, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/design-system/button'
@@ -32,11 +32,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/design-system/select'
+import { MultiSelect } from '@/components/multi-select'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { searchUsers } from '@/features/users/api'
 import { useIsAdmin } from '@/hooks/use-admin'
 
 import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
@@ -51,6 +53,7 @@ import {
   LogsFilterToolbar,
 } from './logs-filter-toolbar'
 import { useUsageLogsContext } from './usage-logs-provider'
+import { UsageLogsStatSheet } from './usage-logs-stat-sheet'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
 
@@ -86,6 +89,7 @@ function buildSearchSourceKey(values: {
   token?: unknown
   group?: unknown
   username?: unknown
+  usernames?: unknown
   requestId?: unknown
   upstreamRequestId?: unknown
   type?: unknown
@@ -98,6 +102,7 @@ function buildSearchSourceKey(values: {
     values.token,
     values.group,
     values.username,
+    values.usernames,
     values.requestId,
     values.upstreamRequestId,
     Array.isArray(values.type) ? values.type.join(',') : values.type,
@@ -131,6 +136,7 @@ export function CommonLogsFilterBar<TData>(
       token: searchParams.token,
       group: searchParams.group,
       username: searchParams.username,
+      usernames: searchParams.usernames,
       requestId: searchParams.requestId,
       upstreamRequestId: searchParams.upstreamRequestId,
       type: searchParams.type,
@@ -145,6 +151,9 @@ export function CommonLogsFilterBar<TData>(
       token: searchParams.token || undefined,
       group: searchParams.group || undefined,
       username: searchParams.username || undefined,
+      usernames: searchParams.usernames
+        ? searchParams.usernames.split(',').filter(Boolean)
+        : undefined,
       requestId: searchParams.requestId || undefined,
       upstreamRequestId: searchParams.upstreamRequestId || undefined,
     }
@@ -161,18 +170,37 @@ export function CommonLogsFilterBar<TData>(
     searchParams.token,
     searchParams.group,
     searchParams.username,
+    searchParams.usernames,
     searchParams.requestId,
     searchParams.upstreamRequestId,
     searchParams.type,
   ])
   const [draft, setDraft] = useState<CommonLogDraft>(() => searchState)
+  const [usernameSearch, setUsernameSearch] = useState('')
+  const deferredUsernameSearch = useDeferredValue(usernameSearch.trim())
+  const { data: usernameSearchResult, isFetching: isSearchingUsers } = useQuery(
+    {
+      queryKey: ['usage-logs-user-search', deferredUsernameSearch],
+      queryFn: () =>
+        searchUsers({
+          keyword: deferredUsernameSearch,
+          p: 1,
+          page_size: 20,
+        }),
+      enabled: isAdmin && deferredUsernameSearch.length > 0,
+      staleTime: 30_000,
+    }
+  )
   const activeDraft =
     draft.sourceKey === searchState.sourceKey ? draft : searchState
   const filters = activeDraft.filters
   const logType = activeDraft.logType
 
   const handleChange = useCallback(
-    (field: keyof CommonLogFilters, value: Date | string | undefined) => {
+    (
+      field: keyof CommonLogFilters,
+      value: Date | string | string[] | undefined
+    ) => {
       setDraft((current) => {
         const base =
           current.sourceKey === searchState.sourceKey ? current : searchState
@@ -237,6 +265,7 @@ export function CommonLogsFilterBar<TData>(
   const hasExpandedFilters =
     !!filters.token ||
     !!filters.username ||
+    !!filters.usernames?.length ||
     !!filters.channel ||
     !!filters.requestId ||
     !!filters.upstreamRequestId
@@ -247,7 +276,7 @@ export function CommonLogsFilterBar<TData>(
 
   const expandedFilterCount = [
     filters.token,
-    isAdmin ? filters.username : undefined,
+    isAdmin ? filters.username || filters.usernames?.length : undefined,
     isAdmin ? filters.channel : undefined,
     filters.requestId,
     filters.upstreamRequestId,
@@ -288,6 +317,12 @@ export function CommonLogsFilterBar<TData>(
         {sensitiveVisible ? t('Hide') : t('Show')}
       </TooltipContent>
     </Tooltip>
+  )
+  const toolbarActions = (
+    <div className='flex items-center gap-1'>
+      {isAdmin && <UsageLogsStatSheet />}
+      {sensitiveToggle}
+    </div>
   )
 
   const dateRangeFilter = (
@@ -376,8 +411,40 @@ export function CommonLogsFilterBar<TData>(
             placeholder={t('Username')}
             type={sensitiveType}
             value={filters.username || ''}
-            onChange={(e) => handleChange('username', e.target.value)}
+            onChange={(e) => {
+              handleChange('username', e.target.value)
+              if (filters.usernames?.length) {
+                handleChange('usernames', undefined)
+              }
+            }}
             onKeyDown={handleKeyDown}
+          />
+        </LogsFilterField>
+      )}
+      {isAdmin && (
+        <LogsFilterField wide>
+          <MultiSelect
+            options={(usernameSearchResult?.data?.items ?? []).map((user) => ({
+              value: user.username,
+              label: user.username,
+            }))}
+            selected={filters.usernames ?? []}
+            onChange={(usernames) => {
+              handleChange(
+                'usernames',
+                usernames.length ? usernames : undefined
+              )
+              if (usernames.length && filters.username) {
+                handleChange('username', undefined)
+              }
+            }}
+            onSearchChange={setUsernameSearch}
+            placeholder={t('Select users')}
+            emptyText={
+              isSearchingUsers ? t('Searching...') : t('No matching users')
+            }
+            maxVisibleChips={1}
+            className='min-h-8 py-0 text-sm'
           />
         </LogsFilterField>
       )}
@@ -414,7 +481,7 @@ export function CommonLogsFilterBar<TData>(
     <LogsFilterToolbar
       table={props.table}
       stats={statsBar}
-      actionStart={sensitiveToggle}
+      actionStart={toolbarActions}
       primaryFilters={
         <>
           {dateRangeFilter}

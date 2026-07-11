@@ -153,13 +153,17 @@ export function getResponseTimeColor(
 /**
  * Format model name with mapping indicator
  */
-export function formatModelName(log: UsageLog): {
+export function formatModelName(
+  log: UsageLog,
+  isAdmin: boolean
+): {
   name: string
   isMapped: boolean
   actualModel?: string
 } {
   const other = parseLogOther(log.other)
   const isMapped = !!(
+    isAdmin &&
     other?.is_model_mapped &&
     other?.upstream_model_name &&
     other.upstream_model_name !== ''

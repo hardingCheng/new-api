@@ -20,6 +20,8 @@ import { Route as PricingIndexRouteImport } from './routes/pricing/index'
 import { Route as AboutIndexRouteImport } from './routes/about/index'
 import { Route as OauthProviderRouteImport } from './routes/oauth/$provider'
 import { Route as ConsoleTopupRouteImport } from './routes/console/topup'
+import { Route as ConsoleTaskRouteImport } from './routes/console/task'
+import { Route as ConsoleSettingRouteImport } from './routes/console/setting'
 import { Route as ConsoleLogRouteImport } from './routes/console/log'
 import { Route as AuthenticatedChat2linkRouteImport } from './routes/_authenticated/chat2link'
 import { Route as errors503RouteImport } from './routes/(errors)/503'
@@ -121,6 +123,16 @@ const OauthProviderRoute = OauthProviderRouteImport.update({
 const ConsoleTopupRoute = ConsoleTopupRouteImport.update({
   id: '/console/topup',
   path: '/console/topup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConsoleTaskRoute = ConsoleTaskRouteImport.update({
+  id: '/console/task',
+  path: '/console/task',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConsoleSettingRoute = ConsoleSettingRouteImport.update({
+  id: '/console/setting',
+  path: '/console/setting',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConsoleLogRoute = ConsoleLogRouteImport.update({
@@ -418,6 +430,8 @@ export interface FileRoutesByFullPath {
   '/503': typeof errors503Route
   '/chat2link': typeof AuthenticatedChat2linkRoute
   '/console/log': typeof ConsoleLogRoute
+  '/console/setting': typeof ConsoleSettingRoute
+  '/console/task': typeof ConsoleTaskRoute
   '/console/topup': typeof ConsoleTopupRoute
   '/oauth/$provider': typeof OauthProviderRoute
   '/about/': typeof AboutIndexRoute
@@ -477,6 +491,8 @@ export interface FileRoutesByTo {
   '/503': typeof errors503Route
   '/chat2link': typeof AuthenticatedChat2linkRoute
   '/console/log': typeof ConsoleLogRoute
+  '/console/setting': typeof ConsoleSettingRoute
+  '/console/task': typeof ConsoleTaskRoute
   '/console/topup': typeof ConsoleTopupRoute
   '/oauth/$provider': typeof OauthProviderRoute
   '/about': typeof AboutIndexRoute
@@ -540,6 +556,8 @@ export interface FileRoutesById {
   '/(errors)/503': typeof errors503Route
   '/_authenticated/chat2link': typeof AuthenticatedChat2linkRoute
   '/console/log': typeof ConsoleLogRoute
+  '/console/setting': typeof ConsoleSettingRoute
+  '/console/task': typeof ConsoleTaskRoute
   '/console/topup': typeof ConsoleTopupRoute
   '/oauth/$provider': typeof OauthProviderRoute
   '/about/': typeof AboutIndexRoute
@@ -602,6 +620,8 @@ export interface FileRouteTypes {
     | '/503'
     | '/chat2link'
     | '/console/log'
+    | '/console/setting'
+    | '/console/task'
     | '/console/topup'
     | '/oauth/$provider'
     | '/about/'
@@ -661,6 +681,8 @@ export interface FileRouteTypes {
     | '/503'
     | '/chat2link'
     | '/console/log'
+    | '/console/setting'
+    | '/console/task'
     | '/console/topup'
     | '/oauth/$provider'
     | '/about'
@@ -723,6 +745,8 @@ export interface FileRouteTypes {
     | '/(errors)/503'
     | '/_authenticated/chat2link'
     | '/console/log'
+    | '/console/setting'
+    | '/console/task'
     | '/console/topup'
     | '/oauth/$provider'
     | '/about/'
@@ -777,6 +801,8 @@ export interface RootRouteChildren {
   errors500Route: typeof errors500Route
   errors503Route: typeof errors503Route
   ConsoleLogRoute: typeof ConsoleLogRoute
+  ConsoleSettingRoute: typeof ConsoleSettingRoute
+  ConsoleTaskRoute: typeof ConsoleTaskRoute
   ConsoleTopupRoute: typeof ConsoleTopupRoute
   OauthProviderRoute: typeof OauthProviderRoute
   AboutIndexRoute: typeof AboutIndexRoute
@@ -863,6 +889,20 @@ declare module '@tanstack/react-router' {
       path: '/console/topup'
       fullPath: '/console/topup'
       preLoaderRoute: typeof ConsoleTopupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/console/task': {
+      id: '/console/task'
+      path: '/console/task'
+      fullPath: '/console/task'
+      preLoaderRoute: typeof ConsoleTaskRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/console/setting': {
+      id: '/console/setting'
+      path: '/console/setting'
+      fullPath: '/console/setting'
+      preLoaderRoute: typeof ConsoleSettingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/console/log': {
@@ -1355,6 +1395,8 @@ const rootRouteChildren: RootRouteChildren = {
   errors500Route: errors500Route,
   errors503Route: errors503Route,
   ConsoleLogRoute: ConsoleLogRoute,
+  ConsoleSettingRoute: ConsoleSettingRoute,
+  ConsoleTaskRoute: ConsoleTaskRoute,
   ConsoleTopupRoute: ConsoleTopupRoute,
   OauthProviderRoute: OauthProviderRoute,
   AboutIndexRoute: AboutIndexRoute,

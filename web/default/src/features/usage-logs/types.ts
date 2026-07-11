@@ -51,6 +51,7 @@ export interface CommonLogFilters extends CommonFilters {
   token?: string
   group?: string
   username?: string
+  usernames?: string[]
   requestId?: string
   upstreamRequestId?: string
 }
@@ -174,6 +175,7 @@ export interface LogOtherData {
   matched_tier?: string
   reasoning_effort?: string
   image?: boolean
+  image_size?: string
   image_ratio?: number
   image_output?: number
   web_search?: boolean
@@ -209,6 +211,9 @@ export interface LogOtherData {
   is_task?: boolean
   task_id?: string
   reason?: string
+  video_billing_mode?: 'per_second' | 'per_call' | string
+  user_pricing_overrides?: UserPricingOverrideMatch[]
+  model_quota_pools?: ModelQuotaPoolMatch[]
   // Subscription billing fields
   subscription_plan_id?: string
   subscription_plan_title?: string
@@ -225,8 +230,34 @@ export interface LogOtherData {
  */
 export interface LogStatistics {
   quota: number
+  refund_quota: number
   rpm: number
   tpm: number
+}
+
+export interface UserPricingOverrideMatch {
+  rule?: {
+    user_id?: number
+    username?: string
+    group_pattern?: string
+    model_pattern?: string
+    type?: string
+    value?: number
+  }
+  description?: string
+}
+
+export interface ModelQuotaPoolMatch {
+  rule?: {
+    id?: string
+    model?: string
+  }
+  scope?: string
+  metric?: string
+  period_key?: string
+  limit?: number
+  used_after?: number
+  remaining?: number
 }
 
 // ============================================================================
@@ -297,6 +328,7 @@ export interface GetLogsParams {
   page_size?: number
   type?: number
   username?: string
+  usernames?: string
   token_name?: string
   model_name?: string
   start_timestamp?: number
@@ -321,6 +353,7 @@ export interface GetLogsResponse {
 export interface GetLogStatsParams {
   type?: number
   username?: string
+  usernames?: string
   token_name?: string
   model_name?: string
   start_timestamp?: number
@@ -335,6 +368,30 @@ export interface GetLogStatsResponse {
   success: boolean
   message?: string
   data?: LogStatistics
+}
+
+export type LogStatDimension = 'channel' | 'model' | 'user'
+
+export interface LogStatBreakdownRow {
+  channel_id?: number
+  name?: string
+  consume_quota: number
+  refund_quota: number
+  count: number
+}
+
+export interface GetLogStatBreakdownParams extends GetLogStatsParams {
+  dimension: LogStatDimension
+}
+
+export interface GetLogStatBreakdownResponse {
+  success: boolean
+  message?: string
+  data?: {
+    rows: LogStatBreakdownRow[]
+    total_consume: number
+    total_refund: number
+  }
 }
 
 // ============================================================================

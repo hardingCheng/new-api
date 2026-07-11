@@ -25,6 +25,9 @@ import { PaymentSettingsSection } from '../integrations/payment-settings-section
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { ModelQuotaPoolSection } from './model-quota-pool-section'
+import { UserPricingOverrideSection } from './user-pricing-override-section'
+import { VideoBillingModeSection } from './video-billing-mode-section'
 
 const getModelDefaults = (settings: BillingSettings) => ({
   ModelPrice: settings.ModelPrice,
@@ -125,6 +128,27 @@ const BILLING_SECTIONS = [
         toolPricesDefault={settings['tool_price_setting.prices']}
         visibleTabs={['groups']}
       />
+    ),
+  },
+  {
+    id: 'video-billing-mode',
+    titleKey: 'Video Billing Mode',
+    build: (settings: BillingSettings) => (
+      <VideoBillingModeSection defaultValue={settings.VideoBillingMode} />
+    ),
+  },
+  {
+    id: 'model-quota-pool',
+    titleKey: 'Model Quota Pools',
+    build: (settings: BillingSettings) => (
+      <ModelQuotaPoolSection defaultValue={settings.ModelQuotaPool} />
+    ),
+  },
+  {
+    id: 'user-pricing-override',
+    titleKey: 'User Pricing Overrides',
+    build: (settings: BillingSettings) => (
+      <UserPricingOverrideSection defaultValue={settings.UserPricingOverride} />
     ),
   },
   {

@@ -25,6 +25,7 @@ import { PerformanceSection } from '../maintenance/performance-section'
 import { UpdateCheckerSection } from '../maintenance/update-checker-section'
 import type { OperationsSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { ChannelBreakerSection } from './channel-breaker-section'
 
 const OPERATIONS_SECTIONS = [
   {
@@ -57,6 +58,13 @@ const OPERATIONS_SECTIONS = [
             settings['perf_metrics_setting.retention_days'] ?? 0,
         }}
       />
+    ),
+  },
+  {
+    id: 'channel-breaker',
+    titleKey: 'Channel Circuit Breaker',
+    build: (settings: OperationsSettings) => (
+      <ChannelBreakerSection defaultValues={settings} />
     ),
   },
   {

@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { ColumnDef } from '@tanstack/react-table'
+import { Pin } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { BadgeCell } from '@/components/data-table'
@@ -105,10 +106,20 @@ export function useUsersColumns(): ColumnDef<User>[] {
         const username = row.getValue('username') as string
         const displayName = row.original.display_name
         const remark = row.original.remark
+        const isPinned = row.original.pinned > 0
 
         return (
           <div className='flex min-w-0 flex-col gap-1 sm:min-w-[160px]'>
             <div className='flex flex-wrap items-center gap-2'>
+              {isPinned && (
+                <span className='inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300'>
+                  <Pin
+                    className='size-2.5 fill-current'
+                    strokeWidth={2.4}
+                    aria-hidden='true'
+                  />
+                </span>
+              )}
               <LongText className='max-w-full font-medium sm:max-w-[140px]'>
                 {username}
               </LongText>

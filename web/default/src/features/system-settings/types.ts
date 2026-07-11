@@ -328,6 +328,9 @@ export type BillingSettings = {
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number
+  VideoBillingMode: string
+  ModelQuotaPool: string
+  UserPricingOverride: string
 }
 
 export type OperationsSettings = {
@@ -360,6 +363,29 @@ export type OperationsSettings = {
   'perf_metrics_setting.flush_interval': number
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
+  ChannelBreakerEnabled: boolean
+  ChannelBreakerFailureLimit: string
+  ChannelBreakerCooldownSeconds: string
+  ChannelBreakerProbeCount: string
+  ChannelBreakerProbeSuccessCount: string
+  ChannelBreakerExcludePaths: string
+  ChannelBreakerFailureStatusCodes: string
+  ChannelBreakerRules: string
+  ChannelBreakerExemptChannels: string
+  AutomaticDisableKeywords: string
+  'monitor_setting.bark_alert_enabled': boolean
+  'monitor_setting.bark_alert_url': string
+  'monitor_setting.bark_alert_volume': number
+  'monitor_setting.low_balance_alert_enabled': boolean
+  'monitor_setting.low_balance_threshold_cny': number
+  'monitor_setting.low_balance_alert_sound': string
+  'monitor_setting.channel_breaker_alert_enabled': boolean
+  'monitor_setting.channel_breaker_alert_sound': string
+  'monitor_setting.channel_disable_alert_enabled': boolean
+  'monitor_setting.channel_disable_alert_sound': string
+  'monitor_setting.channel_disable_alert_cooldown_second': number
+  'monitor_setting.retest_disabled_channel_enabled': boolean
+  'monitor_setting.retest_disabled_channel_seconds': number
 }
 
 export type SecuritySettings = {

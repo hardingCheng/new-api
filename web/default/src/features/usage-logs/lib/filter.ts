@@ -48,12 +48,18 @@ export function buildSearchParams(
   switch (logCategory) {
     case 'common': {
       const commonFilters = filters as CommonLogFilters
+      const usernameParams: Record<string, string> = {}
+      if (commonFilters.usernames?.length) {
+        usernameParams.usernames = commonFilters.usernames.join(',')
+      } else if (commonFilters.username) {
+        usernameParams.username = commonFilters.username
+      }
       return {
         ...baseParams,
         ...(commonFilters.model && { model: commonFilters.model }),
         ...(commonFilters.token && { token: commonFilters.token }),
         ...(commonFilters.group && { group: commonFilters.group }),
-        ...(commonFilters.username && { username: commonFilters.username }),
+        ...usernameParams,
         ...(commonFilters.requestId && { requestId: commonFilters.requestId }),
         ...(commonFilters.upstreamRequestId && {
           upstreamRequestId: commonFilters.upstreamRequestId,

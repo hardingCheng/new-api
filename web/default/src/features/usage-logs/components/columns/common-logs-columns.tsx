@@ -101,6 +101,30 @@ function getGroupRatioText(
   return null
 }
 
+function getImageResolution(log: UsageLog): string {
+  const other = parseLogOther(log.other)
+  if (other?.image_size) return String(other.image_size)
+  const match = /大小\s*([^\s，,；;]+)/.exec(log.content || '')
+  return match?.[1] ?? ''
+}
+
+function formatImageResolution(raw: string): string {
+  const value = raw.trim()
+  if (!value) return ''
+  if (/^\d+\s*k$/i.test(value)) {
+    return value.toUpperCase().replaceAll(/\s+/g, '')
+  }
+  const match = /^(\d+)\s*[x×]\s*(\d+)$/i.exec(value)
+  if (!match) return value
+  const width = Number(match[1])
+  const height = Number(match[2])
+  const maxDimension = Math.max(width, height)
+  let tier = '8K'
+  if (maxDimension <= 1024) tier = '1K'
+  else if (maxDimension <= 2048) tier = '2K'
+  else if (maxDimension <= 4096) tier = '4K'
+  return `${tier} (${width}x${height})`
+}
 function buildDetailSegments(
   log: UsageLog,
   other: LogOtherData | null,
@@ -628,7 +652,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const log = row.original
         if (!isDisplayableLogType(log.type)) return null
 
-        const modelInfo = formatModelName(log)
+        const modelInfo = formatModelName(log, isAdmin)
 
         return (
           <div className='flex w-fit flex-col gap-0.5'>
@@ -646,6 +670,30 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         contentMode: 'full',
       },
     },
+    ...(isAdmin
+      ? [
+          {
+            id: 'resolution',
+            header: t('Resolution'),
+            cell: ({ row }) => {
+              const resolution = formatImageResolution(
+                getImageResolution(row.original)
+              )
+              if (!resolution) return null
+              return (
+                <CopyableStatusBadge
+                  value={resolution}
+                  variant='info'
+                  appearance='soft'
+                  size='sm'
+                >
+                  {resolution}
+                </CopyableStatusBadge>
+              )
+            },
+          } satisfies ColumnDef<UsageLog>,
+        ]
+      : []),
     {
       accessorKey: 'use_time',
       header: t('Timing'),

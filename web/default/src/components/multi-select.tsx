@@ -77,6 +77,8 @@ interface MultiSelectProps {
    * instead of being inert. The remove (×) button keeps its own behaviour.
    */
   copyChipOnClick?: boolean
+  /** Called whenever the search input changes (for remote option loading). */
+  onSearchChange?: (value: string) => void
 }
 
 const COMMA_REGEX = /[,，\n]/
@@ -185,6 +187,7 @@ export function MultiSelect(props: MultiSelectProps) {
   )
 
   const handleInputValueChange = (value: string) => {
+    props.onSearchChange?.(value)
     if (!props.allowCreate) {
       setInputValue(value)
       return

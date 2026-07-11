@@ -57,6 +57,7 @@ export const userSchema = z.object({
   created_at: z.number().optional(),
   updated_at: z.number().optional(),
   last_login_at: z.number().optional(),
+  pinned: z.number().optional().default(0),
   DeletedAt: z.any().nullable().optional(),
   remark: z.string().optional(),
   admin_permissions: z
@@ -121,6 +122,8 @@ export type ManageUserAction =
   | 'disable'
   | 'delete'
   | 'add_quota'
+  | 'pin'
+  | 'unpin'
 
 export type QuotaAdjustMode = 'add' | 'subtract' | 'override'
 

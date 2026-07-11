@@ -195,6 +195,13 @@ export function buildApiParams(config: {
     return undefined
   }
 
+  const adminUsernameParams: Pick<GetLogsParams, 'username' | 'usernames'> = {}
+  if (isAdmin && searchParams.usernames) {
+    adminUsernameParams.usernames = String(searchParams.usernames)
+  } else if (isAdmin && searchParams.username) {
+    adminUsernameParams.username = String(searchParams.username)
+  }
+
   // Build base params from search params
   const params: GetLogsParams = {
     p: page,
@@ -206,9 +213,7 @@ export function buildApiParams(config: {
     ...(isAdmin && searchParams.channel
       ? { channel: Number(searchParams.channel) || 0 }
       : {}),
-    ...(isAdmin && searchParams.username
-      ? { username: String(searchParams.username) }
-      : {}),
+    ...adminUsernameParams,
     ...(searchParams.requestId
       ? { request_id: String(searchParams.requestId) }
       : {}),
@@ -240,7 +245,10 @@ export function buildApiParams(config: {
           if (isAdmin) params.channel = Number(value) || 0
           break
         case 'username':
-          if (isAdmin) params.username = String(value)
+          if (isAdmin) {
+            delete params.usernames
+            params.username = String(value)
+          }
           break
       }
     })
