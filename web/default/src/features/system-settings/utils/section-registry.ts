@@ -25,6 +25,7 @@ import type { ReactNode } from 'react'
 export type SectionDefinition<TSettings, TExtraArgs extends unknown[] = []> = {
   id: string
   titleKey: string
+  hiddenFromNav?: boolean
   build: (settings: TSettings, ...extraArgs: TExtraArgs) => ReactNode
 }
 
@@ -64,13 +65,15 @@ export function createSectionRegistry<
    * Get navigation items for sidebar
    */
   function getSectionNavItems(t: TFunction) {
-    return sections.map((section) => ({
-      title: t(section.titleKey),
-      url:
-        urlStyle === 'path'
-          ? `${basePath}/${section.id}`
-          : `${basePath}?section=${section.id}`,
-    }))
+    return sections
+      .filter((section) => !section.hiddenFromNav)
+      .map((section) => ({
+        title: t(section.titleKey),
+        url:
+          urlStyle === 'path'
+            ? `${basePath}/${section.id}`
+            : `${basePath}?section=${section.id}`,
+      }))
   }
 
   /**

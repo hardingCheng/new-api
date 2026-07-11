@@ -44,6 +44,7 @@ export const STATIC_I18N_KEYS = [
   'Models',
   'Routing Reliability',
   'Maintenance',
+  'Advanced Pricing',
 
   // System info
   'online',
@@ -75,6 +76,35 @@ export const STATIC_I18N_KEYS = [
   'All Tags',
   'More...',
   'Less',
+
+  // User pricing override actions (dynamic type labels)
+  'Overall ratio',
+  'Fixed model price',
+  'Model ratio',
+  'Reference-second ratio',
+  'Reference-second price',
+  'Reference-video flat price',
+  'Reference-second cap',
+
+  // Channel circuit breaker settings (dynamic form labels)
+  'Failure limit',
+  'Cooldown seconds',
+  'Probe requests',
+  'Required probe successes',
+  'Enable Bark alerts',
+  'Circuit breaker alerts',
+  'Low balance alerts',
+  'Channel disable alerts',
+  'Alert volume',
+  'Low balance threshold (CNY)',
+  'Disable alert cooldown seconds',
+  'Circuit breaker alert sound',
+  'Channel disable alert sound',
+  'Low balance alert sound',
+  'Bypass circuit breaker',
+  'Ignore 4xx client errors',
+  'Break only the failing key',
+  'Disable channel immediately',
 
   // Roles
   'Super Admin',

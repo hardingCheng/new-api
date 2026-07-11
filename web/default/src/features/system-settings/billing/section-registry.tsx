@@ -25,9 +25,7 @@ import { PaymentSettingsSection } from '../integrations/payment-settings-section
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
-import { ModelQuotaPoolSection } from './model-quota-pool-section'
-import { UserPricingOverrideSection } from './user-pricing-override-section'
-import { VideoBillingModeSection } from './video-billing-mode-section'
+import { AdvancedPricingSection } from './advanced-pricing-section'
 
 const getModelDefaults = (settings: BillingSettings) => ({
   ModelPrice: settings.ModelPrice,
@@ -131,24 +129,46 @@ const BILLING_SECTIONS = [
     ),
   },
   {
-    id: 'video-billing-mode',
-    titleKey: 'Video Billing Mode',
+    id: 'advanced-pricing',
+    titleKey: 'Advanced Pricing',
     build: (settings: BillingSettings) => (
-      <VideoBillingModeSection defaultValue={settings.VideoBillingMode} />
+      <AdvancedPricingSection settings={settings} />
+    ),
+  },
+  {
+    id: 'video-billing-mode',
+    titleKey: 'Advanced Pricing',
+    hiddenFromNav: true,
+    build: (settings: BillingSettings) => (
+      <AdvancedPricingSection
+        key='video-billing-mode'
+        settings={settings}
+        initialTab='video-billing-mode'
+      />
     ),
   },
   {
     id: 'model-quota-pool',
-    titleKey: 'Model Quota Pools',
+    titleKey: 'Advanced Pricing',
+    hiddenFromNav: true,
     build: (settings: BillingSettings) => (
-      <ModelQuotaPoolSection defaultValue={settings.ModelQuotaPool} />
+      <AdvancedPricingSection
+        key='model-quota-pool'
+        settings={settings}
+        initialTab='model-quota-pool'
+      />
     ),
   },
   {
     id: 'user-pricing-override',
-    titleKey: 'User Pricing Overrides',
+    titleKey: 'Advanced Pricing',
+    hiddenFromNav: true,
     build: (settings: BillingSettings) => (
-      <UserPricingOverrideSection defaultValue={settings.UserPricingOverride} />
+      <AdvancedPricingSection
+        key='user-pricing-override'
+        settings={settings}
+        initialTab='user-pricing-override'
+      />
     ),
   },
   {

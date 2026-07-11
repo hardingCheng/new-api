@@ -16,19 +16,25 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Edit, Plus, Save, Trash2 } from 'lucide-react'
+import { Edit, Plus, Search, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Button } from '@/components/design-system/button'
+import { Input } from '@/components/design-system/input'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from '@/components/design-system/input-group'
+import { TableCell, TableRow } from '@/components/design-system/table'
 import { Dialog } from '@/components/dialog'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Switch } from '@/components/ui/switch'
-import { TableCell, TableRow } from '@/components/ui/table'
 import { TitledCard } from '@/components/ui/titled-card'
 import { api } from '@/lib/api'
 
@@ -82,6 +88,11 @@ type PricingContext = {
   }>
   models?: string[]
   model_prices?: Record<string, ModelPriceInfo>
+}
+
+type UserPricingConfig = {
+  user: UserChoice
+  rules: PricingRule[]
 }
 
 const VIDEO_TYPES = new Set<PriceRuleType>([
@@ -203,12 +214,39 @@ function formatNumber(value: unknown) {
   return Number.isFinite(number) ? Number(number.toFixed(6)).toString() : '-'
 }
 
+function groupRulesByUser(rules: PricingRule[]): UserPricingConfig[] {
+  const configs = new Map<number, UserPricingConfig>()
+  for (const rule of rules) {
+    const current = configs.get(rule.user_id)
+    if (current) {
+      current.rules.push(rule)
+      continue
+    }
+    configs.set(rule.user_id, {
+      user: {
+        id: rule.user_id,
+        username: rule.username,
+        group: rule.user_group,
+      },
+      rules: [rule],
+    })
+  }
+  return [...configs.values()].sort((a, b) => a.user.id - b.user.id)
+}
+
 export function UserPricingOverrideSection(props: { defaultValue: string }) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
   const [rules, setRules] = useState(() => parseRules(props.defaultValue))
+  const [searchQuery, setSearchQuery] = useState('')
+  const [typeFilter, setTypeFilter] = useState<'all' | PriceRuleType>('all')
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingId, setEditingId] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<UserPricingConfig | null>(
+    null
+  )
+  const [editingUserId, setEditingUserId] = useState(0)
+  const [editingRuleId, setEditingRuleId] = useState('')
+  const [draftRules, setDraftRules] = useState<PricingRule[]>([])
   const [scenario, setScenario] = useState<PricingScenario>('group_discount')
   const [form, setForm] = useState<PricingRule>(EMPTY_RULE)
   const [selectedUsers, setSelectedUsers] = useState<UserChoice[]>([])
@@ -220,6 +258,30 @@ export function UserPricingOverrideSection(props: { defaultValue: string }) {
     () => setRules(parseRules(props.defaultValue)),
     [props.defaultValue]
   )
+
+  const userConfigs = useMemo(() => groupRulesByUser(rules), [rules])
+
+  const filteredUserConfigs = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase()
+    return userConfigs.filter((config) => {
+      const matchingRules =
+        typeFilter === 'all'
+          ? config.rules
+          : config.rules.filter((rule) => rule.type === typeFilter)
+      if (!matchingRules.length) return false
+      if (!query) return true
+      const userText = [config.user.id, config.user.username, config.user.group]
+        .join(' ')
+        .toLocaleLowerCase()
+      if (userText.includes(query)) return true
+      return matchingRules.some((rule) =>
+        [rule.group_pattern, rule.model_pattern, rule.type, rule.value]
+          .join(' ')
+          .toLocaleLowerCase()
+          .includes(query)
+      )
+    })
+  }, [searchQuery, typeFilter, userConfigs])
 
   const groupOptions = useMemo(() => {
     const map = new Map<string, NonNullable<PricingContext['groups']>[number]>()
@@ -309,26 +371,29 @@ export function UserPricingOverrideSection(props: { defaultValue: string }) {
     }
   }
 
-  const openEditor = (rule?: PricingRule) => {
-    const next = rule ? normalizeRule(rule) : normalizeRule({})
-    const nextScenario = rule ? inferScenario(next) : 'group_discount'
-    setEditingId(rule?.id ?? '')
-    setScenario(nextScenario)
-    setForm(next)
-    setSelectedModels(next.model_pattern ? [next.model_pattern] : [])
-    const users = next.user_id
-      ? [
-          {
-            id: next.user_id,
-            username: next.username,
-            group: next.user_group,
-          },
-        ]
-      : []
+  const resetRuleEditor = () => {
+    setEditingRuleId('')
+    setScenario('group_discount')
+    setForm(normalizeRule({}))
+    setSelectedModels([])
+  }
+
+  const openUserEditor = (config?: UserPricingConfig) => {
+    const users = config ? [config.user] : []
+    setEditingUserId(config?.user.id ?? 0)
+    setDraftRules(config?.rules.map((rule) => ({ ...rule })) ?? [])
+    resetRuleEditor()
     setSelectedUsers(users)
     setContexts([])
     setDialogOpen(true)
     if (users.length) void loadContexts(users)
+  }
+
+  const editDraftRule = (rule: PricingRule) => {
+    setEditingRuleId(rule.id)
+    setScenario(inferScenario(rule))
+    setForm({ ...rule })
+    setSelectedModels(rule.model_pattern ? [rule.model_pattern] : [])
   }
 
   const saveRule = () => {
@@ -348,13 +413,13 @@ export function UserPricingOverrideSection(props: { defaultValue: string }) {
       return
     }
 
-    const additions = selectedUsers.flatMap((user) =>
+    const additions = selectedUsers.slice(0, 1).flatMap((user) =>
       targetModels.map((model, index) =>
         normalizeRule({
           ...form,
           id:
-            editingId && selectedUsers.length === 1 && targetModels.length === 1
-              ? editingId
+            editingRuleId && targetModels.length === 1
+              ? editingRuleId
               : `rule-${Date.now()}-${user.id}-${index}`,
           user_id: user.id,
           username: user.username,
@@ -366,111 +431,297 @@ export function UserPricingOverrideSection(props: { defaultValue: string }) {
         })
       )
     )
-    setRules((current) => [
-      ...current.filter((rule) => rule.id !== editingId),
+    const existingKeys = new Set(
+      draftRules
+        .filter((rule) => rule.id !== editingRuleId)
+        .map((rule) =>
+          [rule.group_pattern, rule.model_pattern, rule.type].join('\u0000')
+        )
+    )
+    const hasDuplicate = additions.some((rule) => {
+      const key = [rule.group_pattern, rule.model_pattern, rule.type].join(
+        '\u0000'
+      )
+      if (existingKeys.has(key)) return true
+      existingKeys.add(key)
+      return false
+    })
+    if (hasDuplicate) {
+      toast.error(
+        t('A pricing item with the same scope and type already exists.')
+      )
+      return
+    }
+    setDraftRules((current) => [
+      ...current.filter((rule) => rule.id !== editingRuleId),
       ...additions,
     ])
-    setDialogOpen(false)
+    resetRuleEditor()
   }
 
-  const save = () =>
-    updateOption.mutate({
-      key: 'UserPricingOverride',
-      value: serializeRules(rules),
-    })
+  const saveUserConfig = () => {
+    const user = selectedUsers[0]
+    if (!user) {
+      toast.error(t('Select at least one user'))
+      return
+    }
+    const nextRules = [
+      ...rules.filter((rule) => rule.user_id !== user.id),
+      ...draftRules.map((rule) => ({
+        ...rule,
+        user_id: user.id,
+        username: user.username,
+        user_group: user.group,
+      })),
+    ]
+    updateOption.mutate(
+      {
+        key: 'UserPricingOverride',
+        value: serializeRules(nextRules),
+      },
+      {
+        onSuccess: (data) => {
+          if (!data.success) return
+          setRules(nextRules)
+          setDialogOpen(false)
+        },
+      }
+    )
+  }
+
+  const deleteUserConfig = (userId: number) => {
+    const nextRules = rules.filter((rule) => rule.user_id !== userId)
+    updateOption.mutate(
+      {
+        key: 'UserPricingOverride',
+        value: serializeRules(nextRules),
+      },
+      {
+        onSuccess: (data) => {
+          if (data.success) {
+            setRules(nextRules)
+            setDeleteTarget(null)
+          }
+        },
+      }
+    )
+  }
 
   return (
     <div className='grid gap-4'>
       <TitledCard
         title={t('User Pricing Overrides')}
         action={
-          <div className='flex flex-wrap gap-2'>
-            <Button variant='outline' onClick={() => openEditor()}>
+          <div className='flex justify-end'>
+            <Button onClick={() => openUserEditor()}>
               <Plus data-icon='inline-start' />
-              {t('Add Rule')}
-            </Button>
-            <Button onClick={save} disabled={updateOption.isPending}>
-              <Save data-icon='inline-start' />
-              {updateOption.isPending ? t('Saving...') : t('Save')}
+              {t('Add user configuration')}
             </Button>
           </div>
         }
-      />
+      >
+        <div className='grid gap-3 sm:grid-cols-[minmax(0,1fr)_14rem]'>
+          <InputGroup>
+            <InputGroupAddon>
+              <Search />
+            </InputGroupAddon>
+            <InputGroupInput
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder={t('Search users or pricing rules')}
+              aria-label={t('Search users or pricing rules')}
+            />
+          </InputGroup>
+          <NativeSelect
+            value={typeFilter}
+            onChange={(event) =>
+              setTypeFilter(event.target.value as 'all' | PriceRuleType)
+            }
+            aria-label={t('Filter by pricing type')}
+          >
+            <NativeSelectOption value='all'>
+              {t('All pricing types')}
+            </NativeSelectOption>
+            <NativeSelectOption value='ratio'>
+              {typeLabel('ratio', t)}
+            </NativeSelectOption>
+            <NativeSelectOption value='model_price'>
+              {typeLabel('model_price', t)}
+            </NativeSelectOption>
+            <NativeSelectOption value='model_ratio'>
+              {typeLabel('model_ratio', t)}
+            </NativeSelectOption>
+            <NativeSelectOption value='video_ref_factor'>
+              {typeLabel('video_ref_factor', t)}
+            </NativeSelectOption>
+            <NativeSelectOption value='video_ref_price'>
+              {typeLabel('video_ref_price', t)}
+            </NativeSelectOption>
+            <NativeSelectOption value='video_ref_flat'>
+              {typeLabel('video_ref_flat', t)}
+            </NativeSelectOption>
+            <NativeSelectOption value='video_ref_cap'>
+              {typeLabel('video_ref_cap', t)}
+            </NativeSelectOption>
+          </NativeSelect>
+        </div>
+      </TitledCard>
 
       <RuleTable
         headers={[
-          t('Status'),
           t('User'),
-          t('Group scope'),
-          t('Model scope'),
-          t('Pricing action'),
-          t('Value'),
+          t('Rule count'),
+          t('Configured pricing'),
+          t('Status'),
           t('Actions'),
         ]}
-        empty={rules.length === 0}
-        emptyText={t('No data')}
+        empty={filteredUserConfigs.length === 0}
+        emptyText={
+          searchQuery || typeFilter !== 'all'
+            ? t('No matching users')
+            : t('No data')
+        }
       >
-        {rules.map((rule) => (
-          <TableRow key={rule.id}>
-            <TableCell>
-              <Badge variant={rule.disabled ? 'destructive' : 'secondary'}>
-                {rule.disabled ? t('Disabled') : t('Enabled')}
-              </Badge>
-            </TableCell>
-            <TableCell className='whitespace-nowrap'>
-              {rule.user_id} / {rule.username || '-'} / {rule.user_group || '-'}
-            </TableCell>
-            <TableCell>{rule.group_pattern || t('All Groups')}</TableCell>
-            <TableCell className='font-mono text-xs'>
-              {rule.model_pattern || t('All Models')}
-            </TableCell>
-            <TableCell>{typeLabel(rule.type, t)}</TableCell>
-            <TableCell>{rule.value}</TableCell>
-            <TableCell>
-              <div className='flex gap-1'>
-                <Button
-                  variant='ghost'
-                  size='icon-sm'
-                  aria-label={t('Edit')}
-                  title={t('Edit')}
-                  onClick={() => openEditor(rule)}
-                >
-                  <Edit />
-                </Button>
-                <Button
-                  variant='ghost'
-                  size='icon-sm'
-                  aria-label={t('Delete')}
-                  title={t('Delete')}
-                  onClick={() =>
-                    setRules((current) =>
-                      current.filter((item) => item.id !== rule.id)
-                    )
-                  }
-                >
-                  <Trash2 />
-                </Button>
-              </div>
-            </TableCell>
-          </TableRow>
-        ))}
+        {filteredUserConfigs.map((config) => {
+          const activeCount = config.rules.filter(
+            (rule) => !rule.disabled
+          ).length
+          const labels = [
+            ...new Set(config.rules.map((rule) => typeLabel(rule.type, t))),
+          ]
+          return (
+            <TableRow key={config.user.id}>
+              <TableCell className='whitespace-nowrap'>
+                <div className='font-medium'>
+                  {config.user.id} / {config.user.username || '-'}
+                </div>
+                <div className='text-muted-foreground text-xs'>
+                  {config.user.group || '-'}
+                </div>
+              </TableCell>
+              <TableCell>{config.rules.length}</TableCell>
+              <TableCell>
+                <div className='flex max-w-xl flex-wrap gap-1'>
+                  {labels.slice(0, 4).map((label) => (
+                    <Badge key={label} variant='outline'>
+                      {label}
+                    </Badge>
+                  ))}
+                  {labels.length > 4 ? (
+                    <Badge variant='secondary'>+{labels.length - 4}</Badge>
+                  ) : null}
+                </div>
+              </TableCell>
+              <TableCell>
+                <Badge variant={activeCount > 0 ? 'secondary' : 'destructive'}>
+                  {t('{{active}} of {{total}} enabled', {
+                    active: activeCount,
+                    total: config.rules.length,
+                  })}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <div className='flex gap-1'>
+                  <Button
+                    variant='ghost'
+                    size='icon-sm'
+                    aria-label={t('Edit')}
+                    title={t('Edit')}
+                    onClick={() => openUserEditor(config)}
+                  >
+                    <Edit />
+                  </Button>
+                  <Button
+                    variant='ghost'
+                    size='icon-sm'
+                    aria-label={t('Delete')}
+                    title={t('Delete')}
+                    disabled={updateOption.isPending}
+                    onClick={() => setDeleteTarget(config)}
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          )
+        })}
       </RuleTable>
 
       <Dialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        title={editingId ? t('Edit Rule') : t('Add Rule')}
+        title={editingUserId ? t('Edit user pricing') : t('Add user pricing')}
+        description={t(
+          'Configure and save all pricing rules for one user at once.'
+        )}
         contentClassName='sm:max-w-5xl'
         footer={
           <>
             <Button variant='outline' onClick={() => setDialogOpen(false)}>
               {t('Cancel')}
             </Button>
-            <Button onClick={saveRule}>{t('Save')}</Button>
+            <Button
+              onClick={saveUserConfig}
+              disabled={
+                updateOption.isPending ||
+                !selectedUsers.length ||
+                !draftRules.length
+              }
+            >
+              {updateOption.isPending
+                ? t('Saving...')
+                : t('Save user configuration')}
+            </Button>
           </>
         }
       >
         <div className='grid gap-4'>
+          <EditorField label={t('User')}>
+            {editingUserId && selectedUsers[0] ? (
+              <div className='bg-muted flex min-h-9 items-center rounded-lg px-3 text-sm font-medium'>
+                {selectedUsers[0].id} / {selectedUsers[0].username || '-'} /{' '}
+                {selectedUsers[0].group || '-'}
+              </div>
+            ) : (
+              <UserSearchPicker
+                value={selectedUsers}
+                onChange={(users) => {
+                  const selected = users.slice(0, 1)
+                  const existing = selected[0]
+                    ? userConfigs.find(
+                        (config) => config.user.id === selected[0].id
+                      )
+                    : undefined
+                  setEditingUserId(existing?.user.id ?? 0)
+                  setDraftRules(
+                    existing?.rules.map((rule) => ({ ...rule })) ?? []
+                  )
+                  resetRuleEditor()
+                  void loadContexts(selected)
+                }}
+              />
+            )}
+          </EditorField>
+
+          <div className='flex items-center justify-between gap-3 border-t pt-4'>
+            <div>
+              <h3 className='text-sm font-medium'>{t('Pricing item')}</h3>
+              <p className='text-muted-foreground text-xs'>
+                {editingRuleId
+                  ? t('Update this pricing item in the configuration.')
+                  : t(
+                      'Add pricing items, then save the user configuration once.'
+                    )}
+              </p>
+            </div>
+            {editingRuleId ? (
+              <Button variant='ghost' size='sm' onClick={resetRuleEditor}>
+                {t('Cancel editing')}
+              </Button>
+            ) : null}
+          </div>
+
           <EditorField label={t('Pricing scenario')}>
             <NativeSelect
               className='w-full'
@@ -504,14 +755,6 @@ export function UserPricingOverrideSection(props: { defaultValue: string }) {
                 {t('Price reference-video seconds separately')}
               </NativeSelectOption>
             </NativeSelect>
-          </EditorField>
-
-          <EditorField label={t('Users')}>
-            <UserSearchPicker
-              multiple
-              value={selectedUsers}
-              onChange={(users) => void loadContexts(users)}
-            />
           </EditorField>
 
           {scenario !== 'all_discount' ? (
@@ -693,17 +936,108 @@ export function UserPricingOverrideSection(props: { defaultValue: string }) {
             </div>
           ) : null}
 
-          <div className='bg-muted rounded-lg p-3 text-sm'>
-            {t('This will create {{count}} pricing rules.', {
-              count:
-                selectedUsers.length *
-                (isModelScoped(scenario)
-                  ? Math.max(selectedModels.length, form.model_pattern ? 1 : 0)
-                  : 1),
-            })}
+          <div className='flex justify-end'>
+            <Button
+              type='button'
+              variant='outline'
+              disabled={!selectedUsers.length}
+              onClick={saveRule}
+            >
+              {editingRuleId ? (
+                <Edit data-icon='inline-start' />
+              ) : (
+                <Plus data-icon='inline-start' />
+              )}
+              {editingRuleId ? t('Update pricing item') : t('Add pricing item')}
+            </Button>
+          </div>
+
+          <div className='border-t pt-4'>
+            <div className='mb-3 flex items-center justify-between gap-3'>
+              <h3 className='text-sm font-medium'>{t('Configured pricing')}</h3>
+              <Badge variant='secondary'>
+                {t('{{count}} rules', { count: draftRules.length })}
+              </Badge>
+            </div>
+            <RuleTable
+              headers={[
+                t('Status'),
+                t('Group scope'),
+                t('Model scope'),
+                t('Pricing action'),
+                t('Value'),
+                t('Actions'),
+              ]}
+              empty={draftRules.length === 0}
+              emptyText={t('No pricing items configured')}
+            >
+              {draftRules.map((rule) => (
+                <TableRow key={rule.id}>
+                  <TableCell>
+                    <Badge
+                      variant={rule.disabled ? 'destructive' : 'secondary'}
+                    >
+                      {rule.disabled ? t('Disabled') : t('Enabled')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{rule.group_pattern || t('All Groups')}</TableCell>
+                  <TableCell className='font-mono text-xs'>
+                    {rule.model_pattern || t('All Models')}
+                  </TableCell>
+                  <TableCell>{typeLabel(rule.type, t)}</TableCell>
+                  <TableCell>{rule.value}</TableCell>
+                  <TableCell>
+                    <div className='flex gap-1'>
+                      <Button
+                        variant='ghost'
+                        size='icon-sm'
+                        aria-label={t('Edit')}
+                        title={t('Edit')}
+                        onClick={() => editDraftRule(rule)}
+                      >
+                        <Edit />
+                      </Button>
+                      <Button
+                        variant='ghost'
+                        size='icon-sm'
+                        aria-label={t('Delete')}
+                        title={t('Delete')}
+                        onClick={() =>
+                          setDraftRules((current) =>
+                            current.filter((item) => item.id !== rule.id)
+                          )
+                        }
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </RuleTable>
           </div>
         </div>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null)
+        }}
+        title={t('Delete user configuration')}
+        desc={t('This will delete all {{count}} pricing rules for {{user}}.', {
+          count: deleteTarget?.rules.length ?? 0,
+          user: deleteTarget
+            ? `${deleteTarget.user.id} / ${deleteTarget.user.username || '-'}`
+            : '-',
+        })}
+        confirmText={t('Delete')}
+        destructive
+        isLoading={updateOption.isPending}
+        handleConfirm={() => {
+          if (deleteTarget) deleteUserConfig(deleteTarget.user.id)
+        }}
+      />
     </div>
   )
 }
