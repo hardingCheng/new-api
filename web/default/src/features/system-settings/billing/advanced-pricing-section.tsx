@@ -19,12 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/design-system/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import type { BillingSettings } from '../types'
 import { ModelQuotaPoolSection } from './model-quota-pool-section'

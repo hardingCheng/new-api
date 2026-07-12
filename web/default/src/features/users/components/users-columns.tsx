@@ -45,13 +45,9 @@ import type { User } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
 
 function getQuotaProgressColor(percentage: number): string {
-  if (percentage <= 10) {
-    return '[&_[data-slot=progress-indicator]]:bg-destructive'
-  }
-  if (percentage <= 30) {
-    return '[&_[data-slot=progress-indicator]]:bg-warning'
-  }
-  return '[&_[data-slot=progress-indicator]]:bg-success'
+  if (percentage <= 10) return '[&_[data-slot=progress-indicator]]:bg-rose-500'
+  if (percentage <= 30) return '[&_[data-slot=progress-indicator]]:bg-amber-500'
+  return '[&_[data-slot=progress-indicator]]:bg-emerald-500'
 }
 
 export function useUsersColumns(): ColumnDef<User>[] {
@@ -92,12 +88,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
         )
       },
       size: 80,
-      meta: {
-        cardRole: 'primary',
-        cardOrder: 10,
-        cardSpan: 2,
-        contentMode: 'full',
-      },
+      meta: { mobileOrder: 10 },
     },
     {
       accessorKey: 'username',
@@ -125,8 +116,10 @@ export function useUsersColumns(): ColumnDef<User>[] {
               </LongText>
               {remark && (
                 <Tooltip>
-                  <TooltipTrigger render={<StatusBadge variant='success' />}>
-                    {remark}
+                  <TooltipTrigger
+                    render={<StatusBadge variant='success' copyable={false} />}
+                  >
+                    <LongText className='max-w-[80px]'>{remark}</LongText>
                   </TooltipTrigger>
                   <TooltipContent>
                     <p className='text-xs'>{remark}</p>
@@ -135,7 +128,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
               )}
             </div>
             {displayName && displayName !== username && (
-              <LongText className='text-muted-foreground max-w-full text-xs sm:max-w-[180px]'>
+              <LongText className='text-muted-foreground max-w-[180px] text-xs'>
                 {displayName}
               </LongText>
             )}
@@ -144,11 +137,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
       },
       enableHiding: false,
       size: 220,
-      meta: {
-        cardRole: 'title',
-        cardSpan: 2,
-        contentMode: 'wrap',
-      },
+      meta: { mobileTitle: true },
     },
     {
       accessorKey: 'status',
@@ -167,10 +156,12 @@ export function useUsersColumns(): ColumnDef<User>[] {
 
         return (
           <Tooltip>
-            <TooltipTrigger render={<div className='cursor-help' />}>
-              <StatusBadge variant={statusConfig.variant}>
-                {t(statusConfig.labelKey)}
-              </StatusBadge>
+            <TooltipTrigger render={<div className='-ml-1.5 cursor-help' />}>
+              <StatusBadge
+                label={t(statusConfig.labelKey)}
+                variant={statusConfig.variant}
+                copyable={false}
+              />
             </TooltipTrigger>
             <TooltipContent>
               <p className='text-xs'>
@@ -185,7 +176,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
       },
       enableSorting: false,
       size: 120,
-      meta: { cardRole: 'badge', contentMode: 'wrap' },
+      meta: { mobileBadge: true },
     },
     {
       id: 'quota',
@@ -199,15 +190,20 @@ export function useUsersColumns(): ColumnDef<User>[] {
         const percentage = total > 0 ? (remaining / total) * 100 : 0
 
         if (total === 0) {
-          return <StatusBadge variant='neutral'>{t('No Quota')}</StatusBadge>
+          return (
+            <StatusBadge
+              label={t('No Quota')}
+              variant='neutral'
+              copyable={false}
+              className='-ml-1.5'
+            />
+          )
         }
 
         return (
           <Tooltip>
             <TooltipTrigger
-              render={
-                <div className='w-full cursor-help space-y-1 sm:w-[150px]' />
-              }
+              render={<div className='w-[150px] cursor-help space-y-1' />}
             >
               <div className='flex justify-between text-xs'>
                 <span className='font-medium tabular-nums'>
@@ -242,12 +238,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
         )
       },
       size: 170,
-      meta: {
-        cardRole: 'primary',
-        cardOrder: 40,
-        cardSpan: 2,
-        contentMode: 'full',
-      },
+      meta: { mobileOrder: 40 },
     },
     {
       accessorKey: 'group',
@@ -266,11 +257,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
         return group.includes(searchValue)
       },
       size: 140,
-      meta: {
-        cardRole: 'primary',
-        cardOrder: 30,
-        contentMode: 'wrap',
-      },
+      meta: { mobileOrder: 30 },
     },
     {
       accessorKey: 'role',
@@ -297,11 +284,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
       },
       enableSorting: false,
       size: 120,
-      meta: {
-        cardRole: 'primary',
-        cardOrder: 20,
-        contentMode: 'full',
-      },
+      meta: { mobileOrder: 20 },
     },
     {
       id: 'invite_info',
@@ -313,13 +296,16 @@ export function useUsersColumns(): ColumnDef<User>[] {
         const inviterId = user.inviter_id || 0
 
         return (
-          <div className='flex max-w-full min-w-0 flex-wrap items-center gap-1'>
+          <div className='flex max-w-full min-w-0 flex-wrap items-center gap-1 overflow-hidden'>
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <StatusBadge variant='neutral' className='cursor-help'>
-                    {t('Invited')}: {affCount}
-                  </StatusBadge>
+                  <StatusBadge
+                    label={`${t('Invited')}: ${affCount}`}
+                    variant='neutral'
+                    copyable={false}
+                    className='cursor-help'
+                  />
                 }
               />
               <TooltipContent>
@@ -329,9 +315,12 @@ export function useUsersColumns(): ColumnDef<User>[] {
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <StatusBadge variant='neutral' className='cursor-help'>
-                    {t('Revenue')}: {formatQuota(affHistoryQuota)}
-                  </StatusBadge>
+                  <StatusBadge
+                    label={`${t('Revenue')}: ${formatQuota(affHistoryQuota)}`}
+                    variant='neutral'
+                    copyable={false}
+                    className='cursor-help'
+                  />
                 }
               />
               <TooltipContent>
@@ -342,9 +331,12 @@ export function useUsersColumns(): ColumnDef<User>[] {
               <Tooltip>
                 <TooltipTrigger
                   render={
-                    <StatusBadge variant='neutral' className='cursor-help'>
-                      {t('Inviter')}: {inviterId}
-                    </StatusBadge>
+                    <StatusBadge
+                      label={`${t('Inviter')}: ${inviterId}`}
+                      variant='neutral'
+                      copyable={false}
+                      className='cursor-help'
+                    />
                   }
                 />
                 <TooltipContent>
@@ -355,19 +347,18 @@ export function useUsersColumns(): ColumnDef<User>[] {
               </Tooltip>
             )}
             {inviterId === 0 && (
-              <StatusBadge variant='neutral'>{t('No Inviter')}</StatusBadge>
+              <StatusBadge
+                label={t('No Inviter')}
+                variant='neutral'
+                copyable={false}
+              />
             )}
           </div>
         )
       },
       size: 240,
       enableSorting: false,
-      meta: {
-        cardRole: 'secondary',
-        cardOrder: 50,
-        cardSpan: 2,
-        contentMode: 'wrap',
-      },
+      meta: { mobileHidden: true },
     },
     {
       accessorKey: 'created_at',
@@ -381,11 +372,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
         )
       },
       size: 180,
-      meta: {
-        cardRole: 'secondary',
-        cardOrder: 60,
-        contentMode: 'full',
-      },
+      meta: { mobileHidden: true },
     },
     {
       accessorKey: 'last_login_at',
@@ -399,11 +386,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
         )
       },
       size: 180,
-      meta: {
-        cardRole: 'secondary',
-        cardOrder: 70,
-        contentMode: 'full',
-      },
+      meta: { mobileHidden: true },
     },
     {
       id: 'actions',

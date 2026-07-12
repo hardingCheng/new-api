@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { TFunction } from 'i18next'
 import {
   Copy,
   Check,
@@ -33,9 +34,10 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/design-system/button'
 import { Dialog } from '@/components/dialog'
-import { StatusBadge, type StatusVariant } from '@/components/status-badge'
+import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
+import { Button } from '@/components/ui/button'
+import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { Label } from '@/components/ui/label'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
@@ -61,7 +63,7 @@ import {
   isPerCallBilling,
   isTimingLogType,
 } from '../../lib/utils'
-import type { LogOtherData } from '../../types'
+import { USAGE_BILLING_PATH, type LogOtherData } from '../../types'
 
 // Maps a channel-update changed-field token (as recorded by the backend audit)
 // to its i18n label key for display in the audit details.
@@ -72,6 +74,14 @@ const CHANNEL_FIELD_LABELS: Record<string, string> = {
   type: 'Type',
   base_url: 'Base URL',
   key: 'Key',
+}
+
+function timingTextColorClass(
+  variant: 'success' | 'warning' | 'danger'
+): string {
+  if (variant === 'success') return 'text-emerald-600'
+  if (variant === 'warning') return 'text-amber-600'
+  return 'text-rose-600'
 }
 
 function DetailRow(props: {
@@ -100,27 +110,33 @@ function DetailRow(props: {
 
 function DetailSection(props: {
   icon?: React.ReactNode
+  iconTone?: IconBadgeTone
   label: string
-  variant?: 'default' | 'destructive'
+  variant?: 'default' | 'danger'
   children: React.ReactNode
 }) {
-  const isDestructive = props.variant === 'destructive'
+  const isDanger = props.variant === 'danger'
+  const iconTone = isDanger ? 'destructive' : props.iconTone
   return (
     <div className='min-w-0 space-y-1.5'>
       <Label
         className={cn(
           'flex items-center gap-1.5 text-xs font-semibold',
-          isDestructive && 'text-destructive'
+          isDanger && 'text-red-500'
         )}
       >
-        {props.icon}
+        {props.icon && (
+          <IconBadge tone={iconTone} size='xs'>
+            {props.icon}
+          </IconBadge>
+        )}
         {props.label}
       </Label>
       <div
         className={cn(
           'min-w-0 space-y-1 overflow-hidden rounded-md border p-2.5 max-sm:p-2',
-          isDestructive
-            ? 'border-destructive/25 bg-destructive/10'
+          isDanger
+            ? 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/20'
             : 'bg-muted/30'
         )}
       >
@@ -133,6 +149,43 @@ function DetailSection(props: {
 function formatRatio(ratio: number | undefined): string {
   if (ratio == null) return '-'
   return ratio.toFixed(4)
+}
+
+function getUsageBillingPathLabel(
+  t: TFunction,
+  adminInfo: LogOtherData['admin_info']
+): string {
+  switch (adminInfo?.usage_billing_path) {
+    case USAGE_BILLING_PATH.LOCAL:
+      return t('Local Billing')
+    case USAGE_BILLING_PATH.OPENAI:
+      return t('Upstream Response (billing-usage-openai)')
+    case USAGE_BILLING_PATH.OPENAI_ESTIMATED:
+      return t('Upstream Response (billing-usage-openai-estimated)')
+    case USAGE_BILLING_PATH.ANTHROPIC:
+      return t('Upstream Response (billing-usage-anthropic)')
+    case USAGE_BILLING_PATH.ANTHROPIC_ESTIMATED:
+      return t('Upstream Response (billing-usage-anthropic-estimated)')
+    case USAGE_BILLING_PATH.GEMINI:
+      return t('Upstream Response (billing-usage-gemini)')
+    case USAGE_BILLING_PATH.GEMINI_ESTIMATED:
+      return t('Upstream Response (billing-usage-gemini-estimated)')
+    case USAGE_BILLING_PATH.UPSTREAM:
+      return t('Upstream Response')
+    default:
+      return adminInfo?.local_count_tokens
+        ? t('Local Billing')
+        : t('Upstream Response')
+  }
+}
+
+function isUsageBillingPathLocal(
+  adminInfo: LogOtherData['admin_info']
+): boolean {
+  if (adminInfo?.usage_billing_path) {
+    return adminInfo.usage_billing_path === USAGE_BILLING_PATH.LOCAL
+  }
+  return adminInfo?.local_count_tokens === true
 }
 
 function quotaSaturationKindLabel(
@@ -311,10 +364,8 @@ function BillingBreakdown(props: {
 
   if (isAdmin && other.admin_info) {
     rows.push({
-      label: t('Billing Source'),
-      value: other.admin_info.local_count_tokens
-        ? t('Local Billing')
-        : t('Upstream Response'),
+      label: t('Billing Path'),
+      value: getUsageBillingPathLabel(t, other.admin_info),
     })
   }
 
@@ -413,12 +464,6 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const details = props.log.content ?? ''
   const other = parseLogOther(props.log.other)
   const typeConfig = getLogTypeConfig(props.log.type)
-  let reasoningEffortVariant: StatusVariant = 'success'
-  if (other?.reasoning_effort === 'high') {
-    reasoningEffortVariant = 'warning'
-  } else if (other?.reasoning_effort === 'medium') {
-    reasoningEffortVariant = 'info'
-  }
 
   const isViolation = isViolationFeeLog(other)
   const isRefund = props.log.type === 6
@@ -546,6 +591,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
   } else if (other?.video_billing_mode === 'per_second') {
     videoBillingModeLabel = t('Per second')
   }
+  let reasoningEffortVariant: StatusBadgeProps['variant'] = 'green'
+  if (other?.reasoning_effort === 'high') {
+    reasoningEffortVariant = 'orange'
+  } else if (other?.reasoning_effort === 'medium') {
+    reasoningEffortVariant = 'yellow'
+  }
 
   return (
     <Dialog
@@ -554,9 +605,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
       title={
         <>
           {t('Log Details')}
-          <StatusBadge variant={typeConfig.variant} size='sm'>
-            {t(typeConfig.label)}
-          </StatusBadge>
+          <StatusBadge
+            label={t(typeConfig.label)}
+            variant={typeConfig.color as StatusBadgeProps['variant']}
+            size='sm'
+            copyable={false}
+          />
         </>
       }
       description={t('View the complete details for this log entry')}
@@ -628,10 +682,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
               label={t('IP Address')}
               value={
                 <span className='flex items-center gap-1'>
-                  <Globe
-                    className='text-muted-foreground size-3'
-                    aria-hidden='true'
-                  />
+                  <Globe className='size-3 text-amber-500' aria-hidden='true' />
                   {props.log.ip}
                 </span>
               }
@@ -643,25 +694,32 @@ export function DetailsDialog(props: DetailsDialogProps) {
             <DetailRow
               label={t('Response Time')}
               value={
-                <span className='flex flex-wrap items-center gap-1'>
-                  <StatusBadge
-                    appearance='plain'
-                    variant={getResponseTimeColor(
-                      props.log.use_time,
-                      props.log.completion_tokens
-                    )}
-                  >
-                    {formatUseTime(props.log.use_time)}
-                  </StatusBadge>
+                <span
+                  className={cn(
+                    'font-medium',
+                    timingTextColorClass(
+                      getResponseTimeColor(
+                        props.log.use_time,
+                        props.log.completion_tokens
+                      )
+                    )
+                  )}
+                >
+                  {formatUseTime(props.log.use_time)}
                   {props.log.is_stream &&
                     other?.frt != null &&
                     other.frt > 0 && (
-                      <StatusBadge
-                        appearance='plain'
-                        variant={getFirstResponseTimeColor(other.frt / 1000)}
+                      <span
+                        className={cn(
+                          'font-normal',
+                          timingTextColorClass(
+                            getFirstResponseTimeColor(other.frt / 1000)
+                          )
+                        )}
                       >
-                        {`(FRT: ${formatUseTime(other.frt / 1000)})`}
-                      </StatusBadge>
+                        {' '}
+                        (FRT: {formatUseTime(other.frt / 1000)})
+                      </span>
                     )}
                 </span>
               }
@@ -675,14 +733,14 @@ export function DetailsDialog(props: DetailsDialogProps) {
             <div className='relative min-w-0'>
               <Button
                 variant='ghost'
-                size='icon-xs'
-                className='absolute top-0 right-0'
+                size='sm'
+                className='absolute top-0 right-0 h-5 w-5 p-0'
                 onClick={() => copyToClipboard(conversionLabel)}
                 title={t('Copy to clipboard')}
                 aria-label={t('Copy to clipboard')}
               >
                 {copiedText === conversionLabel ? (
-                  <Check className='text-success size-3' />
+                  <Check className='size-3 text-green-600' />
                 ) : (
                   <Copy className='size-3' />
                 )}
@@ -714,7 +772,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
           <DetailSection
             icon={<AlertTriangle className='size-3.5' aria-hidden='true' />}
             label={t('Quota clamped')}
-            variant='destructive'
+            variant='danger'
           >
             <p className='mb-1 text-xs wrap-break-word'>
               {t('Quota saturation protection triggered')}
@@ -749,7 +807,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
           <DetailSection
             icon={<AlertTriangle className='size-3.5' aria-hidden='true' />}
             label={t('Reject Reason')}
-            variant='destructive'
+            variant='danger'
           >
             <p className='text-xs wrap-break-word'>{other.reject_reason}</p>
           </DetailSection>
@@ -805,7 +863,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
           <DetailSection
             icon={<AlertTriangle className='size-3.5' aria-hidden='true' />}
             label={t('Violation Fee')}
-            variant='destructive'
+            variant='danger'
           >
             {other.violation_fee_code && (
               <DetailRow
@@ -844,6 +902,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
         {showTopupAuditSection && (
           <DetailSection
             icon={<ShieldCheck className='size-3.5' aria-hidden='true' />}
+            iconTone='success'
             label={t('Top-up Audit Info')}
           >
             {topupAuditFields.map((field) => (
@@ -855,7 +914,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
               />
             ))}
             {showLegacyTopupWarning && (
-              <div className='text-warning flex items-start gap-1.5 text-xs'>
+              <div className='flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400'>
                 <Info className='mt-0.5 size-3.5 shrink-0' aria-hidden='true' />
                 <span>
                   {t(
@@ -888,6 +947,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
         {showManageAuditSection && (
           <DetailSection
             icon={<ShieldCheck className='size-3.5' aria-hidden='true' />}
+            iconTone='info'
             label={t('Operation Audit Info')}
           >
             {operationText != null && (
@@ -930,6 +990,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
         {isLogin && loginAuditFields.length > 0 && (
           <DetailSection
             icon={<LogIn className='size-3.5' aria-hidden='true' />}
+            iconTone='info'
             label={t('Login Info')}
           >
             {operationText != null && (
@@ -950,6 +1011,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
         {hasAudioTokens && other && (
           <DetailSection
             icon={<Headphones className='size-3.5' aria-hidden='true' />}
+            iconTone='chart-4'
             label={t('Audio Tokens')}
           >
             {other.audio_input != null && other.audio_input > 0 && (
@@ -988,9 +1050,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
           <DetailRow
             label={t('Reasoning Effort')}
             value={
-              <StatusBadge variant={reasoningEffortVariant} size='sm'>
-                {other.reasoning_effort}
-              </StatusBadge>
+              <StatusBadge
+                label={other.reasoning_effort}
+                variant={reasoningEffortVariant}
+                size='sm'
+                copyable={false}
+              />
             }
           />
         )}
@@ -1000,9 +1065,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
           <DetailRow
             label={t('System Prompt')}
             value={
-              <StatusBadge variant='warning' size='sm'>
-                {t('Overwritten')}
-              </StatusBadge>
+              <StatusBadge
+                label={t('Overwritten')}
+                variant='orange'
+                size='sm'
+                copyable={false}
+              />
             }
           />
         )}
@@ -1057,18 +1125,16 @@ export function DetailsDialog(props: DetailsDialogProps) {
           props.log.type !== 6 &&
           other?.admin_info && (
             <DetailRow
-              label={t('Billing Source')}
+              label={t('Billing Path')}
               value={
                 <span className='flex items-center gap-1'>
-                  {other.admin_info.local_count_tokens ? (
-                    <Monitor className='text-muted-foreground size-3' />
+                  {isUsageBillingPathLocal(other.admin_info) ? (
+                    <Monitor className='size-3 text-blue-500' />
                   ) : (
-                    <Cloud className='text-muted-foreground size-3' />
+                    <Cloud className='size-3 text-emerald-500' />
                   )}
                   <span className='text-xs'>
-                    {other.admin_info.local_count_tokens
-                      ? t('Local Billing')
-                      : t('Upstream Response')}
+                    {getUsageBillingPathLabel(t, other.admin_info)}
                   </span>
                 </span>
               }
@@ -1083,9 +1149,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
               <DetailRow
                 label={t('Status')}
                 value={
-                  <StatusBadge variant='destructive' size='sm'>
-                    {other.stream_status.status || t('Error')}
-                  </StatusBadge>
+                  <StatusBadge
+                    label={other.stream_status.status || t('Error')}
+                    variant='red'
+                    size='sm'
+                    copyable={false}
+                  />
                 }
               />
               {other.stream_status.end_reason && (
@@ -1108,7 +1177,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
               )}
               {Array.isArray(other.stream_status.errors) &&
                 other.stream_status.errors.length > 0 && (
-                  <pre className='bg-background/60 mt-1 max-h-32 overflow-y-auto rounded border p-2 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap'>
+                  <pre className='bg-background/60 mt-1 max-h-32 overflow-y-auto rounded border p-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap'>
                     {other.stream_status.errors.join('\n')}
                   </pre>
                 )}
@@ -1167,6 +1236,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
         {other?.po && Array.isArray(other.po) && other.po.length > 0 && (
           <DetailSection
             icon={<Settings2 className='size-3.5' aria-hidden='true' />}
+            iconTone='chart-3'
             label={`${t('Param Override')} (${other.po.length})`}
           >
             {other.po.filter(Boolean).map((line) => {
@@ -1174,13 +1244,16 @@ export function DetailsDialog(props: DetailsDialogProps) {
               if (!parsed) return null
               return (
                 <div
-                  key={line}
+                  key={`${parsed.action}-${parsed.content}`}
                   className='bg-background/60 flex min-w-0 flex-col gap-1.5 rounded border p-2 sm:flex-row sm:items-start sm:gap-2'
                 >
-                  <StatusBadge variant='neutral' className='shrink-0'>
-                    {getParamOverrideActionLabel(parsed.action, t)}
-                  </StatusBadge>
-                  <span className='min-w-0 font-mono text-xs leading-relaxed break-all sm:wrap-break-word'>
+                  <StatusBadge
+                    variant='neutral'
+                    label={getParamOverrideActionLabel(parsed.action, t)}
+                    className='shrink-0 font-medium'
+                    copyable={false}
+                  />
+                  <span className='min-w-0 font-mono text-[11px] leading-relaxed break-all sm:wrap-break-word'>
                     {parsed.content}
                   </span>
                 </div>
@@ -1196,14 +1269,14 @@ export function DetailsDialog(props: DetailsDialogProps) {
             <div className='bg-muted/30 relative min-w-0 overflow-hidden rounded-md border p-2.5'>
               <Button
                 variant='ghost'
-                size='icon-xs'
-                className='absolute top-1.5 right-1.5'
+                size='sm'
+                className='absolute top-1.5 right-1.5 h-5 w-5 p-0'
                 onClick={() => copyToClipboard(details)}
                 title={t('Copy to clipboard')}
                 aria-label={t('Copy to clipboard')}
               >
                 {copiedText === details ? (
-                  <Check className='text-success size-3' />
+                  <Check className='size-3 text-green-600' />
                 ) : (
                   <Copy className='size-3' />
                 )}

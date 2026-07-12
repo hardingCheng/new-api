@@ -20,16 +20,18 @@ import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Tabs, TabsList, TabsTrigger } from '@/components/design-system/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import type { NavGroup } from '@/components/layout/types'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CacheStatsDialog } from '@/features/system-settings/general/channel-affinity/cache-stats-dialog'
 import { useSidebarConfig } from '@/hooks/use-sidebar-config'
 
 import { UserInfoDialog } from './components/dialogs/user-info-dialog'
 import { ModelQuotaPoolSummary } from './components/model-quota-pool-summary'
 import {
+  type LogsViewScope,
   UsageLogsProvider,
+  useLogsViewScope,
   useUsageLogsContext,
 } from './components/usage-logs-provider'
 import { UsageLogsTable } from './components/usage-logs-table'
@@ -70,6 +72,7 @@ function UsageLogsContent() {
     affinityDialogOpen,
     setAffinityDialogOpen,
   } = useUsageLogsContext()
+  const { canManageScope, viewScope, setViewScope } = useLogsViewScope()
   const tabNavGroups = useMemo<NavGroup[]>(
     () => [
       {
@@ -106,6 +109,15 @@ function UsageLogsContent() {
     [navigate]
   )
 
+  const handleViewScopeChange = useCallback(
+    (scope: string) => {
+      if (scope === 'all' || scope === 'self') {
+        setViewScope(scope as LogsViewScope)
+      }
+    },
+    [setViewScope]
+  )
+
   const pageMeta =
     activeCategory === 'common' ? SECTION_META.common : SECTION_META.task
   const showTaskSwitcher =
@@ -117,11 +129,21 @@ function UsageLogsContent() {
         <SectionPageLayout.Title>
           {t(pageMeta.titleKey)}
         </SectionPageLayout.Title>
+        {canManageScope && (
+          <SectionPageLayout.Actions>
+            <Tabs value={viewScope} onValueChange={handleViewScopeChange}>
+              <TabsList>
+                <TabsTrigger value='all'>{t('All')}</TabsTrigger>
+                <TabsTrigger value='self'>{t('Only Mine')}</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </SectionPageLayout.Actions>
+        )}
         <SectionPageLayout.Content>
           <div className='flex h-full min-h-0 flex-col gap-4'>
             {showTaskSwitcher && (
               <Tabs value={activeCategory} onValueChange={handleSectionChange}>
-                <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto sm:group-data-horizontal/tabs:h-auto'>
+                <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
                   {visibleSections.map((section) => (
                     <TabsTrigger key={section} value={section}>
                       {t(SECTION_META[section].titleKey)}

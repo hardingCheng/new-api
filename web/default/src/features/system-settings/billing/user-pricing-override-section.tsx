@@ -22,19 +22,19 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Button } from '@/components/design-system/button'
-import { Input } from '@/components/design-system/input'
+import { Dialog } from '@/components/dialog'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
-} from '@/components/design-system/input-group'
-import { TableCell, TableRow } from '@/components/design-system/table'
-import { Dialog } from '@/components/dialog'
-import { Badge } from '@/components/ui/badge'
-import { Checkbox } from '@/components/ui/checkbox'
+} from '@/components/ui/input-group'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Switch } from '@/components/ui/switch'
+import { TableCell, TableRow } from '@/components/ui/table'
 import { TitledCard } from '@/components/ui/titled-card'
 import { api } from '@/lib/api'
 
