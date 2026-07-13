@@ -419,7 +419,7 @@ func TestUpdateSunoTasksStalePollsRefundExactlyOnce(t *testing.T) {
 	var reloaded model.Task
 	require.NoError(t, model.DB.First(&reloaded, task.ID).Error)
 	assert.EqualValues(t, model.TaskStatusFailure, reloaded.Status)
-	assert.Zero(t, reloaded.Quota)
+	assert.Equal(t, model.TaskBillingStatusRefunded, reloaded.BillingStatus)
 	assert.Equal(t, initialUserQuota+taskQuota, getUserQuota(t, userID))
 	assert.Equal(t, initialTokenQuota+taskQuota, getTokenRemainQuota(t, tokenID))
 	assert.Equal(t, int64(1), countLogs(t))
@@ -488,8 +488,10 @@ func TestSweepTimedOutTasksHonorsRefundRolloutBoundary(t *testing.T) {
 	require.NoError(t, model.DB.First(&reloadedModern, modernTask.ID).Error)
 	assert.EqualValues(t, model.TaskStatusFailure, reloadedLegacy.Status)
 	assert.EqualValues(t, model.TaskStatusFailure, reloadedModern.Status)
-	assert.Zero(t, reloadedLegacy.Quota)
-	assert.Zero(t, reloadedModern.Quota)
+	// 新契约：不再清零 quota（保留扣费记录），改看计费状态
+	// 旧任务从未退款 → 停在 active；新任务已退 → refunded
+	assert.NotEqual(t, model.TaskBillingStatusRefunded, reloadedLegacy.BillingStatus)
+	assert.Equal(t, model.TaskBillingStatusRefunded, reloadedModern.BillingStatus)
 	assert.Contains(t, reloadedLegacy.FailReason, "旧系统遗留任务")
 	assert.Contains(t, reloadedModern.FailReason, "任务超时")
 	assert.Equal(t, initialQuota+modernTaskQuota, getUserQuota(t, userID))

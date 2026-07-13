@@ -1,6 +1,11 @@
 package ratio_setting
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestMatchModelQuotaPoolRules(t *testing.T) {
 	t.Cleanup(func() {
@@ -16,31 +21,33 @@ func TestMatchModelQuotaPoolRules(t *testing.T) {
 			{"id":"prism-user-fast","model":"prism-3.0-fast-*","scope":"user","user_id":42,"period":"day","limit":10}
 		]
 	}`)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	matches := MatchModelQuotaPoolRules(42, "seedance-2.0-fast-480p")
-	if len(matches) != 2 {
-		t.Fatalf("expected user + global matches, got %d", len(matches))
-	}
-	if matches[0].ID != "user-fast" {
-		t.Fatalf("expected best user rule first, got %s", matches[0].ID)
-	}
-	if matches[1].ID != "global-fast" {
-		t.Fatalf("expected exact global rule, got %s", matches[1].ID)
-	}
+	require.Len(t, matches, 2)
+	assert.Equal(t, "user-fast", matches[0].ID)
+	assert.Equal(t, "global-fast", matches[1].ID)
 
 	prismMatches := MatchModelQuotaPoolRules(42, "prism-3.0-fast-480p")
-	if len(prismMatches) != 2 {
-		t.Fatalf("expected prism user + global matches, got %d", len(prismMatches))
-	}
-	if prismMatches[0].ID != "prism-user-fast" {
-		t.Fatalf("expected prism user rule first, got %s", prismMatches[0].ID)
-	}
-	if prismMatches[1].ID != "global-prism" {
-		t.Fatalf("expected prism global rule, got %s", prismMatches[1].ID)
-	}
+	require.Len(t, prismMatches, 2)
+	assert.Equal(t, "prism-user-fast", prismMatches[0].ID)
+	assert.Equal(t, "global-prism", prismMatches[1].ID)
+}
+
+func TestMatchModelQuotaPoolRulesUsesPublicModelNameOnly(t *testing.T) {
+	t.Cleanup(func() {
+		_ = UpdateModelQuotaPoolByJSONString("{}")
+	})
+	require.NoError(t, UpdateModelQuotaPoolByJSONString(`{
+		"rules": [
+			{"id":"public-model","model":"public-gpt","scope":"global","period":"day","limit":10},
+			{"id":"upstream-model","model":"vendor-gpt","scope":"global","period":"day","limit":10}
+		]
+	}`))
+
+	matches := MatchModelQuotaPoolRules(42, "public-gpt")
+	require.Len(t, matches, 1)
+	assert.Equal(t, "public-model", matches[0].ID)
 }
 
 func TestModelQuotaPoolNormalizeSkipsInvalidRules(t *testing.T) {

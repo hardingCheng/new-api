@@ -17,24 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import {
   Copy,
   Check,
@@ -504,6 +486,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const showTiming = isTimingLogType(props.log.type)
   const showIp = !!props.log.ip && props.log.type !== 7
   const adminInfo = other?.admin_info
+  const userPricingOverrides =
+    adminInfo?.user_pricing_overrides ?? other?.user_pricing_overrides
+  const modelQuotaPools =
+    adminInfo?.model_quota_pools ?? other?.model_quota_pools
   const topupAuditFields =
     isTopup && props.isAdmin && adminInfo
       ? ([
@@ -846,10 +832,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
 
         {props.isAdmin &&
           isConsume &&
-          Array.isArray(other?.user_pricing_overrides) &&
-          other.user_pricing_overrides.length > 0 && (
+          Array.isArray(userPricingOverrides) &&
+          userPricingOverrides.length > 0 && (
             <DetailSection label={t('User Pricing Override')}>
-              {other.user_pricing_overrides.map((match, index) => {
+              {userPricingOverrides.map((match, index) => {
                 const rule = match.rule ?? {}
                 let type = t('Ratio')
                 if (rule.type === 'model_price') type = t('Fixed Price')
@@ -868,10 +854,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
 
         {props.isAdmin &&
           isConsume &&
-          Array.isArray(other?.model_quota_pools) &&
-          other.model_quota_pools.length > 0 && (
+          Array.isArray(modelQuotaPools) &&
+          modelQuotaPools.length > 0 && (
             <DetailSection label={t('Model Quota Pool')}>
-              {other.model_quota_pools.map((pool) => (
+              {modelQuotaPools.map((pool) => (
                 <DetailRow
                   key={`${pool.rule?.id || pool.rule?.model || 'unknown'}-${pool.scope || ''}-${pool.period_key || ''}`}
                   label={pool.scope === 'user' ? t('User') : t('Global')}

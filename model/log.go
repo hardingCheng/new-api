@@ -121,6 +121,10 @@ func formatUserLogs(logs []*Log, startIdx int) {
 		if otherMap != nil {
 			// Remove admin-only debug fields.
 			delete(otherMap, "admin_info")
+			// Strip legacy top-level billing rules written before they moved under
+			// admin_info. User log APIs must remain safe for historical rows too.
+			delete(otherMap, "user_pricing_overrides")
+			delete(otherMap, "model_quota_pools")
 			// Remove operation-audit details (operator/route info), admin-only.
 			delete(otherMap, "audit_info")
 			// delete(otherMap, "reject_reason")

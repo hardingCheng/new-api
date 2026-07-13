@@ -22,6 +22,28 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
+	service.RegisterSystemTaskHandler(billingReconcileHandler{})
+}
+
+type billingReconcileHandler struct{}
+
+func (billingReconcileHandler) Type() string { return model.SystemTaskTypeBillingReconcile }
+
+func (billingReconcileHandler) Enabled() bool { return model.HasPendingBillingAdjustments() }
+
+func (billingReconcileHandler) Interval() time.Duration { return 15 * time.Second }
+
+func (billingReconcileHandler) NewPayload() any { return nil }
+
+func (billingReconcileHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	summary := service.ProcessPendingBillingAdjustments(ctx, 100)
+	status := model.SystemTaskStatusSucceeded
+	var runErr error
+	if summary.Failed > 0 {
+		status = model.SystemTaskStatusFailed
+		runErr = fmt.Errorf("%d billing adjustments failed", summary.Failed)
+	}
+	finishSystemTaskHandler(task, runnerID, status, summary, runErr)
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and
@@ -140,6 +162,15 @@ type asyncTaskPollHandler struct{}
 func (asyncTaskPollHandler) Type() string { return model.SystemTaskTypeAsyncTaskPoll }
 
 func (asyncTaskPollHandler) Enabled() bool {
+	if model.HasPendingTaskRefunds() {
+		return true
+	}
+	if constant.TaskTimeoutMinutes > 0 {
+		cutoff := time.Now().Unix() - int64(constant.TaskTimeoutMinutes)*60
+		if model.HasTimedOutTaskSubmissions(cutoff) {
+			return true
+		}
+	}
 	return constant.UpdateTask && model.HasUnfinishedSyncTasks()
 }
 

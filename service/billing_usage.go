@@ -24,6 +24,16 @@ func effectiveBillingUsage(usage *dto.Usage) *dto.Usage {
 	return usage
 }
 
+func hasActualTokenUsage(isLocalCountTokens bool, usage *dto.Usage) bool {
+	if isLocalCountTokens || usage == nil {
+		return false
+	}
+	if usage.BillingUsage != nil && usage.BillingUsage.Estimated {
+		return false
+	}
+	return dto.HasOpenAIUsageTokens(effectiveBillingUsage(usage))
+}
+
 func usageBillingPathForLog(isLocalCountTokens bool, usage *dto.Usage) string {
 	if isLocalCountTokens {
 		return usageBillingPathLocal

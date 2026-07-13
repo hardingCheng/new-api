@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -49,33 +50,57 @@ func (s *BillingSession) Settle(actualQuota int) error {
 		s.settled = true
 		return nil
 	}
-	// 1) 调整资金来源（仅在尚未提交时执行，防止重复调用）
-	if !s.fundingSettled {
-		if err := s.funding.Settle(delta); err != nil {
-			return err
+	requestID := strings.TrimSpace(s.relayInfo.RequestId)
+	if requestID == "" {
+		requestID = common.NewRequestId()
+		s.relayInfo.RequestId = requestID
+	}
+	tokenDelta := delta
+	if s.relayInfo.IsPlayground {
+		tokenDelta = 0
+	}
+	params := model.BillingAdjustmentParams{
+		AdjustmentKey:  "relay-settle:" + requestID,
+		UserID:         s.relayInfo.UserId,
+		TokenID:        s.relayInfo.TokenId,
+		SubscriptionID: s.relayInfo.SubscriptionId,
+		FundingSource:  s.funding.Source(),
+		FundingDelta:   delta,
+		TokenDelta:     tokenDelta,
+	}
+	var adjustment *model.BillingAdjustment
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		adjustment, err = model.EnsureBillingAdjustment(params)
+		if err == nil {
+			break
 		}
+		if attempt < 2 {
+			time.Sleep(time.Duration(attempt+1) * 25 * time.Millisecond)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	if err = model.ApplyBillingAdjustment(adjustment.ID); err != nil {
+		s.relayInfo.BillingSettlementPending = true
+		s.relayInfo.BillingSettlementError = err.Error()
+		// The adjustment is durable and will be retried by billing_reconcile.
+		// Treat the request lifecycle as settled so failure defers cannot refund
+		// the pre-consume while the queued delta is still pending.
 		s.fundingSettled = true
+		s.settled = true
+		return nil
 	}
-	// 2) 调整令牌额度
-	var tokenErr error
-	if !s.relayInfo.IsPlayground {
-		if delta > 0 {
-			tokenErr = model.DecreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, delta)
-		} else {
-			tokenErr = model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, -delta)
-		}
-		if tokenErr != nil {
-			// 资金来源已提交，令牌调整失败只能记录日志；标记 settled 防止 Refund 误退资金
-			common.SysLog(fmt.Sprintf("error adjusting token quota after funding settled (userId=%d, tokenId=%d, delta=%d): %s",
-				s.relayInfo.UserId, s.relayInfo.TokenId, delta, tokenErr.Error()))
-		}
-	}
+	s.relayInfo.BillingSettlementPending = false
+	s.relayInfo.BillingSettlementError = ""
+	s.fundingSettled = true
 	// 3) 更新 relayInfo 上的订阅 PostDelta（用于日志）
 	if s.funding.Source() == BillingSourceSubscription {
 		s.relayInfo.SubscriptionPostDelta += int64(delta)
 	}
 	s.settled = true
-	return tokenErr
+	return nil
 }
 
 // Refund 退还所有预扣费，幂等安全，异步执行。

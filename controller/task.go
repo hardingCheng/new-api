@@ -77,11 +77,31 @@ func GetUserTask(c *gin.Context) {
 	common.ApiSuccess(c, pageInfo)
 }
 
-// GetAllTaskExport 一次性返回所有匹配的任务（不分页），供后台导出报表使用。
-// 不受每页 100 条上限约束，数据量由时间范围等过滤条件自然限制。
+const (
+	taskExportMaxRangeSeconds = int64(31 * 24 * 60 * 60)
+	taskExportMaxRows         = 50000
+)
+
+// GetAllTaskExport 返回指定时间范围内的任务，供后台导出报表使用。
 func GetAllTaskExport(c *gin.Context) {
-	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
-	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	startTimestamp, err := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	if err != nil || startTimestamp <= 0 {
+		common.ApiErrorMsg(c, "invalid start_timestamp")
+		return
+	}
+	endTimestamp, err := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	if err != nil || endTimestamp <= 0 {
+		common.ApiErrorMsg(c, "invalid end_timestamp")
+		return
+	}
+	if endTimestamp < startTimestamp {
+		common.ApiErrorMsg(c, "invalid time range")
+		return
+	}
+	if endTimestamp-startTimestamp > taskExportMaxRangeSeconds {
+		common.ApiErrorMsg(c, "task export time range cannot exceed 31 days")
+		return
+	}
 	queryParams := model.SyncTaskQueryParams{
 		Platform:       constant.TaskPlatform(c.Query("platform")),
 		TaskID:         c.Query("task_id"),
@@ -104,8 +124,15 @@ func GetAllTaskExport(c *gin.Context) {
 			return
 		}
 	}
-	// num = -1 表示不限制条数（GORM 取消 LIMIT），一次查询取全部。
-	items := model.TaskGetAllTasks(0, -1, queryParams)
+	items, err := model.TaskGetAllTasksForExport(taskExportMaxRows+1, queryParams)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if len(items) > taskExportMaxRows {
+		common.ApiErrorMsg(c, "task export exceeds 50000 rows; narrow the filters")
+		return
+	}
 	common.ApiSuccess(c, gin.H{"items": tasksToDto(items, true)})
 }
 
