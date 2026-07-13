@@ -249,6 +249,16 @@ func Register(c *gin.Context) {
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
 	}
+	// 分站归组:优先按注册来源(nginx 按域名设的 X-Register-Group 头)→ 继承邀请人 → 系统默认(default)
+	grp := strings.TrimSpace(c.GetHeader("X-Register-Group"))
+	if grp == "" && inviterId != 0 {
+		if inviter, gerr := model.GetUserById(inviterId, false); gerr == nil && inviter.Group != "" {
+			grp = inviter.Group
+		}
+	}
+	if grp != "" {
+		cleanUser.Group = grp
+	}
 	if err := cleanUser.Insert(inviterId); err != nil {
 		if errors.Is(err, model.ErrEmailAlreadyTaken) {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailAlreadyTaken)
