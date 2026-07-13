@@ -23,7 +23,6 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -601,11 +600,17 @@ func RelayTask(c *gin.Context) {
 	var result *relay.TaskSubmitResult
 	var taskErr *dto.TaskError
 	defer func() {
-		if taskErr != nil && relayInfo.Billing != nil {
-			relayInfo.Billing.Refund(c)
-		}
 		if taskErr != nil {
-			service.RollbackModelQuotaPool(relayInfo)
+			handled, finalizeErr := service.MarkTaskSubmissionFailed(c.Request.Context(), relayInfo.UserId, relayInfo.PublicTaskID, taskErr.Message)
+			if finalizeErr != nil {
+				common.SysError("finalize failed task submission error: " + finalizeErr.Error())
+			}
+			if !handled {
+				if relayInfo.Billing != nil {
+					relayInfo.Billing.Refund(c)
+				}
+				service.RollbackModelQuotaPool(relayInfo)
+			}
 		}
 	}()
 
@@ -678,45 +683,27 @@ func RelayTask(c *gin.Context) {
 		logger.LogInfo(c, retryLogStr)
 	}
 
-	// ── 成功：结算 + 日志 + 插入任务 ──
+	// ── 成功：先完成本地任务记录，再结算和记录日志 ──
+	if taskErr == nil {
+		if result == nil {
+			taskErr = service.TaskErrorWrapperLocal(errors.New("empty task submission result"), "empty_task_result", http.StatusInternalServerError)
+		} else if updateErr := service.CompleteTaskSubmissionRecord(c, relayInfo, result.Platform, result.UpstreamTaskID, result.TaskData, result.Quota); updateErr != nil {
+			common.SysError("complete task submission record error: " + updateErr.Error())
+			taskErr = service.TaskErrorWrapperLocal(updateErr, "update_task_failed", http.StatusInternalServerError)
+		}
+	}
 	if taskErr == nil {
 		if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
 			common.SysError("settle task billing error: " + settleErr.Error())
 		}
-		service.SettleModelQuotaPoolWithQuota(relayInfo, result.Quota)
+		service.SettleModelQuotaPool(relayInfo, service.ModelQuotaPoolSettlement{
+			ActualQuota:    result.Quota,
+			HasActualQuota: true,
+		})
+		if syncErr := service.SyncTaskSubmissionBillingContext(relayInfo); syncErr != nil {
+			common.SysError("sync task submission billing context error: " + syncErr.Error())
+		}
 		service.LogTaskConsumption(c, relayInfo)
-
-		task := model.InitTask(result.Platform, relayInfo)
-		task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
-		task.PrivateData.BillingSource = relayInfo.BillingSource
-		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
-		task.PrivateData.TokenId = relayInfo.TokenId
-		task.PrivateData.NodeName = common.NodeName
-		task.PrivateData.BillingContext = &model.TaskBillingContext{
-			ModelPrice:           relayInfo.PriceData.ModelPrice,
-			GroupRatio:           relayInfo.PriceData.GroupRatioInfo.GroupRatio,
-			ModelRatio:           relayInfo.PriceData.ModelRatio,
-			OtherRatios:          relayInfo.PriceData.OtherRatios(),
-			OriginModelName:      relayInfo.OriginModelName,
-			VideoBillingMode:     ratio_setting.GetVideoBillingMode(relayInfo.OriginModelName),
-			UserPricingOverrides: relayInfo.UserPricingOverrides,
-			ModelQuotaPools:      relayInfo.ModelQuotaPools,
-			PerCallBilling:       ratio_setting.IsVideoBillingPerCall(relayInfo.OriginModelName) || (relayInfo.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(relayInfo.OriginModelName)),
-		}
-		task.Quota = result.Quota
-		task.Data = result.TaskData
-		task.Action = relayInfo.Action
-		if referenceSeconds := c.GetInt("reference_video_seconds"); referenceSeconds > 0 {
-			task.Properties.HasReferenceVideo = true
-			task.Properties.ReferenceVideoSeconds = referenceSeconds
-		}
-		// 提交时即记录用户请求的生成时长，便于任务创建后立刻展示视频时长。
-		if genSeconds := c.GetInt("generated_video_seconds"); genSeconds > 0 {
-			task.Properties.VideoSeconds = genSeconds
-		}
-		if insertErr := task.Insert(); insertErr != nil {
-			common.SysError("insert task error: " + insertErr.Error())
-		}
 	}
 
 	if taskErr != nil {

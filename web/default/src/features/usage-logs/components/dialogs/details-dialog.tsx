@@ -480,6 +480,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const showTiming = isTimingLogType(props.log.type)
   const showIp = !!props.log.ip && props.log.type !== 7
   const adminInfo = other?.admin_info
+  const userPricingOverrides =
+    adminInfo?.user_pricing_overrides ?? other?.user_pricing_overrides
+  const modelQuotaPools =
+    adminInfo?.model_quota_pools ?? other?.model_quota_pools
   const topupAuditFields =
     isTopup && props.isAdmin && adminInfo
       ? ([
@@ -822,10 +826,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
 
         {props.isAdmin &&
           isConsume &&
-          Array.isArray(other?.user_pricing_overrides) &&
-          other.user_pricing_overrides.length > 0 && (
+          Array.isArray(userPricingOverrides) &&
+          userPricingOverrides.length > 0 && (
             <DetailSection label={t('User Pricing Override')}>
-              {other.user_pricing_overrides.map((match, index) => {
+              {userPricingOverrides.map((match, index) => {
                 const rule = match.rule ?? {}
                 let type = t('Ratio')
                 if (rule.type === 'model_price') type = t('Fixed Price')
@@ -844,10 +848,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
 
         {props.isAdmin &&
           isConsume &&
-          Array.isArray(other?.model_quota_pools) &&
-          other.model_quota_pools.length > 0 && (
+          Array.isArray(modelQuotaPools) &&
+          modelQuotaPools.length > 0 && (
             <DetailSection label={t('Model Quota Pool')}>
-              {other.model_quota_pools.map((pool) => (
+              {modelQuotaPools.map((pool) => (
                 <DetailRow
                   key={`${pool.rule?.id || pool.rule?.model || 'unknown'}-${pool.scope || ''}-${pool.period_key || ''}`}
                   label={pool.scope === 'user' ? t('User') : t('Global')}

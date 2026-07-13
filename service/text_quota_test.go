@@ -297,6 +297,19 @@ func TestUsageBillingPathForLog(t *testing.T) {
 	}))
 }
 
+func TestHasActualTokenUsageRejectsMissingAndEstimatedUsage(t *testing.T) {
+	require.False(t, hasActualTokenUsage(false, nil))
+	require.False(t, hasActualTokenUsage(false, &dto.Usage{}))
+	require.False(t, hasActualTokenUsage(true, &dto.Usage{TotalTokens: 10}))
+	require.False(t, hasActualTokenUsage(false, &dto.Usage{
+		BillingUsage: dto.NewEstimatedGeminiChatBillingUsage(&dto.Usage{TotalTokens: 10}),
+	}))
+	require.True(t, hasActualTokenUsage(false, &dto.Usage{TotalTokens: 10}))
+	require.True(t, hasActualTokenUsage(false, &dto.Usage{
+		BillingUsage: dto.NewClaudeMessagesBillingUsage(&dto.ClaudeUsage{InputTokens: 10}),
+	}))
+}
+
 func TestAppendUsageBillingPathForLogWritesAdminInfo(t *testing.T) {
 	other := map[string]interface{}{
 		"admin_info": map[string]interface{}{},

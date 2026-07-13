@@ -19,7 +19,7 @@ type TaskStatus string
 func (t TaskStatus) ToVideoStatus() string {
 	var status string
 	switch t {
-	case TaskStatusQueued, TaskStatusSubmitted, TaskStatusNotStart:
+	case TaskStatusQueued, TaskStatusSubmitted, TaskStatusNotStart, TaskStatusSubmitting:
 		status = dto.VideoStatusQueued
 	case TaskStatusInProgress:
 		status = dto.VideoStatusInProgress
@@ -35,6 +35,7 @@ func (t TaskStatus) ToVideoStatus() string {
 
 const (
 	TaskStatusNotStart   TaskStatus = "NOT_START"
+	TaskStatusSubmitting TaskStatus = "SUBMITTING"
 	TaskStatusSubmitted             = "SUBMITTED"
 	TaskStatusQueued                = "QUEUED"
 	TaskStatusInProgress            = "IN_PROGRESS"
@@ -43,26 +44,33 @@ const (
 	TaskStatusUnknown               = "UNKNOWN"
 )
 
+const (
+	TaskBillingStatusActive        = "active"
+	TaskBillingStatusRefundPending = "refund_pending"
+	TaskBillingStatusRefunded      = "refunded"
+)
+
 type Task struct {
-	ID          int64                 `json:"id" gorm:"primary_key;AUTO_INCREMENT"`
-	CreatedAt   int64                 `json:"created_at" gorm:"index"`
-	UpdatedAt   int64                 `json:"updated_at"`
-	TaskID      string                `json:"task_id" gorm:"type:varchar(191);index"` // 第三方id，不一定有/ song id\ Task id
-	Platform    constant.TaskPlatform `json:"platform" gorm:"type:varchar(30);index"` // 平台
-	UserId      int                   `json:"user_id" gorm:"index"`
-	Group       string                `json:"group" gorm:"type:varchar(50)"` // 修正计费用
-	ChannelId   int                   `json:"channel_id" gorm:"index"`
-	ChannelName string                `json:"channel_name,omitempty" gorm:"-"`
-	Quota       int                   `json:"quota"`
-	Action      string                `json:"action" gorm:"type:varchar(40);index"` // 任务类型, song, lyrics, description-mode
-	Status      TaskStatus            `json:"status" gorm:"type:varchar(20);index"` // 任务状态
-	FailReason  string                `json:"fail_reason"`
-	SubmitTime  int64                 `json:"submit_time" gorm:"index"`
-	StartTime   int64                 `json:"start_time" gorm:"index"`
-	FinishTime  int64                 `json:"finish_time" gorm:"index"`
-	Progress    string                `json:"progress" gorm:"type:varchar(20);index"`
-	Properties  Properties            `json:"properties" gorm:"type:json"`
-	Username    string                `json:"username,omitempty" gorm:"-"`
+	ID            int64                 `json:"id" gorm:"primary_key;AUTO_INCREMENT"`
+	CreatedAt     int64                 `json:"created_at" gorm:"index"`
+	UpdatedAt     int64                 `json:"updated_at"`
+	TaskID        string                `json:"task_id" gorm:"type:varchar(191);index"` // 第三方id，不一定有/ song id\ Task id
+	Platform      constant.TaskPlatform `json:"platform" gorm:"type:varchar(30);index"` // 平台
+	UserId        int                   `json:"user_id" gorm:"index"`
+	Group         string                `json:"group" gorm:"type:varchar(50)"` // 修正计费用
+	ChannelId     int                   `json:"channel_id" gorm:"index"`
+	ChannelName   string                `json:"channel_name,omitempty" gorm:"-"`
+	Quota         int                   `json:"quota"`
+	BillingStatus string                `json:"billing_status,omitempty" gorm:"type:varchar(32);index"`
+	Action        string                `json:"action" gorm:"type:varchar(40);index"` // 任务类型, song, lyrics, description-mode
+	Status        TaskStatus            `json:"status" gorm:"type:varchar(20);index"` // 任务状态
+	FailReason    string                `json:"fail_reason"`
+	SubmitTime    int64                 `json:"submit_time" gorm:"index"`
+	StartTime     int64                 `json:"start_time" gorm:"index"`
+	FinishTime    int64                 `json:"finish_time" gorm:"index"`
+	Progress      string                `json:"progress" gorm:"type:varchar(20);index"`
+	Properties    Properties            `json:"properties" gorm:"type:json"`
+	Username      string                `json:"username,omitempty" gorm:"-"`
 	// 禁止返回给用户，内部可能包含key等隐私信息
 	PrivateData TaskPrivateData `json:"-" gorm:"column:private_data;type:json"`
 	Data        json.RawMessage `json:"data" gorm:"type:json"`
@@ -105,10 +113,11 @@ func (m Properties) Value() (driver.Value, error) {
 }
 
 type TaskPrivateData struct {
-	Key            string `json:"key,omitempty"`
-	UpstreamTaskID string `json:"upstream_task_id,omitempty"` // 上游真实 task ID
-	ResultURL      string `json:"result_url,omitempty"`       // 任务成功后的结果 URL（视频地址等）
-	RefundQuota    int    `json:"refund_quota,omitempty"`     // 任务完成后退还的额度
+	Key              string `json:"key,omitempty"`
+	UpstreamTaskID   string `json:"upstream_task_id,omitempty"`    // 上游真实 task ID
+	UsesPublicTaskID bool   `json:"uses_public_task_id,omitempty"` // TaskID 是对外 ID，不能回退用作上游 ID
+	ResultURL        string `json:"result_url,omitempty"`          // 任务成功后的结果 URL（视频地址等）
+	RefundQuota      int    `json:"refund_quota,omitempty"`        // 任务完成后退还的额度
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
 	BillingSource  string              `json:"billing_source,omitempty"`  // "wallet" 或 "subscription"
 	SubscriptionId int                 `json:"subscription_id,omitempty"` // 订阅 ID，用于订阅退款
@@ -135,6 +144,9 @@ type TaskBillingContext struct {
 func (t *Task) GetUpstreamTaskID() string {
 	if t.PrivateData.UpstreamTaskID != "" {
 		return t.PrivateData.UpstreamTaskID
+	}
+	if t.PrivateData.UsesPublicTaskID {
+		return ""
 	}
 	return t.TaskID
 }
@@ -203,6 +215,7 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 	taskID := ""
 	if relayInfo.TaskRelayInfo != nil && relayInfo.TaskRelayInfo.PublicTaskID != "" {
 		taskID = relayInfo.TaskRelayInfo.PublicTaskID
+		privateData.UsesPublicTaskID = true
 	} else {
 		taskID = GenerateTaskID()
 	}
@@ -256,6 +269,18 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 	return tasks
 }
 
+func TaskGetAllTasksForExport(limit int, queryParams SyncTaskQueryParams) ([]*Task, error) {
+	if limit <= 0 {
+		return nil, gorm.ErrInvalidValue
+	}
+	var tasks []*Task
+	err := applyTaskQueryFilters(DB, queryParams).
+		Order("id desc").
+		Limit(limit).
+		Find(&tasks).Error
+	return tasks, err
+}
+
 func GetTimedOutUnfinishedTasks(cutoffUnix int64, limit int) []*Task {
 	var tasks []*Task
 	err := DB.Where("progress != ?", "100%").
@@ -274,7 +299,7 @@ func GetAllUnFinishSyncTasks(limit int) []*Task {
 	var tasks []*Task
 	var err error
 	// get all tasks progress is not 100%
-	err = DB.Where("progress != ?", "100%").Where("status != ?", TaskStatusFailure).Where("status != ?", TaskStatusSuccess).Limit(limit).Order("id").Find(&tasks).Error
+	err = DB.Where("progress != ?", "100%").Where("status NOT IN ?", []TaskStatus{TaskStatusFailure, TaskStatusSuccess, TaskStatusSubmitting}).Limit(limit).Order("id").Find(&tasks).Error
 	if err != nil {
 		return nil
 	}
@@ -289,8 +314,20 @@ func HasUnfinishedSyncTasks() bool {
 	var id int64
 	err := DB.Model(&Task{}).
 		Where("progress != ?", "100%").
-		Where("status != ?", TaskStatusFailure).
-		Where("status != ?", TaskStatusSuccess).
+		Where("status NOT IN ?", []TaskStatus{TaskStatusFailure, TaskStatusSuccess, TaskStatusSubmitting}).
+		Limit(1).
+		Pluck("id", &id).Error
+	return err == nil && id != 0
+}
+
+func HasTimedOutTaskSubmissions(cutoffUnix int64) bool {
+	if cutoffUnix <= 0 {
+		return false
+	}
+	var id int64
+	err := DB.Model(&Task{}).
+		Where("status = ?", TaskStatusSubmitting).
+		Where("submit_time < ?", cutoffUnix).
 		Limit(1).
 		Pluck("id", &id).Error
 	return err == nil && id != 0
@@ -385,6 +422,34 @@ func (Task *Task) Update() error {
 
 func (t *Task) UpdateQuota() error {
 	return DB.Model(t).Update("quota", t.Quota).Error
+}
+
+func (t *Task) UpdateBillingStatus(status string) error {
+	t.BillingStatus = status
+	return DB.Model(t).Update("billing_status", status).Error
+}
+
+func (t *Task) UpdatePrivateData() error {
+	return DB.Model(t).Update("private_data", t.PrivateData).Error
+}
+
+func GetPendingTaskRefunds(limit int) []*Task {
+	if limit <= 0 {
+		limit = 100
+	}
+	var tasks []*Task
+	if err := DB.Where("billing_status = ?", TaskBillingStatusRefundPending).
+		Order("id").Limit(limit).Find(&tasks).Error; err != nil {
+		return nil
+	}
+	return tasks
+}
+
+func HasPendingTaskRefunds() bool {
+	var id int64
+	err := DB.Model(&Task{}).Where("billing_status = ?", TaskBillingStatusRefundPending).
+		Limit(1).Pluck("id", &id).Error
+	return err == nil && id != 0
 }
 
 // UpdateWithStatus performs a conditional UPDATE guarded by fromStatus (CAS).

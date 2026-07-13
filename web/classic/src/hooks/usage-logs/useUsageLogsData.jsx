@@ -586,6 +586,11 @@ export const useLogsData = () => {
         });
       }
       if (logs[i].type === 2) {
+        const userPricingOverrides =
+          other?.admin_info?.user_pricing_overrides ??
+          other?.user_pricing_overrides;
+        const modelQuotaPools =
+          other?.admin_info?.model_quota_pools ?? other?.model_quota_pools;
         if (other?.billing_mode !== 'tiered_expr') {
           expandDataLocal.push({
             key: t('日志详情'),
@@ -617,22 +622,22 @@ export const useLogsData = () => {
         }
         if (
           isAdminUser &&
-          Array.isArray(other?.user_pricing_overrides) &&
-          other.user_pricing_overrides.length > 0
+          Array.isArray(userPricingOverrides) &&
+          userPricingOverrides.length > 0
         ) {
           expandDataLocal.push({
             key: t('用户价格覆盖'),
-            value: renderUserPricingOverrides(other.user_pricing_overrides, t),
+            value: renderUserPricingOverrides(userPricingOverrides, t),
           });
         }
         if (
           isAdminUser &&
-          Array.isArray(other?.model_quota_pools) &&
-          other.model_quota_pools.length > 0
+          Array.isArray(modelQuotaPools) &&
+          modelQuotaPools.length > 0
         ) {
           expandDataLocal.push({
             key: t('模型限量池'),
-            value: renderModelQuotaPools(other.model_quota_pools, t),
+            value: renderModelQuotaPools(modelQuotaPools, t),
           });
         }
       }

@@ -2,12 +2,16 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	taskcommon "github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -52,12 +56,7 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = info.UpstreamModelName
 	}
-	if len(info.UserPricingOverrides) > 0 {
-		other["user_pricing_overrides"] = info.UserPricingOverrides
-	}
-	if len(info.ModelQuotaPools) > 0 {
-		other["model_quota_pools"] = info.ModelQuotaPools
-	}
+	appendAdminBillingRules(other, info.UserPricingOverrides, info.ModelQuotaPools)
 	if otherRatios := info.PriceData.OtherRatios(); len(otherRatios) > 0 {
 		for k, v := range otherRatios {
 			other[k] = v
@@ -87,56 +86,131 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	model.UpdateChannelUsedQuota(info.ChannelId, info.PriceData.Quota)
 }
 
-// ---------------------------------------------------------------------------
-// 异步任务计费辅助函数
-// ---------------------------------------------------------------------------
+func EnsureTaskSubmissionRecord(c *gin.Context, info *relaycommon.RelayInfo, platform constant.TaskPlatform) (*model.Task, error) {
+	if info == nil || strings.TrimSpace(info.PublicTaskID) == "" {
+		return nil, fmt.Errorf("public task id is required")
+	}
+	if existing, found, err := model.GetByTaskId(info.UserId, info.PublicTaskID); err != nil {
+		return nil, err
+	} else if found {
+		if existing.Status != model.TaskStatusSubmitting {
+			return nil, fmt.Errorf("task submission record %s has status %s", info.PublicTaskID, existing.Status)
+		}
+		return existing, nil
+	}
 
-// resolveTokenKey 通过 TokenId 运行时获取令牌 Key（用于 Redis 缓存操作）。
-// 如果令牌已被删除或查询失败，返回空字符串。
-func resolveTokenKey(ctx context.Context, tokenId int, taskID string) string {
-	token, err := model.GetTokenById(tokenId)
+	task := model.InitTask(platform, info)
+	task.Status = model.TaskStatusSubmitting
+	task.BillingStatus = model.TaskBillingStatusActive
+	task.Quota = info.PriceData.Quota
+	task.Action = info.Action
+	task.PrivateData.BillingSource = info.BillingSource
+	task.PrivateData.SubscriptionId = info.SubscriptionId
+	task.PrivateData.TokenId = info.TokenId
+	task.PrivateData.NodeName = common.NodeName
+	task.PrivateData.BillingContext = taskBillingContextFromRelayInfo(info)
+	if c != nil {
+		if referenceSeconds := c.GetInt("reference_video_seconds"); referenceSeconds > 0 {
+			task.Properties.HasReferenceVideo = true
+			task.Properties.ReferenceVideoSeconds = referenceSeconds
+		}
+		if generatedSeconds := c.GetInt("generated_video_seconds"); generatedSeconds > 0 {
+			task.Properties.VideoSeconds = generatedSeconds
+		}
+	}
+	if err := task.Insert(); err != nil {
+		return nil, err
+	}
+	return task, nil
+}
+
+func taskBillingContextFromRelayInfo(info *relaycommon.RelayInfo) *model.TaskBillingContext {
+	return &model.TaskBillingContext{
+		ModelPrice:           info.PriceData.ModelPrice,
+		GroupRatio:           info.PriceData.GroupRatioInfo.GroupRatio,
+		ModelRatio:           info.PriceData.ModelRatio,
+		OtherRatios:          info.PriceData.OtherRatios(),
+		OriginModelName:      info.OriginModelName,
+		VideoBillingMode:     ratio_setting.GetVideoBillingMode(info.OriginModelName),
+		UserPricingOverrides: info.UserPricingOverrides,
+		ModelQuotaPools:      info.ModelQuotaPools,
+		PerCallBilling:       ratio_setting.IsVideoBillingPerCall(info.OriginModelName) || (info.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(info.OriginModelName)),
+	}
+}
+
+func MarkTaskSubmissionFailed(ctx context.Context, userID int, publicTaskID string, reason string) (bool, error) {
+	task, found, err := model.GetByTaskId(userID, publicTaskID)
 	if err != nil {
-		logger.LogWarn(ctx, fmt.Sprintf("获取令牌 key 失败 (tokenId=%d, task=%s): %s", tokenId, taskID, err.Error()))
-		return ""
+		return false, err
 	}
-	return token.Key
+	if !found {
+		return false, nil
+	}
+	if task.Status != model.TaskStatusSubmitting {
+		return true, nil
+	}
+	_, err = FinalizeTaskFailure(ctx, task, model.TaskStatusSubmitting, reason)
+	return true, err
 }
 
-// taskIsSubscription 判断任务是否通过订阅计费。
-func taskIsSubscription(task *model.Task) bool {
-	return task.PrivateData.BillingSource == BillingSourceSubscription && task.PrivateData.SubscriptionId > 0
-}
-
-// taskAdjustFunding 调整任务的资金来源（钱包或订阅），delta > 0 表示扣费，delta < 0 表示退还。
-func taskAdjustFunding(task *model.Task, delta int) error {
-	if taskIsSubscription(task) {
-		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
+func CompleteTaskSubmissionRecord(c *gin.Context, info *relaycommon.RelayInfo, resultPlatform constant.TaskPlatform, upstreamTaskID string, taskData []byte, quota int) error {
+	if info == nil || strings.TrimSpace(info.PublicTaskID) == "" {
+		return fmt.Errorf("public task id is required")
 	}
-	if delta > 0 {
-		return model.DecreaseUserQuota(task.UserId, delta, false)
-	}
-	return model.IncreaseUserQuota(task.UserId, -delta, false)
-}
-
-// taskAdjustTokenQuota 调整任务的令牌额度，delta > 0 表示扣费，delta < 0 表示退还。
-// 需要通过 resolveTokenKey 运行时获取 key（不从 PrivateData 中读取）。
-func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {
-	if task.PrivateData.TokenId <= 0 || delta == 0 {
-		return
-	}
-	tokenKey := resolveTokenKey(ctx, task.PrivateData.TokenId, task.TaskID)
-	if tokenKey == "" {
-		return
-	}
-	var err error
-	if delta > 0 {
-		err = model.DecreaseTokenQuota(task.PrivateData.TokenId, tokenKey, delta)
-	} else {
-		err = model.IncreaseTokenQuota(task.PrivateData.TokenId, tokenKey, -delta)
-	}
+	task, found, err := model.GetByTaskId(info.UserId, info.PublicTaskID)
 	if err != nil {
-		logger.LogWarn(ctx, fmt.Sprintf("调整令牌额度失败 (delta=%d, task=%s): %s", delta, task.TaskID, err.Error()))
+		return err
 	}
+	if !found {
+		return fmt.Errorf("task submission record %s not found", info.PublicTaskID)
+	}
+	if task.Status != model.TaskStatusSubmitting {
+		return fmt.Errorf("task submission record %s has status %s", info.PublicTaskID, task.Status)
+	}
+
+	task.Platform = resultPlatform
+	task.Status = model.TaskStatusNotStart
+	task.Progress = "0%"
+	task.BillingStatus = model.TaskBillingStatusActive
+	task.Quota = quota
+	task.Action = info.Action
+	task.Data = taskData
+	task.PrivateData.UpstreamTaskID = upstreamTaskID
+	task.PrivateData.UsesPublicTaskID = true
+	task.PrivateData.BillingSource = info.BillingSource
+	task.PrivateData.SubscriptionId = info.SubscriptionId
+	task.PrivateData.TokenId = info.TokenId
+	task.PrivateData.NodeName = common.NodeName
+	task.PrivateData.BillingContext = taskBillingContextFromRelayInfo(info)
+	if c != nil {
+		if referenceSeconds := c.GetInt("reference_video_seconds"); referenceSeconds > 0 {
+			task.Properties.HasReferenceVideo = true
+			task.Properties.ReferenceVideoSeconds = referenceSeconds
+		}
+		if generatedSeconds := c.GetInt("generated_video_seconds"); generatedSeconds > 0 {
+			task.Properties.VideoSeconds = generatedSeconds
+		}
+	}
+	won, err := task.UpdateWithStatus(model.TaskStatusSubmitting)
+	if err != nil {
+		return err
+	}
+	if !won {
+		return fmt.Errorf("task submission record %s was updated concurrently", info.PublicTaskID)
+	}
+	return nil
+}
+
+func SyncTaskSubmissionBillingContext(info *relaycommon.RelayInfo) error {
+	if info == nil || strings.TrimSpace(info.PublicTaskID) == "" {
+		return nil
+	}
+	task, found, err := model.GetByTaskId(info.UserId, info.PublicTaskID)
+	if err != nil || !found {
+		return err
+	}
+	task.PrivateData.BillingContext = taskBillingContextFromRelayInfo(info)
+	return task.UpdatePrivateData()
 }
 
 // taskBillingOther 从 task 的 BillingContext 构建日志 Other 字段。
@@ -151,12 +225,7 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 			other["model_ratio"] = bc.ModelRatio
 		}
 		other["group_ratio"] = bc.GroupRatio
-		if len(bc.UserPricingOverrides) > 0 {
-			other["user_pricing_overrides"] = bc.UserPricingOverrides
-		}
-		if len(bc.ModelQuotaPools) > 0 {
-			other["model_quota_pools"] = bc.ModelQuotaPools
-		}
+		appendAdminBillingRules(other, bc.UserPricingOverrides, bc.ModelQuotaPools)
 		if priceData := taskBillingContextPriceData(bc); priceData != nil {
 			for k, v := range priceData.OtherRatios() {
 				other[k] = v
@@ -190,26 +259,46 @@ func taskModelName(task *model.Task) string {
 	return task.Properties.OriginModelName
 }
 
-// RefundTaskQuota 统一的任务失败退款逻辑。
-// 当异步任务失败时，将预扣的 quota 退还给用户（支持钱包和订阅），并退还令牌额度。
-func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
+// RefundTaskQuota handles terminal task failure cleanup. Pool release and the
+// durable financial adjustment are attempted independently; the task remains
+// pending until both succeed, and retries cannot issue a double refund.
+func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) error {
+	if task == nil {
+		return nil
+	}
+	poolErr := RollbackTaskModelQuotaPool(task)
 	quota := task.Quota
 	if quota == 0 {
-		RollbackTaskModelQuotaPool(task)
-		return
+		if poolErr != nil {
+			return poolErr
+		}
+		if task.ID > 0 {
+			return task.UpdateBillingStatus(model.TaskBillingStatusRefunded)
+		}
+		task.BillingStatus = model.TaskBillingStatusRefunded
+		return nil
 	}
 
-	// 1. 退还资金来源（钱包或订阅）
-	if err := taskAdjustFunding(task, -quota); err != nil {
-		logger.LogWarn(ctx, fmt.Sprintf("退还资金来源失败 task %s: %s", task.TaskID, err.Error()))
-		return
+	adjustment, err := ensureTaskBillingAdjustment(task, "task-refund:"+task.TaskID, -quota, -quota)
+	if err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("创建退款调整失败 task %s: %s", task.TaskID, err.Error()))
+		return errors.Join(poolErr, err)
 	}
-	RollbackTaskModelQuotaPool(task)
+	if err = model.ApplyBillingAdjustment(adjustment.ID); err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("退款调整失败，等待后台重试 task %s: %s", task.TaskID, err.Error()))
+		return errors.Join(poolErr, err)
+	}
+	if poolErr != nil {
+		return poolErr
+	}
+	if task.ID > 0 {
+		if err = task.UpdateBillingStatus(model.TaskBillingStatusRefunded); err != nil {
+			return err
+		}
+	} else {
+		task.BillingStatus = model.TaskBillingStatusRefunded
+	}
 
-	// 2. 退还令牌额度
-	taskAdjustTokenQuota(ctx, task, -quota)
-
-	// 3. 记录日志
 	other := taskBillingOther(task)
 	other["task_id"] = task.TaskID
 	other["reason"] = reason
@@ -224,6 +313,44 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
 		Group:     task.Group,
 		Other:     other,
 	})
+	return nil
+}
+
+func ensureTaskBillingAdjustment(task *model.Task, key string, fundingDelta int, tokenDelta int) (*model.BillingAdjustment, error) {
+	fundingSource := task.PrivateData.BillingSource
+	if fundingSource == "" {
+		fundingSource = BillingSourceWallet
+	}
+	return model.EnsureBillingAdjustment(model.BillingAdjustmentParams{
+		AdjustmentKey:  key,
+		UserID:         task.UserId,
+		TokenID:        task.PrivateData.TokenId,
+		SubscriptionID: task.PrivateData.SubscriptionId,
+		FundingSource:  fundingSource,
+		FundingDelta:   fundingDelta,
+		TokenDelta:     tokenDelta,
+	})
+}
+
+func FinalizeTaskFailure(ctx context.Context, task *model.Task, fromStatus model.TaskStatus, reason string) (bool, error) {
+	if task == nil {
+		return false, nil
+	}
+	task.Status = model.TaskStatusFailure
+	task.Progress = taskcommon.ProgressComplete
+	if task.FinishTime == 0 {
+		task.FinishTime = time.Now().Unix()
+	}
+	task.FailReason = reason
+	task.BillingStatus = model.TaskBillingStatusRefundPending
+	won, err := task.UpdateWithStatus(fromStatus)
+	if err != nil || !won {
+		return won, err
+	}
+	if err = RefundTaskQuota(ctx, task, reason); err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("task failure compensation queued task %s: %s", task.TaskID, err.Error()))
+	}
+	return true, nil
 }
 
 // RecalculateTaskQuota 通用的异步差额结算。
@@ -251,14 +378,16 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		reason,
 	))
 
-	// 调整资金来源
-	if err := taskAdjustFunding(task, quotaDelta); err != nil {
-		logger.LogError(ctx, fmt.Sprintf("差额结算资金调整失败 task %s: %s", task.TaskID, err.Error()))
+	adjustment, err := ensureTaskBillingAdjustment(task, "task-settle:"+task.TaskID, quotaDelta, quotaDelta)
+	if err != nil {
+		logger.LogError(ctx, fmt.Sprintf("创建差额结算调整失败 task %s: %s", task.TaskID, err.Error()))
 		return false
 	}
-
-	// 调整令牌额度
-	taskAdjustTokenQuota(ctx, task, quotaDelta)
+	billingPending := false
+	if err = model.ApplyBillingAdjustment(adjustment.ID); err != nil {
+		billingPending = true
+		logger.LogError(ctx, fmt.Sprintf("差额结算等待后台重试 task %s: %s", task.TaskID, err.Error()))
+	}
 
 	task.Quota = actualQuota
 	AdjustTaskModelQuotaPoolQuota(task, actualQuota)
@@ -283,6 +412,14 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	other["actual_quota"] = actualQuota
 	for _, clamp := range clamps {
 		attachQuotaSaturationToOther(other, clamp)
+	}
+	if billingPending {
+		adminInfo, ok := other["admin_info"].(map[string]interface{})
+		if !ok || adminInfo == nil {
+			adminInfo = make(map[string]interface{})
+			other["admin_info"] = adminInfo
+		}
+		adminInfo["billing_settlement_pending"] = true
 	}
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 		UserId:    task.UserId,

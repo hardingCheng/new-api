@@ -115,6 +115,8 @@ export interface LogOtherData {
     local_count_tokens?: boolean
     usage_billing_path?: UsageBillingPath | string
     channel_affinity?: ChannelAffinityInfo
+    user_pricing_overrides?: UserPricingOverrideMatch[]
+    model_quota_pools?: ModelQuotaPoolMatch[]
     // Top-up audit fields (type=1, admin only)
     payment_method?: string
     callback_payment_method?: string
@@ -227,6 +229,7 @@ export interface LogOtherData {
   task_id?: string
   reason?: string
   video_billing_mode?: 'per_second' | 'per_call' | string
+  // Legacy admin log fields; new logs store these under admin_info.
   user_pricing_overrides?: UserPricingOverrideMatch[]
   model_quota_pools?: ModelQuotaPoolMatch[]
   // Subscription billing fields

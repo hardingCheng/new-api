@@ -6,6 +6,9 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -50,6 +53,7 @@ func TestMain(m *testing.M) {
 		&model.UserSubscription{},
 		&model.SystemTask{},
 		&model.SystemTaskLock{},
+		&model.BillingAdjustment{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -73,6 +77,44 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM user_subscriptions")
 		model.DB.Exec("DELETE FROM system_task_locks")
 		model.DB.Exec("DELETE FROM system_tasks")
+		model.DB.Exec("DELETE FROM billing_adjustments")
+	})
+}
+
+func setupConcurrentBillingFileDB(t *testing.T) {
+	t.Helper()
+	oldDB, oldLogDB := model.DB, model.LOG_DB
+	oldBatchUpdateEnabled := common.BatchUpdateEnabled
+	oldMainDatabaseType := common.MainDatabaseType()
+	oldLogDatabaseType := common.LogDatabaseType()
+
+	dsn := filepath.Join(t.TempDir(), "billing-concurrency.db") + "?_busy_timeout=30000&_journal_mode=WAL"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(16)
+	require.NoError(t, db.AutoMigrate(
+		&model.Task{},
+		&model.User{},
+		&model.Token{},
+		&model.Log{},
+		&model.Channel{},
+		&model.UserSubscription{},
+		&model.BillingAdjustment{},
+	))
+
+	model.DB = db
+	model.LOG_DB = db
+	require.False(t, common.RedisEnabled)
+	common.BatchUpdateEnabled = false
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		model.DB = oldDB
+		model.LOG_DB = oldLogDB
+		common.BatchUpdateEnabled = oldBatchUpdateEnabled
+		common.SetDatabaseTypes(oldMainDatabaseType, oldLogDatabaseType)
 	})
 }
 
@@ -393,6 +435,273 @@ func TestRefundTaskQuota_NoToken(t *testing.T) {
 	assert.Equal(t, model.LogTypeRefund, log.Type)
 }
 
+func TestRefundTaskQuota_IsFinanciallyIdempotent(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+
+	const userID, tokenID, channelID = 5, 5, 5
+	const initQuota, preConsumed, tokenRemain = 10000, 2500, 7000
+	seedUser(t, userID, initQuota)
+	seedToken(t, tokenID, userID, "sk-idempotent", tokenRemain)
+	seedChannel(t, channelID)
+
+	task := makeTask(userID, channelID, preConsumed, tokenID, BillingSourceWallet, 0)
+	task.TaskID = "task_refund_idempotent"
+	require.NoError(t, model.DB.Create(task).Error)
+
+	require.NoError(t, RefundTaskQuota(ctx, task, "first failure"))
+	require.NoError(t, RefundTaskQuota(ctx, task, "duplicate worker"))
+
+	assert.Equal(t, initQuota+preConsumed, getUserQuota(t, userID))
+	assert.Equal(t, tokenRemain+preConsumed, getTokenRemainQuota(t, tokenID))
+	assert.Equal(t, -preConsumed, getTokenUsedQuota(t, tokenID))
+	var adjustments int64
+	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).
+		Where("adjustment_key = ?", "task-refund:"+task.TaskID).
+		Count(&adjustments).Error)
+	assert.Equal(t, int64(1), adjustments)
+}
+
+func TestFinalizeTaskFailureConcurrentWorkersRefundOnce(t *testing.T) {
+	setupConcurrentBillingFileDB(t)
+	const workers = 16
+	const userID, tokenID, channelID = 51, 51, 51
+	const initQuota, preConsumed, tokenRemain = 10000, 2400, 8000
+	seedUser(t, userID, initQuota)
+	seedToken(t, tokenID, userID, "sk-concurrent-refund", tokenRemain)
+	seedChannel(t, channelID)
+
+	task := makeTask(userID, channelID, preConsumed, tokenID, BillingSourceWallet, 0)
+	task.TaskID = "task_concurrent_refund_once"
+	require.NoError(t, model.DB.Create(task).Error)
+
+	copies := make([]*model.Task, workers)
+	for i := range copies {
+		copies[i] = &model.Task{}
+		require.NoError(t, model.DB.First(copies[i], task.ID).Error)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, workers)
+	var wins atomic.Int32
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for _, taskCopy := range copies {
+		go func(taskCopy *model.Task) {
+			defer wg.Done()
+			<-start
+			won, err := FinalizeTaskFailure(context.Background(), taskCopy, model.TaskStatusInProgress, "concurrent upstream failure")
+			if won {
+				wins.Add(1)
+			}
+			errs <- err
+		}(taskCopy)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, int32(1), wins.Load())
+	// SQLite may return SQLITE_BUSY while losing CAS workers still release their
+	// read transactions. The durable pending state must finish on the next pass.
+	retryPendingTaskRefunds(context.Background())
+	assert.Equal(t, initQuota+preConsumed, getUserQuota(t, userID))
+	assert.Equal(t, tokenRemain+preConsumed, getTokenRemainQuota(t, tokenID))
+	assert.Equal(t, -preConsumed, getTokenUsedQuota(t, tokenID))
+	assert.Equal(t, int64(1), countLogs(t))
+
+	var adjustments int64
+	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).
+		Where("adjustment_key = ?", "task-refund:"+task.TaskID).
+		Count(&adjustments).Error)
+	assert.Equal(t, int64(1), adjustments)
+}
+
+func TestApplyBillingAdjustmentConcurrentWorkersChargesOnce(t *testing.T) {
+	setupConcurrentBillingFileDB(t)
+	const workers = 16
+	const userID, tokenID = 52, 52
+	const initialQuota, charge = 10000, 1750
+	seedUser(t, userID, initialQuota)
+	seedToken(t, tokenID, userID, "sk-concurrent-charge", initialQuota)
+
+	adjustment, err := model.EnsureBillingAdjustment(model.BillingAdjustmentParams{
+		AdjustmentKey: "relay-settle:concurrent-charge-once",
+		UserID:        userID,
+		TokenID:       tokenID,
+		FundingSource: BillingSourceWallet,
+		FundingDelta:  charge,
+		TokenDelta:    charge,
+	})
+	require.NoError(t, err)
+
+	start := make(chan struct{})
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			errs <- model.ApplyBillingAdjustment(adjustment.ID)
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, initialQuota-charge, getUserQuota(t, userID))
+	assert.Equal(t, initialQuota-charge, getTokenRemainQuota(t, tokenID))
+	assert.Equal(t, charge, getTokenUsedQuota(t, tokenID))
+	var reloaded model.BillingAdjustment
+	require.NoError(t, model.DB.First(&reloaded, adjustment.ID).Error)
+	assert.Equal(t, model.BillingAdjustmentStatusSucceeded, reloaded.Status)
+	assert.Equal(t, 1, reloaded.Attempts)
+}
+
+func TestFinalizeTaskFailureRefundsFinancialQuotaWhenPoolReleaseIsPending(t *testing.T) {
+	truncate(t)
+	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
+	common.RedisEnabled, common.RDB = false, nil
+	t.Cleanup(func() {
+		common.RedisEnabled, common.RDB = oldRedisEnabled, oldRDB
+	})
+
+	const userID, tokenID, channelID = 8, 8, 8
+	const initQuota, preConsumed, tokenRemain = 10000, 1800, 6000
+	seedUser(t, userID, initQuota)
+	seedToken(t, tokenID, userID, "sk-pool-pending", tokenRemain)
+	seedChannel(t, channelID)
+
+	task := makeTask(userID, channelID, preConsumed, tokenID, BillingSourceWallet, 0)
+	task.TaskID = "task_pool_release_pending"
+	task.PrivateData.BillingContext.ModelQuotaPools = []ratio_setting.ModelQuotaPoolMatch{
+		{RedisKey: "pool:pending", Amount: 1},
+	}
+	require.NoError(t, model.DB.Create(task).Error)
+
+	won, err := FinalizeTaskFailure(context.Background(), task, model.TaskStatusInProgress, "upstream failed")
+	require.NoError(t, err)
+	require.True(t, won)
+
+	assert.Equal(t, initQuota+preConsumed, getUserQuota(t, userID))
+	assert.Equal(t, tokenRemain+preConsumed, getTokenRemainQuota(t, tokenID))
+	var reloaded model.Task
+	require.NoError(t, model.DB.First(&reloaded, task.ID).Error)
+	assert.Equal(t, model.TaskBillingStatusRefundPending, reloaded.BillingStatus)
+}
+
+func TestProcessPendingBillingAdjustmentsRetriesAfterDependencyRecovers(t *testing.T) {
+	truncate(t)
+	adjustment, err := model.EnsureBillingAdjustment(model.BillingAdjustmentParams{
+		AdjustmentKey: "relay-settle:retry-after-user-created",
+		UserID:        88,
+		FundingSource: BillingSourceWallet,
+		FundingDelta:  300,
+	})
+	require.NoError(t, err)
+	require.Error(t, model.ApplyBillingAdjustment(adjustment.ID))
+
+	seedUser(t, 88, 1000)
+	summary := ProcessPendingBillingAdjustments(context.Background(), 10)
+	assert.Equal(t, 1, summary.Pending)
+	assert.Equal(t, 1, summary.Succeeded)
+	assert.Zero(t, summary.Failed)
+	assert.Equal(t, 700, getUserQuota(t, 88))
+
+	summary = ProcessPendingBillingAdjustments(context.Background(), 10)
+	assert.Zero(t, summary.Pending)
+	assert.Equal(t, 700, getUserQuota(t, 88))
+}
+
+func TestTaskSubmissionRecordLifecycle(t *testing.T) {
+	truncate(t)
+	info := &relaycommon.RelayInfo{
+		UserId:          6,
+		UsingGroup:      "default",
+		OriginModelName: "public-video-model",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelId:         9,
+			UpstreamModelName: "upstream-video-model",
+		},
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{
+			PublicTaskID: "task_submission_lifecycle",
+			Action:       "generate",
+		},
+		PriceData: types.PriceData{Quota: 1200},
+	}
+
+	created, err := EnsureTaskSubmissionRecord(nil, info, "video")
+	require.NoError(t, err)
+	assert.Equal(t, model.TaskStatusSubmitting, created.Status)
+	assert.Equal(t, model.TaskBillingStatusActive, created.BillingStatus)
+
+	err = CompleteTaskSubmissionRecord(nil, info, "video", "upstream-123", []byte(`{"status":"queued"}`), 1100)
+	require.NoError(t, err)
+	reloaded, found, err := model.GetByTaskId(info.UserId, info.PublicTaskID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, model.TaskStatusNotStart, reloaded.Status)
+	assert.Equal(t, "upstream-123", reloaded.PrivateData.UpstreamTaskID)
+	assert.True(t, reloaded.PrivateData.UsesPublicTaskID)
+	assert.Equal(t, 1100, reloaded.Quota)
+	assert.JSONEq(t, `{"status":"queued"}`, string(reloaded.Data))
+}
+
+func TestTaskSubmissionWithoutUpstreamIDDoesNotFallbackToPublicID(t *testing.T) {
+	truncate(t)
+	info := &relaycommon.RelayInfo{
+		UserId:      9,
+		UsingGroup:  "default",
+		ChannelMeta: &relaycommon.ChannelMeta{},
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{
+			PublicTaskID: "task_missing_upstream_id",
+		},
+	}
+	_, err := EnsureTaskSubmissionRecord(nil, info, "video")
+	require.NoError(t, err)
+	require.NoError(t, CompleteTaskSubmissionRecord(nil, info, "video", "", nil, 0))
+
+	reloaded, found, err := model.GetByTaskId(info.UserId, info.PublicTaskID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Empty(t, reloaded.GetUpstreamTaskID())
+}
+
+func TestMarkTaskSubmissionFailedWritesTerminalState(t *testing.T) {
+	truncate(t)
+	info := &relaycommon.RelayInfo{
+		UserId:      7,
+		UsingGroup:  "default",
+		ChannelMeta: &relaycommon.ChannelMeta{},
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{
+			PublicTaskID: "task_submission_failed",
+		},
+		PriceData: types.PriceData{Quota: 0},
+	}
+	_, err := EnsureTaskSubmissionRecord(nil, info, "video")
+	require.NoError(t, err)
+
+	handled, err := MarkTaskSubmissionFailed(context.Background(), info.UserId, info.PublicTaskID, "request build failed")
+	require.NoError(t, err)
+	require.True(t, handled)
+
+	reloaded, found, err := model.GetByTaskId(info.UserId, info.PublicTaskID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.EqualValues(t, model.TaskStatusFailure, reloaded.Status)
+	assert.Equal(t, "100%", reloaded.Progress)
+	assert.Equal(t, "request build failed", reloaded.FailReason)
+	assert.Equal(t, model.TaskBillingStatusRefunded, reloaded.BillingStatus)
+	assert.NotZero(t, reloaded.FinishTime)
+}
+
 // ===========================================================================
 // RecalculateTaskQuota tests
 // ===========================================================================
@@ -601,9 +910,7 @@ func TestRecalculate_Subscription_NegativeDelta(t *testing.T) {
 func simulatePollBilling(ctx context.Context, task *model.Task, newStatus model.TaskStatus, actualQuota int) {
 	snap := task.Snapshot()
 
-	shouldRefund := false
 	shouldSettle := false
-	quota := task.Quota
 
 	task.Status = newStatus
 	switch string(newStatus) {
@@ -612,12 +919,8 @@ func simulatePollBilling(ctx context.Context, task *model.Task, newStatus model.
 		task.FinishTime = 9999
 		shouldSettle = true
 	case model.TaskStatusFailure:
-		task.Progress = "100%"
-		task.FinishTime = 9999
-		task.FailReason = "upstream error"
-		if quota != 0 {
-			shouldRefund = true
-		}
+		_, _ = FinalizeTaskFailure(ctx, task, snap.Status, "upstream error")
+		return
 	default:
 		task.Progress = "50%"
 	}
@@ -626,10 +929,8 @@ func simulatePollBilling(ctx context.Context, task *model.Task, newStatus model.
 	if isDone && snap.Status != task.Status {
 		won, err := task.UpdateWithStatus(snap.Status)
 		if err != nil {
-			shouldRefund = false
 			shouldSettle = false
 		} else if !won {
-			shouldRefund = false
 			shouldSettle = false
 		}
 	} else if !snap.Equal(task.Snapshot()) {
@@ -638,9 +939,6 @@ func simulatePollBilling(ctx context.Context, task *model.Task, newStatus model.
 
 	if shouldSettle && actualQuota > 0 {
 		RecalculateTaskQuota(ctx, task, actualQuota, "test settle")
-	}
-	if shouldRefund {
-		RefundTaskQuota(ctx, task, task.FailReason)
 	}
 }
 
@@ -706,6 +1004,30 @@ func TestCASGuardedRefund_Lose(t *testing.T) {
 
 	// No billing log should be created
 	assert.Equal(t, int64(0), countLogs(t))
+}
+
+func TestCASGuardedCleanupZeroQuotaStaysPendingWhenPoolRedisUnavailable(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
+	common.RedisEnabled, common.RDB = false, nil
+	t.Cleanup(func() {
+		common.RedisEnabled, common.RDB = oldRedisEnabled, oldRDB
+	})
+
+	task := makeTask(1, 1, 0, 0, BillingSourceWallet, 0)
+	task.Status = model.TaskStatus(model.TaskStatusInProgress)
+	task.PrivateData.BillingContext.ModelQuotaPools = []ratio_setting.ModelQuotaPoolMatch{
+		{RedisKey: "pool:requests", Amount: 1},
+	}
+	require.NoError(t, model.DB.Create(task).Error)
+
+	simulatePollBilling(ctx, task, model.TaskStatus(model.TaskStatusFailure), 0)
+
+	assert.NotEmpty(t, task.PrivateData.BillingContext.ModelQuotaPools)
+	var reloaded model.Task
+	require.NoError(t, model.DB.First(&reloaded, task.ID).Error)
+	assert.Equal(t, model.TaskBillingStatusRefundPending, reloaded.BillingStatus)
 }
 
 func TestCASGuardedSettle_Win(t *testing.T) {
@@ -892,7 +1214,7 @@ func TestRollbackModelQuotaPoolFromRelayInfo(t *testing.T) {
 	assert.NotContains(t, consumed, "pool:ignored")
 }
 
-func TestRollbackTaskModelQuotaPoolClearsContextMatchesWithoutRedis(t *testing.T) {
+func TestRollbackTaskModelQuotaPoolKeepsPendingMatchesWithoutRedis(t *testing.T) {
 	oldRedisEnabled := common.RedisEnabled
 	oldRDB := common.RDB
 	common.RedisEnabled = false
@@ -907,8 +1229,9 @@ func TestRollbackTaskModelQuotaPoolClearsContextMatchesWithoutRedis(t *testing.T
 		{RedisKey: "pool:a", Amount: 1},
 	}
 
-	RollbackTaskModelQuotaPool(task)
-	assert.Empty(t, task.PrivateData.BillingContext.ModelQuotaPools)
+	err := RollbackTaskModelQuotaPool(task)
+	require.Error(t, err)
+	assert.NotEmpty(t, task.PrivateData.BillingContext.ModelQuotaPools)
 }
 
 func TestAdjustTaskModelQuotaPoolWithAdjusterUpdatesOnlySuccessfulAdjustments(t *testing.T) {

@@ -345,7 +345,7 @@ export const useTaskLogsData = () => {
       const localStartTimestamp = parseInt(Date.parse(start_timestamp) / 1000);
       const localEndTimestamp = parseInt(Date.parse(end_timestamp) / 1000);
 
-      // 一次请求拉取全部匹配记录（后端专用导出接口不分页），由所选时间范围自然约束数据量。
+      // 后端导出接口要求有限时间范围，并对返回行数设置硬上限。
       const params = new URLSearchParams({
         task_id,
         start_timestamp: String(localStartTimestamp),

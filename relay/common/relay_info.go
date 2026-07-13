@@ -163,11 +163,13 @@ type RelayInfo struct {
 	// *bytes.Reader/Buffer/strings.Reader). 0 means "let net/http decide".
 	UpstreamRequestBodySize int64
 
-	PriceData             types.PriceData
-	UserPricingOverrides  []ratio_setting.UserPricingOverrideMatch
-	ModelQuotaPools       []ratio_setting.ModelQuotaPoolMatch
-	ModelQuotaPoolChecked bool
-	ModelQuotaPoolSettled bool
+	PriceData                types.PriceData
+	UserPricingOverrides     []ratio_setting.UserPricingOverrideMatch
+	ModelQuotaPools          []ratio_setting.ModelQuotaPoolMatch
+	ModelQuotaPoolChecked    bool
+	ModelQuotaPoolSettled    bool
+	BillingSettlementPending bool
+	BillingSettlementError   string
 
 	// QuotaClamp is set (non-nil) when a quota conversion saturated at the
 	// int32 bound (or NaN fallback) while computing this request's charge.

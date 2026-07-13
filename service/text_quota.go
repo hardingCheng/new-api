@@ -399,7 +399,12 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if err := SettleBilling(ctx, relayInfo, summary.Quota); err != nil {
 		logger.LogError(ctx, "error settling billing: "+err.Error())
 	}
-	SettleModelQuotaPoolWithQuota(relayInfo, summary.Quota)
+	SettleModelQuotaPool(relayInfo, ModelQuotaPoolSettlement{
+		ActualQuota:          summary.Quota,
+		ActualTotalTokens:    usageTotalTokens(billingUsage),
+		HasActualQuota:       true,
+		HasActualTotalTokens: hasActualTokenUsage(common.GetContextKeyBool(ctx, constant.ContextKeyLocalCountTokens), originUsage),
+	})
 
 	logModel := summary.ModelName
 	if strings.HasPrefix(logModel, "gpt-4-gizmo") {

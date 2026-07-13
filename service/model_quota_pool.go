@@ -28,6 +28,13 @@ type ModelQuotaPoolUsage struct {
 	Remaining int64                            `json:"remaining"`
 }
 
+type ModelQuotaPoolSettlement struct {
+	ActualQuota          int
+	ActualTotalTokens    int
+	HasActualQuota       bool
+	HasActualTotalTokens bool
+}
+
 var modelQuotaPoolConsumeScript = redis.NewScript(`
 local current = tonumber(redis.call("GET", KEYS[1]) or "0")
 local limit = tonumber(ARGV[1])
@@ -52,6 +59,46 @@ end
 return {1, current, next, limit - next}
 `)
 
+var modelQuotaPoolAdjustScript = redis.NewScript(`
+if redis.call("EXISTS", KEYS[1]) == 0 then
+  return 1
+end
+local current = tonumber(redis.call("GET", KEYS[1]) or "0")
+local delta = tonumber(ARGV[1])
+local next = current + delta
+if next < 0 then
+  next = 0
+end
+if next ~= current then
+  redis.call("INCRBY", KEYS[1], next - current)
+end
+return 1
+`)
+
+var modelQuotaPoolRollbackOnceScript = redis.NewScript(`
+if redis.call("SETNX", KEYS[2], "1") == 0 then
+  return 0
+end
+local ttl = tonumber(redis.call("TTL", KEYS[1]) or "-1")
+if ttl <= 0 then
+  ttl = 86400
+end
+redis.call("EXPIRE", KEYS[2], ttl)
+if redis.call("EXISTS", KEYS[1]) == 0 then
+  return 1
+end
+local current = tonumber(redis.call("GET", KEYS[1]) or "0")
+local amount = tonumber(ARGV[1])
+local next = current - amount
+if next < 0 then
+  next = 0
+end
+if next ~= current then
+  redis.call("INCRBY", KEYS[1], next - current)
+end
+return 1
+`)
+
 func CheckAndConsumeModelQuotaPool(ctx *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIError {
 	if ctx == nil || info == nil {
 		return nil
@@ -59,15 +106,9 @@ func CheckAndConsumeModelQuotaPool(ctx *gin.Context, info *relaycommon.RelayInfo
 	if info.ModelQuotaPoolChecked {
 		return nil
 	}
-	// 同时用客户端模型名与映射后的上游模型名匹配规则，
-	// 避免限量池规则按上游名配置时漏匹配导致放行。
-	// 该检查在渠道选定前就可能执行，此时 ChannelMeta 为 nil，
-	// 直接取 info.UpstreamModelName 会空指针，需判空。
-	upstreamModelName := ""
-	if info.ChannelMeta != nil {
-		upstreamModelName = info.UpstreamModelName
-	}
-	matches := ratio_setting.MatchModelQuotaPoolRules(info.UserId, info.OriginModelName, upstreamModelName)
+	// Pool rules use the public model requested by the client. Upstream mappings
+	// are routing details and may change between retries without changing usage.
+	matches := ratio_setting.MatchModelQuotaPoolRules(info.UserId, info.OriginModelName)
 	if len(matches) == 0 {
 		info.ModelQuotaPoolChecked = true
 		return nil
@@ -135,19 +176,21 @@ func CheckAndConsumeModelQuotaPool(ctx *gin.Context, info *relaycommon.RelayInfo
 	return nil
 }
 
-func SettleModelQuotaPool(info *relaycommon.RelayInfo) {
+func SettleModelQuotaPool(info *relaycommon.RelayInfo, settlement ModelQuotaPoolSettlement) {
 	if info == nil || len(info.ModelQuotaPools) == 0 {
 		return
 	}
+	settleRelayModelQuotaPoolWithAdjuster(info, settlement, adjustModelQuotaPool)
 	info.ModelQuotaPoolSettled = true
 }
 
-func SettleModelQuotaPoolWithQuota(info *relaycommon.RelayInfo, actualQuota int) {
-	if info == nil || len(info.ModelQuotaPools) == 0 {
-		return
+func settleRelayModelQuotaPoolWithAdjuster(info *relaycommon.RelayInfo, settlement ModelQuotaPoolSettlement, adjuster func(string, int64) bool) {
+	if settlement.HasActualQuota && settlement.ActualQuota >= 0 {
+		adjustRelayModelQuotaPoolWithAdjuster(info, ratio_setting.ModelQuotaPoolMetricQuota, int64(settlement.ActualQuota), adjuster)
 	}
-	adjustRelayModelQuotaPoolWithAdjuster(info, ratio_setting.ModelQuotaPoolMetricQuota, int64(actualQuota), adjustModelQuotaPool)
-	info.ModelQuotaPoolSettled = true
+	if settlement.HasActualTotalTokens && settlement.ActualTotalTokens >= 0 {
+		adjustRelayModelQuotaPoolWithAdjuster(info, ratio_setting.ModelQuotaPoolMetricTotalTokens, int64(settlement.ActualTotalTokens), adjuster)
+	}
 }
 
 func RollbackModelQuotaPool(info *relaycommon.RelayInfo) {
@@ -159,12 +202,52 @@ func RollbackModelQuotaPool(info *relaycommon.RelayInfo) {
 	info.ModelQuotaPools = nil
 }
 
-func RollbackTaskModelQuotaPool(task *model.Task) {
+func RollbackTaskModelQuotaPool(task *model.Task) error {
 	if task == nil || task.PrivateData.BillingContext == nil || len(task.PrivateData.BillingContext.ModelQuotaPools) == 0 {
-		return
+		return nil
 	}
-	rollbackModelQuotaPool(modelQuotaPoolConsumedFromMatches(task.PrivateData.BillingContext.ModelQuotaPools))
+	consumed := modelQuotaPoolConsumedFromMatches(task.PrivateData.BillingContext.ModelQuotaPools)
+	var err error
+	if strings.TrimSpace(task.TaskID) == "" {
+		if !common.RedisEnabled || common.RDB == nil {
+			return fmt.Errorf("model quota pool Redis is unavailable")
+		}
+		for key, amount := range consumed {
+			if !adjustModelQuotaPool(key, -amount) && strings.TrimSpace(key) != "" && amount > 0 {
+				err = fmt.Errorf("failed to rollback model quota pool %s", key)
+			}
+		}
+	} else {
+		err = rollbackTaskModelQuotaPoolOnce(task.TaskID, consumed)
+	}
+	if err != nil {
+		return err
+	}
 	task.PrivateData.BillingContext.ModelQuotaPools = nil
+	return nil
+}
+
+func rollbackTaskModelQuotaPoolOnce(taskID string, consumed map[string]int64) error {
+	if len(consumed) == 0 {
+		return nil
+	}
+	if !common.RedisEnabled || common.RDB == nil {
+		return fmt.Errorf("model quota pool Redis is unavailable")
+	}
+	var firstErr error
+	for key, amount := range consumed {
+		if strings.TrimSpace(key) == "" || amount <= 0 {
+			continue
+		}
+		markerKey := key + ":rollback:" + taskID
+		if _, err := modelQuotaPoolRollbackOnceScript.Run(context.Background(), common.RDB, []string{key, markerKey}, amount).Result(); err != nil {
+			common.SysError("rollback task model quota pool failed: " + err.Error())
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
 }
 
 func AdjustTaskModelQuotaPoolQuota(task *model.Task, actualQuota int) {
@@ -329,22 +412,10 @@ func adjustModelQuotaPool(key string, delta int64) bool {
 	if strings.TrimSpace(key) == "" || delta == 0 || !common.RedisEnabled || common.RDB == nil {
 		return false
 	}
-	ctx := context.Background()
-	var err error
-	if delta > 0 {
-		err = common.RDB.IncrBy(ctx, key, delta).Err()
-	} else {
-		err = common.RDB.DecrBy(ctx, key, -delta).Err()
-	}
+	_, err := modelQuotaPoolAdjustScript.Run(context.Background(), common.RDB, []string{key}, delta).Result()
 	if err != nil {
 		common.SysError("adjust model quota pool failed: " + err.Error())
 		return false
-	}
-	if value, valueErr := common.RDB.Get(ctx, key).Int64(); valueErr == nil && value < 0 {
-		if setErr := common.RDB.Set(ctx, key, 0, redis.KeepTTL).Err(); setErr != nil {
-			common.SysError("reset negative model quota pool failed: " + setErr.Error())
-			return false
-		}
 	}
 	return true
 }

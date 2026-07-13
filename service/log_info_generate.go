@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -159,11 +160,17 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 	if relayInfo.BillingSource != "" {
 		other["billing_source"] = relayInfo.BillingSource
 	}
-	if len(relayInfo.UserPricingOverrides) > 0 {
-		other["user_pricing_overrides"] = relayInfo.UserPricingOverrides
-	}
-	if len(relayInfo.ModelQuotaPools) > 0 {
-		other["model_quota_pools"] = relayInfo.ModelQuotaPools
+	appendAdminBillingRules(other, relayInfo.UserPricingOverrides, relayInfo.ModelQuotaPools)
+	if relayInfo.BillingSettlementPending {
+		adminInfo, ok := other["admin_info"].(map[string]interface{})
+		if !ok || adminInfo == nil {
+			adminInfo = make(map[string]interface{})
+			other["admin_info"] = adminInfo
+		}
+		adminInfo["billing_settlement_pending"] = true
+		if relayInfo.BillingSettlementError != "" {
+			adminInfo["billing_settlement_error"] = relayInfo.BillingSettlementError
+		}
 	}
 	if relayInfo.UserSetting.BillingPreference != "" {
 		other["billing_preference"] = relayInfo.UserSetting.BillingPreference
@@ -208,6 +215,27 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 		}
 		// Wallet quota is not deducted when billed from subscription.
 		other["wallet_quota_deducted"] = 0
+	}
+}
+
+func appendAdminBillingRules(other map[string]interface{}, overrides []ratio_setting.UserPricingOverrideMatch, pools []ratio_setting.ModelQuotaPoolMatch) {
+	if other == nil || (len(overrides) == 0 && len(pools) == 0) {
+		return
+	}
+	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	if !ok || adminInfo == nil {
+		adminInfo = make(map[string]interface{})
+		other["admin_info"] = adminInfo
+	}
+	if len(overrides) > 0 {
+		adminInfo["user_pricing_overrides"] = overrides
+	}
+	if len(pools) > 0 {
+		logPools := append([]ratio_setting.ModelQuotaPoolMatch(nil), pools...)
+		for i := range logPools {
+			logPools[i].RedisKey = ""
+		}
+		adminInfo["model_quota_pools"] = logPools
 	}
 }
 
