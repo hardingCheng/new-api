@@ -124,12 +124,32 @@ func GetStatus(c *gin.Context) {
 		"checkin_enabled":             operation_setting.GetCheckinSetting().Enabled,
 	}
 
+	// 分站白牌:按请求域名覆盖 OAuth 客户端与品牌字段,未配置的域名走全局默认
+	station := setting.GetStationByHost(c.Request.Host)
+	if station != nil {
+		if gh, ok := station.OAuth["github"]; ok && gh.ClientId != "" {
+			data["github_client_id"] = gh.ClientId
+		}
+		if station.Brand.SystemName != "" {
+			data["system_name"] = station.Brand.SystemName
+		}
+		if station.Brand.Logo != "" {
+			data["logo"] = station.Brand.Logo
+		}
+		if station.Brand.Footer != "" {
+			data["footer_html"] = station.Brand.Footer
+		}
+	}
+
 	// 根据启用状态注入可选内容
 	if cs.ApiInfoEnabled {
 		data["api_info"] = console_setting.GetApiInfo()
 	}
 	if cs.AnnouncementsEnabled {
 		data["announcements"] = console_setting.GetAnnouncements()
+		if station != nil && len(station.Brand.Announcements) > 0 {
+			data["announcements"] = station.Brand.Announcements
+		}
 	}
 	if cs.FAQEnabled {
 		data["faq"] = console_setting.GetFAQ()
@@ -174,10 +194,15 @@ func GetStatus(c *gin.Context) {
 func GetNotice(c *gin.Context) {
 	common.OptionMapRWMutex.RLock()
 	defer common.OptionMapRWMutex.RUnlock()
+	notice := common.OptionMap["Notice"]
+	// 分站白牌:命中分站且配置了公告时按域名覆盖
+	if station := setting.GetStationByHost(c.Request.Host); station != nil && station.Brand.Notice != "" {
+		notice = station.Brand.Notice
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    common.OptionMap["Notice"],
+		"data":    notice,
 	})
 	return
 }
@@ -185,10 +210,15 @@ func GetNotice(c *gin.Context) {
 func GetAbout(c *gin.Context) {
 	common.OptionMapRWMutex.RLock()
 	defer common.OptionMapRWMutex.RUnlock()
+	about := common.OptionMap["About"]
+	// 分站白牌:命中分站且配置了关于页时按域名覆盖
+	if station := setting.GetStationByHost(c.Request.Host); station != nil && station.Brand.About != "" {
+		about = station.Brand.About
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    common.OptionMap["About"],
+		"data":    about,
 	})
 	return
 }
@@ -225,10 +255,15 @@ func GetMidjourney(c *gin.Context) {
 func GetHomePageContent(c *gin.Context) {
 	common.OptionMapRWMutex.RLock()
 	defer common.OptionMapRWMutex.RUnlock()
+	content := common.OptionMap["HomePageContent"]
+	// 分站白牌:命中分站且配置了首页内容时按域名覆盖
+	if station := setting.GetStationByHost(c.Request.Host); station != nil && station.Brand.HomePageContent != "" {
+		content = station.Brand.HomePageContent
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    common.OptionMap["HomePageContent"],
+		"data":    content,
 	})
 	return
 }

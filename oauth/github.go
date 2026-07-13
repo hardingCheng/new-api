@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -52,9 +53,16 @@ func (p *GitHubProvider) ExchangeToken(ctx context.Context, code string, c *gin.
 
 	logger.LogDebug(ctx, "[OAuth-GitHub] ExchangeToken: code=%s...", code[:min(len(code), 10)])
 
+	// 分站白牌:回调落在哪个域名,就用该域名配置的 GitHub App 凭据换 token
+	clientId, clientSecret := common.GitHubClientId, common.GitHubClientSecret
+	if c != nil {
+		if client, ok := setting.GetStationOAuthClient(c.Request.Host, "github"); ok {
+			clientId, clientSecret = client.ClientId, client.ClientSecret
+		}
+	}
 	values := map[string]string{
-		"client_id":     common.GitHubClientId,
-		"client_secret": common.GitHubClientSecret,
+		"client_id":     clientId,
+		"client_secret": clientSecret,
 		"code":          code,
 	}
 	jsonData, err := json.Marshal(values)
