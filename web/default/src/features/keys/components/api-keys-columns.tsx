@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 
@@ -30,6 +31,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useGroupRatios } from '@/hooks/use-group-ratios'
+import { getUserGroups } from '@/lib/api'
 import { formatQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -53,6 +55,17 @@ function getQuotaProgressColor(percentage: number): string {
 export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
   const { t } = useTranslation()
   const groupRatios = useGroupRatios()
+  const { data: userGroupsData } = useQuery({
+    queryKey: ['user-groups'],
+    queryFn: getUserGroups,
+    staleTime: 60 * 1000,
+  })
+  // 后端把「用户自身注册分组」的 desc 固定为“用户分组”(service/group.go);
+  // 该分组名是内部标识,展示时以中性名替代
+  const groupLabel = (group: string): string | undefined =>
+    userGroupsData?.data?.[group]?.desc === '用户分组'
+      ? t('User Group')
+      : undefined
   return [
     {
       id: 'select',
@@ -212,10 +225,10 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
         }
         return (
           <TruncatedCell
-            tooltipContent={group || '-'}
+            tooltipContent={groupLabel(group) ?? group ?? '-'}
             tooltipClassName='break-all'
           >
-            <GroupBadge group={group} ratio={ratio} />
+            <GroupBadge group={group} label={groupLabel(group)} ratio={ratio} />
           </TruncatedCell>
         )
       },

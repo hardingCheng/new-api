@@ -26,6 +26,8 @@ import {
   staticDataTableClassNames as tableStyles,
 } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
+
+import { useGroupDisplayLabel } from '../hooks/use-group-label'
 import { getPerfMetrics } from '@/features/performance-metrics/api'
 import {
   formatLatency,
@@ -161,6 +163,7 @@ function average(
 
 export function ModelDetailsPerformance(props: { model: PricingModel }) {
   const { t } = useTranslation()
+  const groupLabel = useGroupDisplayLabel()
   const metricsQuery = useQuery({
     queryKey: ['perf-metrics', props.model.model_name],
     queryFn: () => getPerfMetrics(props.model.model_name, 24),
@@ -264,7 +267,13 @@ export function ModelDetailsPerformance(props: { model: PricingModel }) {
               header: t('Group'),
               className: tableStyles.compactHeaderCell,
               cellClassName: tableStyles.compactCell,
-              cell: (perf) => <GroupBadge group={perf.group} size='sm' />,
+              cell: (perf) => (
+                <GroupBadge
+                  group={perf.group}
+                  label={groupLabel(perf.group)}
+                  size='sm'
+                />
+              ),
             },
             {
               id: 'tps',

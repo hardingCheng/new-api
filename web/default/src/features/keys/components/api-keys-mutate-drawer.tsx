@@ -120,11 +120,13 @@ export function ApiKeysMutateDrawer({
 
   const models = modelsData?.data || []
   const groupsRaw = groupsData?.data || {}
+  // 后端把「用户自身注册分组」的 desc 固定为“用户分组”(service/group.go);
+  // 该分组名是内部标识,展示时以中性名替代
   const groups: ApiKeyGroupOption[] = Object.entries(groupsRaw).map(
     ([key, info]) => ({
       value: key,
-      label: key,
-      desc: info.desc || key,
+      label: info.desc === '用户分组' ? t('User Group') : key,
+      desc: info.desc === '用户分组' ? undefined : info.desc || key,
       ratio: info.ratio,
     })
   )

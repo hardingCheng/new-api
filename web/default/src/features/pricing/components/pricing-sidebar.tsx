@@ -36,6 +36,7 @@ import {
   getEndpointTypeLabels,
   getQuotaTypeLabels,
 } from '../constants'
+import { useGroupDisplayLabel } from '../hooks/use-group-label'
 import { parseTags } from '../lib/filters'
 import type { PricingModel, PricingVendor } from '../types'
 
@@ -157,6 +158,7 @@ function FilterSection(props: FilterSectionProps) {
 
 export function PricingSidebar(props: PricingSidebarProps) {
   const { t } = useTranslation()
+  const groupLabel = useGroupDisplayLabel()
   const quotaTypeLabels = getQuotaTypeLabels(t)
   const endpointTypeLabels = getEndpointTypeLabels(t)
 
@@ -186,7 +188,7 @@ export function PricingSidebar(props: PricingSidebarProps) {
     },
     ...props.groups.map((group) => ({
       value: group,
-      label: group,
+      label: groupLabel(group) ?? group,
       suffix: formatGroupRatio(props.groupRatios?.[group]),
     })),
   ]

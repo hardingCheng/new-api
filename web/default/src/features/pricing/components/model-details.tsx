@@ -57,6 +57,7 @@ import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 
 import { DEFAULT_TOKEN_UNIT, QUOTA_TYPE_VALUES } from '../constants'
+import { useGroupDisplayLabel } from '../hooks/use-group-label'
 import { usePricingData } from '../hooks/use-pricing-data'
 import {
   getDynamicPriceEntries,
@@ -427,6 +428,7 @@ function ModelBackendSignalsSection(props: { model: PricingModel }) {
 
 function ModelBackendProviderSection(props: { model: PricingModel }) {
   const { t } = useTranslation()
+  const groupLabel = useGroupDisplayLabel()
   const model = props.model
   const groups = normalizeCatalogItems(model.enable_groups)
   const endpoints = normalizeCatalogItems(model.supported_endpoint_types)
@@ -456,7 +458,12 @@ function ModelBackendProviderSection(props: { model: PricingModel }) {
       <CatalogInfoCell key='groups' label={t('Groups')}>
         <div className='flex min-w-0 flex-wrap gap-1.5'>
           {groups.map((group) => (
-            <GroupBadge key={group} group={group} size='md' />
+            <GroupBadge
+              key={group}
+              group={group}
+              label={groupLabel(group)}
+              size='md'
+            />
           ))}
         </div>
       </CatalogInfoCell>
@@ -799,6 +806,7 @@ function PriceSection(props: {
 
 function AutoGroupChain(props: { model: PricingModel; autoGroups: string[] }) {
   const { t } = useTranslation()
+  const groupLabel = useGroupDisplayLabel()
   const modelEnableGroups = Array.isArray(props.model.enable_groups)
     ? props.model.enable_groups
     : []
@@ -814,7 +822,7 @@ function AutoGroupChain(props: { model: PricingModel; autoGroups: string[] }) {
       <span className='text-muted-foreground/40'>→</span>
       {autoChain.map((g, idx) => (
         <span key={g} className='flex items-center gap-1'>
-          <GroupBadge group={g} size='sm' />
+          <GroupBadge group={g} label={groupLabel(g)} size='sm' />
           {idx < autoChain.length - 1 && (
             <span className='text-muted-foreground/40'>→</span>
           )}
