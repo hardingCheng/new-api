@@ -27,6 +27,14 @@ func ProcessPendingBillingAdjustments(ctx context.Context, limit int) BillingRec
 		if ctx != nil && ctx.Err() != nil {
 			break
 		}
+		if adjustment.Status == model.BillingAdjustmentStatusReserved {
+			adjustment, err = model.FinalizeBillingReservation(adjustment.ID, 0, false, true)
+			if err != nil {
+				summary.Failed++
+				logger.LogError(ctx, "recover billing reservation failed: "+err.Error())
+				continue
+			}
+		}
 		if err := model.ApplyBillingAdjustment(adjustment.ID); err != nil {
 			summary.Failed++
 			logger.LogError(ctx, "retry billing adjustment failed: "+err.Error())
@@ -44,6 +52,14 @@ func ProcessPendingBillingAdjustments(ctx context.Context, limit int) BillingRec
 	for _, adjustment := range poolAdjustments {
 		if ctx != nil && ctx.Err() != nil {
 			break
+		}
+		if adjustment.Status == model.QuotaPoolAdjustmentStatusReserved {
+			adjustment, err = model.FinalizeQuotaPoolReservation(adjustment.ID, 0)
+			if err != nil {
+				summary.PoolFailed++
+				logger.LogError(ctx, "recover quota pool reservation failed: "+err.Error())
+				continue
+			}
 		}
 		if err := applyQuotaPoolAdjustment(adjustment); err != nil {
 			summary.PoolFailed++

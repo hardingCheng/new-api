@@ -138,7 +138,7 @@ func GetAllTaskExport(c *gin.Context) {
 
 func GetModelQuotaPoolUsage(c *gin.Context) {
 	userID := c.GetInt("id")
-	includeAllUserPools := c.GetInt("role") >= common.RoleAdminUser
+	includeAllUserPools := c.GetInt("role") >= common.RoleAdminUser && strings.TrimSpace(c.Query("scope")) != "self"
 	common.ApiSuccess(c, service.GetVisibleModelQuotaPoolUsage(userID, includeAllUserPools))
 }
 

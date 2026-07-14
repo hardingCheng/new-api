@@ -17,6 +17,8 @@ const (
 	BillingAdjustmentStatusSucceeded     = "succeeded"
 	BillingAdjustmentFundingWallet       = "wallet"
 	BillingAdjustmentFundingSubscription = "subscription"
+	BillingReservationOutcomeSettlement  = "settlement"
+	BillingReservationOutcomeRefund      = "refund"
 )
 
 const billingReservationRecoveryDelay = 6 * time.Hour
@@ -60,6 +62,7 @@ type BillingAdjustment struct {
 	FundingSource                   string `json:"funding_source" gorm:"type:varchar(32)"`
 	FundingDelta                    int    `json:"funding_delta"`
 	TokenDelta                      int    `json:"token_delta"`
+	ReservationOutcome              string `json:"reservation_outcome" gorm:"type:varchar(32)"`
 	Status                          string `json:"status" gorm:"type:varchar(32);index"`
 	Attempts                        int    `json:"attempts"`
 	LastError                       string `json:"last_error" gorm:"type:text"`
@@ -98,6 +101,22 @@ type BillingReservationParams struct {
 type BillingReservationResult struct {
 	Adjustment   *BillingAdjustment
 	Subscription *SubscriptionPreConsumeResult
+}
+
+func GetBillingAdjustmentByKey(adjustmentKey string) (*BillingAdjustment, bool, error) {
+	adjustmentKey = strings.TrimSpace(adjustmentKey)
+	if adjustmentKey == "" {
+		return nil, false, nil
+	}
+	var adjustment BillingAdjustment
+	err := DB.Where("adjustment_key = ?", adjustmentKey).First(&adjustment).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return &adjustment, true, nil
 }
 
 // ReserveBillingQuota atomically records the recovery action and deducts all
@@ -355,6 +374,9 @@ func FinalizeBillingReservation(adjustmentID int64, actualQuota int, tokenBillin
 			adjustment.SubscriptionPreConsumeRequestID = ""
 			adjustment.SubscriptionPreConsumed = 0
 			adjustment.SubscriptionExtraReserved = 0
+			adjustment.ReservationOutcome = BillingReservationOutcomeSettlement
+		} else {
+			adjustment.ReservationOutcome = BillingReservationOutcomeRefund
 		}
 		adjustment.Status = BillingAdjustmentStatusPending
 		adjustment.NextRetryAt = common.GetTimestamp()
@@ -365,6 +387,7 @@ func FinalizeBillingReservation(adjustmentID int64, actualQuota int, tokenBillin
 			"subscription_pre_consume_request_id": adjustment.SubscriptionPreConsumeRequestID,
 			"subscription_pre_consumed":           adjustment.SubscriptionPreConsumed,
 			"subscription_extra_reserved":         adjustment.SubscriptionExtraReserved,
+			"reservation_outcome":                 adjustment.ReservationOutcome,
 			"status":                              adjustment.Status,
 			"next_retry_at":                       adjustment.NextRetryAt,
 			"updated_at":                          adjustment.UpdatedAt,
