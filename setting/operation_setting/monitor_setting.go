@@ -14,6 +14,7 @@ type MonitorSetting struct {
 	BarkAlertEnabled                  bool    `json:"bark_alert_enabled"`
 	BarkAlertUrl                      string  `json:"bark_alert_url"`
 	BarkAlertVolume                   int     `json:"bark_alert_volume"`
+	BarkAlertIcon                     string  `json:"bark_alert_icon"`
 	LowBalanceAlertEnabled            bool    `json:"low_balance_alert_enabled"`
 	LowBalanceThresholdCny            float64 `json:"low_balance_threshold_cny"`
 	LowBalanceAlertSound              string  `json:"low_balance_alert_sound"`
@@ -43,6 +44,7 @@ var monitorSetting = MonitorSetting{
 	BarkAlertEnabled:                  true,
 	BarkAlertUrl:                      "https://bark.aigod.one/kFRNZMUXcuQ6c4ccrUgQ3W/",
 	BarkAlertVolume:                   5,
+	BarkAlertIcon:                     "",
 	LowBalanceAlertEnabled:            true,
 	LowBalanceThresholdCny:            10,
 	LowBalanceAlertSound:              "alarm",

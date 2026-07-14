@@ -36,6 +36,7 @@ type barkPayload struct {
 	Volume int    `json:"volume,omitempty"`
 	Call   string `json:"call,omitempty"`
 	URL    string `json:"url,omitempty"`
+	Icon   string `json:"icon,omitempty"`
 }
 
 func NotifyRootUser(t string, subject string, content string) {
@@ -213,8 +214,14 @@ func SendSystemBarkNotify(title string, body string, group string, level string,
 	if !monitorSetting.BarkAlertEnabled {
 		return nil
 	}
-	barkURL := strings.TrimSpace(monitorSetting.BarkAlertUrl)
-	if barkURL == "" {
+	// 多接收人:多个 Bark 推送地址用逗号分隔,逐个发送
+	var barkURLs []string
+	for _, u := range strings.Split(monitorSetting.BarkAlertUrl, ",") {
+		if u = strings.TrimSpace(u); u != "" {
+			barkURLs = append(barkURLs, u)
+		}
+	}
+	if len(barkURLs) == 0 {
 		return nil
 	}
 
@@ -223,6 +230,7 @@ func SendSystemBarkNotify(title string, body string, group string, level string,
 		Body:  body,
 		Group: group,
 		Level: level,
+		Icon:  strings.TrimSpace(monitorSetting.BarkAlertIcon),
 	}
 	if s := strings.TrimSpace(sound); s != "" {
 		payload.Sound = s
@@ -246,7 +254,21 @@ func SendSystemBarkNotify(title string, body string, group string, level string,
 		return fmt.Errorf("failed to marshal system bark payload: %v", err)
 	}
 
+	var errs []string
+	for _, barkURL := range barkURLs {
+		if err := sendSystemBarkRequest(barkURL, payloadBytes); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("bark notify failed for %d/%d target(s): %s", len(errs), len(barkURLs), strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+func sendSystemBarkRequest(barkURL string, payloadBytes []byte) error {
 	var resp *http.Response
+	var err error
 	if system_setting.EnableWorker() {
 		workerReq := &WorkerRequest{
 			URL:    barkURL,
