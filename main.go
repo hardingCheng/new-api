@@ -117,6 +117,8 @@ func main() {
 			common.FatalLog("failed to parse CHANNEL_UPDATE_FREQUENCY: " + err.Error())
 		}
 		go controller.AutomaticallyUpdateChannels(frequency)
+	} else {
+		controller.StartChannelBalanceCheckTask()
 	}
 
 	go controller.AutomaticallyRetestDisabledChannels()

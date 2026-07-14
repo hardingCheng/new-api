@@ -17,6 +17,10 @@ type MonitorSetting struct {
 	LowBalanceAlertEnabled            bool    `json:"low_balance_alert_enabled"`
 	LowBalanceThresholdCny            float64 `json:"low_balance_threshold_cny"`
 	LowBalanceAlertSound              string  `json:"low_balance_alert_sound"`
+	ChannelBalanceCheckEnabled        bool    `json:"channel_balance_check_enabled"`
+	ChannelBalanceCheckMinutes        float64 `json:"channel_balance_check_minutes"`
+	ChannelBalanceAlertThreshold      float64 `json:"channel_balance_alert_threshold"`
+	ChannelBalanceAlertSound          string  `json:"channel_balance_alert_sound"`
 	ChannelBreakerAlertEnabled        bool    `json:"channel_breaker_alert_enabled"`
 	ChannelBreakerAlertSound          string  `json:"channel_breaker_alert_sound"`
 	ChannelDisableAlertEnabled        bool    `json:"channel_disable_alert_enabled"`
@@ -42,6 +46,10 @@ var monitorSetting = MonitorSetting{
 	LowBalanceAlertEnabled:            true,
 	LowBalanceThresholdCny:            10,
 	LowBalanceAlertSound:              "alarm",
+	ChannelBalanceCheckEnabled:        true,
+	ChannelBalanceCheckMinutes:        360,
+	ChannelBalanceAlertThreshold:      10,
+	ChannelBalanceAlertSound:          "alarm",
 	ChannelBreakerAlertEnabled:        true,
 	ChannelBreakerAlertSound:          "alarm",
 	ChannelDisableAlertEnabled:        true,

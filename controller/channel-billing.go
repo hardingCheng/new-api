@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -474,11 +475,41 @@ func updateAllChannelsBalance() error {
 			// err is nil & balance <= 0 means quota is used up
 			if balance <= 0 {
 				service.DisableChannel(*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, "", channel.GetAutoBan(), common.IsChannelBreakerExemptChannel(channel.Id)), "余额不足")
+			} else {
+				maybeSendChannelBalanceAlert(channel, balance)
 			}
 		}
 		time.Sleep(common.RequestInterval)
 	}
 	return nil
+}
+
+// 同一渠道的低余额告警冷却期,避免每轮巡检重复轰炸
+const channelBalanceAlertCooldown = 24 * time.Hour
+
+var channelBalanceAlertAt sync.Map // channelId -> time.Time
+
+func maybeSendChannelBalanceAlert(channel *model.Channel, balance float64) {
+	ms := operation_setting.GetMonitorSetting()
+	if !ms.BarkAlertEnabled || ms.ChannelBalanceAlertThreshold <= 0 {
+		return
+	}
+	if balance >= ms.ChannelBalanceAlertThreshold {
+		channelBalanceAlertAt.Delete(channel.Id)
+		return
+	}
+	if last, ok := channelBalanceAlertAt.Load(channel.Id); ok {
+		if t, ok := last.(time.Time); ok && time.Since(t) < channelBalanceAlertCooldown {
+			return
+		}
+	}
+	channelBalanceAlertAt.Store(channel.Id, time.Now())
+	subject := fmt.Sprintf("渠道「%s」（#%d）余额偏低", channel.Name, channel.Id)
+	body := fmt.Sprintf("渠道：%s (#%d)\n余额：%.2f\n阈值：%.2f\n余额单位以上游返回为准", channel.Name, channel.Id, balance, ms.ChannelBalanceAlertThreshold)
+	common.SysLog(subject)
+	if err := service.SendSystemBarkNotify(subject, body, "new-api 余额预警", "critical", ms.ChannelBalanceAlertSound); err != nil {
+		common.SysError(fmt.Sprintf("failed to send channel balance bark notify for channel %d: %s", channel.Id, err.Error()))
+	}
 }
 
 func UpdateAllChannelsBalance(c *gin.Context) {
@@ -502,4 +533,28 @@ func AutomaticallyUpdateChannels(frequency int) {
 		_ = updateAllChannelsBalance()
 		common.SysLog("channels update done")
 	}
+}
+
+// StartChannelBalanceCheckTask 按监控设置周期巡检渠道余额(低于阈值 Bark 告警,
+// 归零自动禁用)。间隔/开关运行时可改;CHANNEL_UPDATE_FREQUENCY 环境变量存在时
+// 由 AutomaticallyUpdateChannels 接管,不启动本任务(见 main.go)。
+func StartChannelBalanceCheckTask() {
+	go func() {
+		common.SysLog("channel balance check task started")
+		for {
+			ms := operation_setting.GetMonitorSetting()
+			interval := time.Duration(ms.ChannelBalanceCheckMinutes) * time.Minute
+			if interval < 30*time.Minute {
+				interval = 30 * time.Minute
+			}
+			time.Sleep(interval)
+			if !operation_setting.GetMonitorSetting().ChannelBalanceCheckEnabled {
+				continue
+			}
+			common.SysLog("channel balance check: updating all channels balance")
+			if err := updateAllChannelsBalance(); err != nil {
+				common.SysError("channel balance check failed: " + err.Error())
+			}
+		}
+	}()
 }
