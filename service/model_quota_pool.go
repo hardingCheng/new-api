@@ -38,6 +38,14 @@ type ModelQuotaPoolSettlement struct {
 }
 
 var modelQuotaPoolConsumeScript = redis.NewScript(`
+if redis.call("EXISTS", KEYS[2]) == 1 then
+  local guard = redis.call("GET", KEYS[2]) or "0:0"
+  local separator = string.find(guard, ":", 1, true)
+  local used_before = tonumber(string.sub(guard, 1, separator - 1)) or 0
+  local used_after = tonumber(string.sub(guard, separator + 1)) or used_before
+  local limit = tonumber(ARGV[1])
+  return {1, used_before, used_after, limit - used_after}
+end
 local current = tonumber(redis.call("GET", KEYS[1]) or "0")
 local limit = tonumber(ARGV[1])
 local ttl = tonumber(ARGV[2])
@@ -58,7 +66,27 @@ local next = redis.call("INCRBY", KEYS[1], amount)
 if current == 0 and ttl > 0 then
   redis.call("EXPIRE", KEYS[1], ttl)
 end
+redis.call("SET", KEYS[2], tostring(current) .. ":" .. tostring(next), "EX", ttl)
 return {1, current, next, limit - next}
+`)
+
+var modelQuotaPoolFinalizeReservationScript = redis.NewScript(`
+if redis.call("EXISTS", KEYS[2]) == 0 then
+  return 0
+end
+if redis.call("EXISTS", KEYS[1]) == 1 then
+  local current = tonumber(redis.call("GET", KEYS[1]) or "0")
+  local delta = tonumber(ARGV[1])
+  local next = current + delta
+  if next < 0 then
+    next = 0
+  end
+  if next ~= current then
+    redis.call("INCRBY", KEYS[1], next - current)
+  end
+end
+redis.call("DEL", KEYS[2])
+return 1
 `)
 
 var modelQuotaPoolAdjustOnceScript = redis.NewScript(`
@@ -110,32 +138,55 @@ func CheckAndConsumeModelQuotaPool(ctx *gin.Context, info *relaycommon.RelayInfo
 	}
 
 	applied := make([]ratio_setting.ModelQuotaPoolMatch, 0, len(matches))
-	consumed := make(map[string]int64, len(matches))
-	for _, rule := range matches {
+	requestID := strings.TrimSpace(info.RequestId)
+	if requestID == "" {
+		requestID = common.NewRequestId()
+		info.RequestId = requestID
+	}
+	for index, rule := range matches {
 		periodKey, ttl := modelQuotaPoolPeriodKey(rule.Period, time.Now())
 		redisKey := modelQuotaPoolRedisKey(rule, periodKey)
 		amount := modelQuotaPoolConsumeAmount(rule, info)
-		allowed, usedBefore, usedAfter, remaining, err := consumeModelQuotaPool(redisKey, rule.Limit, amount, ttl)
+		operationDigest := sha256.Sum256([]byte(fmt.Sprintf("%s:%d:%s", requestID, index, redisKey)))
+		operationKey := fmt.Sprintf("relay:reserve:%x", operationDigest[:16])
+		reservation, err := model.EnsureQuotaPoolReservation(operationKey, redisKey, amount)
+		if err != nil || reservation.Status != model.QuotaPoolAdjustmentStatusReserved {
+			if err == nil {
+				err = errors.New("model quota pool reservation was already finalized")
+			}
+			info.ModelQuotaPools = applied
+			rollbackErr := RollbackModelQuotaPool(info)
+			if rollbackErr != nil {
+				err = errors.Join(err, rollbackErr)
+			}
+			return types.NewErrorWithStatusCode(
+				fmt.Errorf("模型限量池检查失败: %w", err),
+				types.ErrorCodeModelQuotaPoolUnavailable,
+				http.StatusInternalServerError,
+				types.ErrOptionWithSkipRetry(),
+			)
+		}
+		allowed, usedBefore, usedAfter, remaining, err := consumeModelQuotaPool(redisKey, reservation.GuardKey, rule.Limit, amount, ttl)
 		match := ratio_setting.ModelQuotaPoolMatch{
-			Rule:        rule,
-			Scope:       rule.Scope,
-			Metric:      rule.Metric,
-			PeriodKey:   periodKey,
-			RedisKey:    redisKey,
-			Limit:       rule.Limit,
-			Amount:      amount,
-			UsedBefore:  usedBefore,
-			UsedAfter:   usedAfter,
-			Remaining:   remaining,
-			Description: modelQuotaPoolDescription(rule),
+			Rule:          rule,
+			ReservationID: reservation.ID,
+			Scope:         rule.Scope,
+			Metric:        rule.Metric,
+			PeriodKey:     periodKey,
+			RedisKey:      redisKey,
+			Limit:         rule.Limit,
+			Amount:        amount,
+			UsedBefore:    usedBefore,
+			UsedAfter:     usedAfter,
+			Remaining:     remaining,
+			Description:   modelQuotaPoolDescription(rule),
 		}
 		applied = append(applied, match)
 		if err != nil {
-			rollbackErr := rollbackRelayModelQuotaPool(info, consumed)
-			info.ModelQuotaPools = pendingModelQuotaPoolRollbackMatches(consumed)
-			if rollbackErr == nil {
-				info.ModelQuotaPoolSettled = true
-				info.ModelQuotaPools = nil
+			info.ModelQuotaPools = applied
+			rollbackErr := RollbackModelQuotaPool(info)
+			if rollbackErr != nil {
+				err = errors.Join(err, rollbackErr)
 			}
 			return types.NewErrorWithStatusCode(
 				fmt.Errorf("模型限量池检查失败: %w", err),
@@ -145,41 +196,34 @@ func CheckAndConsumeModelQuotaPool(ctx *gin.Context, info *relaycommon.RelayInfo
 			)
 		}
 		if !allowed {
-			rollbackErr := rollbackRelayModelQuotaPool(info, consumed)
-			info.ModelQuotaPools = pendingModelQuotaPoolRollbackMatches(consumed)
-			if rollbackErr == nil {
-				info.ModelQuotaPoolSettled = true
-				info.ModelQuotaPools = nil
-			}
+			info.ModelQuotaPools = applied
+			rollbackErr := RollbackModelQuotaPool(info)
 			message := strings.TrimSpace(rule.Message)
 			if message == "" {
 				message = fmt.Sprintf("模型 %s 当前周期%s已达上限", info.OriginModelName, modelQuotaPoolMetricText(rule.Metric))
 			}
-			return types.NewErrorWithStatusCode(
+			apiErr := types.NewErrorWithStatusCode(
 				fmt.Errorf("%s", message),
 				types.ErrorCodeModelQuotaPoolExceeded,
 				http.StatusTooManyRequests,
 				types.ErrOptionWithSkipRetry(),
 				types.ErrOptionWithNoRecordErrorLog(),
 			)
+			if rollbackErr != nil {
+				return types.NewErrorWithStatusCode(
+					errors.Join(apiErr, rollbackErr),
+					types.ErrorCodeModelQuotaPoolUnavailable,
+					http.StatusInternalServerError,
+					types.ErrOptionWithSkipRetry(),
+				)
+			}
+			return apiErr
 		}
-		consumed[redisKey] += amount
 	}
 	info.ModelQuotaPools = applied
 	info.ModelQuotaPoolChecked = true
 	info.ModelQuotaPoolSettled = false
 	return nil
-}
-
-func pendingModelQuotaPoolRollbackMatches(consumed map[string]int64) []ratio_setting.ModelQuotaPoolMatch {
-	matches := make([]ratio_setting.ModelQuotaPoolMatch, 0, len(consumed))
-	for key, amount := range consumed {
-		if strings.TrimSpace(key) == "" || amount <= 0 {
-			continue
-		}
-		matches = append(matches, ratio_setting.ModelQuotaPoolMatch{RedisKey: key, Amount: amount})
-	}
-	return matches
 }
 
 func SettleModelQuotaPool(info *relaycommon.RelayInfo, settlement ModelQuotaPoolSettlement) error {
@@ -191,17 +235,27 @@ func SettleModelQuotaPool(info *relaycommon.RelayInfo, settlement ModelQuotaPool
 		requestID = common.NewRequestId()
 		info.RequestId = requestID
 	}
+	matches := info.ModelQuotaPools
 	var firstErr error
-	if settlement.HasActualQuota && settlement.ActualQuota >= 0 {
-		if err := adjustRelayModelQuotaPoolDurably(info, ratio_setting.ModelQuotaPoolMetricQuota, int64(settlement.ActualQuota), "relay:settle:"+requestID); err != nil {
+	for index := range matches {
+		match := &matches[index]
+		actualAmount := match.Amount
+		switch match.Metric {
+		case ratio_setting.ModelQuotaPoolMetricQuota:
+			if settlement.HasActualQuota && settlement.ActualQuota >= 0 {
+				actualAmount = int64(settlement.ActualQuota)
+			}
+		case ratio_setting.ModelQuotaPoolMetricTotalTokens:
+			if settlement.HasActualTotalTokens && settlement.ActualTotalTokens >= 0 {
+				actualAmount = int64(settlement.ActualTotalTokens)
+			}
+		}
+		operationPrefix := fmt.Sprintf("relay:settle:%s:%s:%d", requestID, match.Metric, index)
+		if err := settleModelQuotaPoolMatch(match, actualAmount, operationPrefix); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
-	if settlement.HasActualTotalTokens && settlement.ActualTotalTokens >= 0 {
-		if err := adjustRelayModelQuotaPoolDurably(info, ratio_setting.ModelQuotaPoolMetricTotalTokens, int64(settlement.ActualTotalTokens), "relay:settle:"+requestID); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
+	info.ModelQuotaPools = matches
 	if firstErr != nil {
 		common.SysError("persist or apply model quota pool settlement failed: " + firstErr.Error())
 		return firstErr
@@ -223,51 +277,47 @@ func RollbackModelQuotaPool(info *relaycommon.RelayInfo) error {
 	if info == nil || info.ModelQuotaPoolSettled || len(info.ModelQuotaPools) == 0 {
 		return nil
 	}
-	if err := rollbackRelayModelQuotaPool(info, modelQuotaPoolConsumedFromMatches(info.ModelQuotaPools)); err != nil {
-		return err
+	requestID := strings.TrimSpace(info.RequestId)
+	if requestID == "" {
+		requestID = common.NewRequestId()
+		info.RequestId = requestID
+	}
+	matches := info.ModelQuotaPools
+	var firstErr error
+	for index := range matches {
+		operationPrefix := fmt.Sprintf("relay:rollback:%s:%d", requestID, index)
+		if err := settleModelQuotaPoolMatch(&matches[index], 0, operationPrefix); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	info.ModelQuotaPools = matches
+	if firstErr != nil {
+		return firstErr
 	}
 	info.ModelQuotaPoolSettled = true
 	info.ModelQuotaPools = nil
 	return nil
 }
 
-func rollbackRelayModelQuotaPool(info *relaycommon.RelayInfo, consumed map[string]int64) error {
-	requestID := "unknown"
-	if info != nil {
-		requestID = strings.TrimSpace(info.RequestId)
-		if requestID == "" {
-			requestID = common.NewRequestId()
-			info.RequestId = requestID
-		}
-	}
-	var firstErr error
-	for key, amount := range consumed {
-		if strings.TrimSpace(key) == "" || amount <= 0 {
-			continue
-		}
-		if err := queueModelQuotaPoolAdjustment("relay:rollback:"+requestID, key, -amount); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	return firstErr
-}
-
 func RollbackTaskModelQuotaPool(task *model.Task) error {
 	if task == nil || task.PrivateData.BillingContext == nil || len(task.PrivateData.BillingContext.ModelQuotaPools) == 0 {
 		return nil
 	}
-	consumed := modelQuotaPoolConsumedFromMatches(task.PrivateData.BillingContext.ModelQuotaPools)
 	taskID := strings.TrimSpace(task.TaskID)
 	if taskID == "" {
 		taskID = fmt.Sprintf("db-%d", task.ID)
 	}
-	for key, amount := range consumed {
-		if strings.TrimSpace(key) == "" || amount <= 0 {
-			continue
+	matches := task.PrivateData.BillingContext.ModelQuotaPools
+	var firstErr error
+	for index := range matches {
+		operationPrefix := fmt.Sprintf("task:rollback:%s:%d", taskID, index)
+		if err := settleModelQuotaPoolMatch(&matches[index], 0, operationPrefix); err != nil && firstErr == nil {
+			firstErr = err
 		}
-		if err := queueModelQuotaPoolAdjustment("task:rollback:"+taskID, key, -amount); err != nil {
-			return err
-		}
+	}
+	task.PrivateData.BillingContext.ModelQuotaPools = matches
+	if firstErr != nil {
+		return firstErr
 	}
 	task.PrivateData.BillingContext.ModelQuotaPools = nil
 	return nil
@@ -298,53 +348,84 @@ func adjustTaskModelQuotaPool(task *model.Task, metric string, actualAmount int6
 		if match.Metric != metric || strings.TrimSpace(match.RedisKey) == "" || match.Amount <= 0 {
 			continue
 		}
-		delta := actualAmount - match.Amount
-		if delta == 0 {
-			continue
-		}
 		operationPrefix := fmt.Sprintf("task:settle:%s:%s:%d", task.TaskID, metric, i)
-		if err := queueModelQuotaPoolAdjustment(operationPrefix, match.RedisKey, delta); err != nil {
+		if err := settleModelQuotaPoolMatch(match, actualAmount, operationPrefix); err != nil {
 			common.SysError("queue task model quota pool adjustment failed: " + err.Error())
 			if firstErr == nil {
 				firstErr = err
 			}
-			continue
-		}
-		match.Amount = actualAmount
-		match.UsedAfter += delta
-		match.Remaining -= delta
-		if match.Remaining < 0 {
-			match.Remaining = 0
 		}
 	}
 	task.PrivateData.BillingContext.ModelQuotaPools = matches
 	return firstErr
 }
 
-func adjustRelayModelQuotaPoolDurably(info *relaycommon.RelayInfo, metric string, actualAmount int64, operationPrefix string) error {
-	matches := info.ModelQuotaPools
-	for i := range matches {
-		match := &matches[i]
-		if match.Metric != metric || strings.TrimSpace(match.RedisKey) == "" || match.Amount <= 0 {
-			continue
+func settleTaskSubmissionModelQuotaPool(task *model.Task, actualQuota int) error {
+	if task == nil || task.PrivateData.BillingContext == nil || actualQuota < 0 {
+		return nil
+	}
+	matches := task.PrivateData.BillingContext.ModelQuotaPools
+	var firstErr error
+	for index := range matches {
+		actualAmount := matches[index].Amount
+		if matches[index].Metric == ratio_setting.ModelQuotaPoolMetricQuota {
+			actualAmount = int64(actualQuota)
 		}
-		delta := actualAmount - match.Amount
-		if delta == 0 {
-			continue
-		}
-		matchOperationPrefix := fmt.Sprintf("%s:%s:%d", operationPrefix, metric, i)
-		if err := queueModelQuotaPoolAdjustment(matchOperationPrefix, match.RedisKey, delta); err != nil {
-			info.ModelQuotaPools = matches
-			return err
-		}
-		match.Amount = actualAmount
-		match.UsedAfter += delta
-		match.Remaining -= delta
-		if match.Remaining < 0 {
-			match.Remaining = 0
+		operationPrefix := fmt.Sprintf("task:submission:%s:%s:%d", task.TaskID, matches[index].Metric, index)
+		if err := settleModelQuotaPoolMatch(&matches[index], actualAmount, operationPrefix); err != nil && firstErr == nil {
+			firstErr = err
 		}
 	}
-	info.ModelQuotaPools = matches
+	task.PrivateData.BillingContext.ModelQuotaPools = matches
+	return firstErr
+}
+
+func settleModelQuotaPoolMatch(match *ratio_setting.ModelQuotaPoolMatch, actualAmount int64, operationPrefix string) error {
+	if match == nil || strings.TrimSpace(match.RedisKey) == "" || match.Amount <= 0 || actualAmount < 0 {
+		return nil
+	}
+	delta := actualAmount - match.Amount
+	if match.ReservationID > 0 {
+		if err := finalizeQuotaPoolReservationDurably(match.ReservationID, match.RedisKey, delta, actualAmount); err != nil {
+			return err
+		}
+		match.ReservationID = 0
+	} else if delta != 0 {
+		if err := queueModelQuotaPoolAdjustment(operationPrefix, match.RedisKey, delta); err != nil {
+			return err
+		}
+	}
+	match.Amount = actualAmount
+	match.UsedAfter += delta
+	match.Remaining -= delta
+	if match.Remaining < 0 {
+		match.Remaining = 0
+	}
+	return nil
+}
+
+func finalizeQuotaPoolReservationDurably(reservationID int64, redisKey string, delta int64, actualAmount int64) error {
+	var adjustment *model.QuotaPoolAdjustment
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		adjustment, err = model.FinalizeQuotaPoolReservation(reservationID, actualAmount)
+		if err == nil {
+			break
+		}
+		if attempt < 2 {
+			time.Sleep(time.Duration(attempt+1) * 25 * time.Millisecond)
+		}
+	}
+	if err != nil {
+		directErr := applyQuotaPoolReservationDirect(reservationID, redisKey, delta)
+		if directErr == nil {
+			return nil
+		}
+		return errors.Join(err, directErr)
+	}
+	if err := applyQuotaPoolAdjustment(adjustment); err != nil {
+		common.SysError("model quota pool reservation queued for retry: " + err.Error())
+	}
 	return nil
 }
 
@@ -389,6 +470,19 @@ func applyQuotaPoolAdjustmentDirect(operationKey string, redisKey string, delta 
 	return err
 }
 
+func applyQuotaPoolReservationDirect(reservationID int64, redisKey string, delta int64) error {
+	if !common.RedisEnabled || common.RDB == nil {
+		return errors.New("model quota pool Redis is unavailable")
+	}
+	guardKey := model.QuotaPoolReservationGuardKey(reservationID)
+	if strings.TrimSpace(redisKey) == "" || guardKey == "" {
+		return errors.New("invalid model quota pool reservation")
+	}
+	_, err := modelQuotaPoolFinalizeReservationScript.Run(context.Background(), common.RDB,
+		[]string{redisKey, guardKey}, delta).Result()
+	return err
+}
+
 func applyQuotaPoolAdjustment(adjustment *model.QuotaPoolAdjustment) error {
 	if adjustment == nil || adjustment.Status == model.QuotaPoolAdjustmentStatusSucceeded {
 		return nil
@@ -398,7 +492,21 @@ func applyQuotaPoolAdjustment(adjustment *model.QuotaPoolAdjustment) error {
 		model.MarkQuotaPoolAdjustmentFailed(adjustment.ID, err)
 		return err
 	}
-	if err := applyQuotaPoolAdjustmentDirect(adjustment.OperationKey, adjustment.RedisKey, adjustment.Delta); err != nil {
+	if adjustment.Status == model.QuotaPoolAdjustmentStatusReserved {
+		return errors.New("model quota pool reservation is not finalized")
+	}
+	var err error
+	if adjustment.ReservedAmount > 0 {
+		guardKey := adjustment.GuardKey
+		if guardKey == "" {
+			guardKey = model.QuotaPoolReservationGuardKey(adjustment.ID)
+		}
+		_, err = modelQuotaPoolFinalizeReservationScript.Run(context.Background(), common.RDB,
+			[]string{adjustment.RedisKey, guardKey}, adjustment.Delta).Result()
+	} else {
+		err = applyQuotaPoolAdjustmentDirect(adjustment.OperationKey, adjustment.RedisKey, adjustment.Delta)
+	}
+	if err != nil {
 		model.MarkQuotaPoolAdjustmentFailed(adjustment.ID, err)
 		return err
 	}
@@ -466,7 +574,7 @@ func GetVisibleModelQuotaPoolUsage(userID int, includeAllUserPools bool) []Model
 			continue
 		}
 		if rule.Scope == ratio_setting.ModelQuotaPoolScopeUser {
-			if !includeAllUserPools {
+			if !includeAllUserPools && rule.UserID != userID {
 				continue
 			}
 		} else if rule.Scope != ratio_setting.ModelQuotaPoolScopeGlobal {
@@ -491,7 +599,7 @@ func GetVisibleModelQuotaPoolUsage(userID int, includeAllUserPools bool) []Model
 	return items
 }
 
-func consumeModelQuotaPool(key string, limit int64, amount int64, ttl time.Duration) (bool, int64, int64, int64, error) {
+func consumeModelQuotaPool(key string, guardKey string, limit int64, amount int64, ttl time.Duration) (bool, int64, int64, int64, error) {
 	ttlSeconds := int64(ttl.Seconds())
 	if ttlSeconds <= 0 {
 		ttlSeconds = 1
@@ -499,7 +607,7 @@ func consumeModelQuotaPool(key string, limit int64, amount int64, ttl time.Durat
 	if amount <= 0 {
 		amount = 1
 	}
-	result, err := modelQuotaPoolConsumeScript.Run(context.Background(), common.RDB, []string{key}, limit, ttlSeconds, amount).Result()
+	result, err := modelQuotaPoolConsumeScript.Run(context.Background(), common.RDB, []string{key, guardKey}, limit, ttlSeconds, amount).Result()
 	if err != nil {
 		return false, 0, 0, 0, err
 	}

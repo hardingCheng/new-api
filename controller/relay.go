@@ -697,17 +697,23 @@ func RelayTask(c *gin.Context) {
 		}
 	}
 	if taskErr == nil {
-		if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
+		settleErr := service.SettleBilling(c, relayInfo, result.Quota)
+		if settleErr != nil {
 			common.SysError("settle task billing error: " + settleErr.Error())
-		} else if completeErr := service.CompleteTaskSubmissionSettlement(relayInfo.UserId, relayInfo.PublicTaskID); completeErr != nil {
-			common.SysError("complete task submission settlement marker error: " + completeErr.Error())
 		}
-		service.SettleModelQuotaPool(relayInfo, service.ModelQuotaPoolSettlement{
+		poolErr := service.SettleModelQuotaPool(relayInfo, service.ModelQuotaPoolSettlement{
 			ActualQuota:    result.Quota,
 			HasActualQuota: true,
 		})
+		if poolErr != nil {
+			common.SysError("settle task model quota pool error: " + poolErr.Error())
+		}
 		if syncErr := service.SyncTaskSubmissionBillingContext(relayInfo); syncErr != nil {
 			common.SysError("sync task submission billing context error: " + syncErr.Error())
+		} else if settleErr == nil && poolErr == nil {
+			if completeErr := service.CompleteTaskSubmissionSettlement(relayInfo.UserId, relayInfo.PublicTaskID); completeErr != nil {
+				common.SysError("complete task submission settlement marker error: " + completeErr.Error())
+			}
 		}
 		service.LogTaskConsumption(c, relayInfo)
 	}

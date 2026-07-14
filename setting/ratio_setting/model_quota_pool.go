@@ -42,17 +42,18 @@ type ModelQuotaPoolConfig struct {
 }
 
 type ModelQuotaPoolMatch struct {
-	Rule        ModelQuotaPoolRule `json:"rule"`
-	Scope       string             `json:"scope"`
-	Metric      string             `json:"metric,omitempty"`
-	PeriodKey   string             `json:"period_key"`
-	RedisKey    string             `json:"redis_key,omitempty"`
-	Limit       int64              `json:"limit"`
-	Amount      int64              `json:"amount,omitempty"`
-	UsedBefore  int64              `json:"used_before"`
-	UsedAfter   int64              `json:"used_after"`
-	Remaining   int64              `json:"remaining"`
-	Description string             `json:"description,omitempty"`
+	Rule          ModelQuotaPoolRule `json:"rule"`
+	ReservationID int64              `json:"reservation_id,omitempty"`
+	Scope         string             `json:"scope"`
+	Metric        string             `json:"metric,omitempty"`
+	PeriodKey     string             `json:"period_key"`
+	RedisKey      string             `json:"redis_key,omitempty"`
+	Limit         int64              `json:"limit"`
+	Amount        int64              `json:"amount,omitempty"`
+	UsedBefore    int64              `json:"used_before"`
+	UsedAfter     int64              `json:"used_after"`
+	Remaining     int64              `json:"remaining"`
+	Description   string             `json:"description,omitempty"`
 }
 
 var modelQuotaPoolConfig atomic.Value

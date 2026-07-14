@@ -33,6 +33,8 @@ import {
 import { api } from '@/lib/api'
 import { formatQuota } from '@/lib/format'
 
+import type { LogsViewScope } from './usage-logs-provider'
+
 type QuotaPoolUsage = {
   scope: 'global' | 'user'
   metric: 'requests' | 'total_tokens' | 'prompt_tokens' | 'quota'
@@ -60,16 +62,22 @@ function formatMetric(
   return `${value} ${metric === 'requests' ? t('requests') : 'tokens'}`
 }
 
-export function ModelQuotaPoolSummary() {
+type ModelQuotaPoolSummaryProps = {
+  scope: LogsViewScope
+}
+
+export function ModelQuotaPoolSummary(props: ModelQuotaPoolSummaryProps) {
   const { t } = useTranslation()
   const [pools, setPools] = useState<QuotaPoolUsage[]>([])
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
     let active = true
+    setPools([])
     void api
       .get<{ success: boolean; data?: QuotaPoolUsage[] }>(
-        '/api/task/model_quota_pools'
+        '/api/task/model_quota_pools',
+        { params: { scope: props.scope } }
       )
       .then((response) => {
         if (
@@ -86,7 +94,7 @@ export function ModelQuotaPoolSummary() {
     return () => {
       active = false
     }
-  }, [])
+  }, [props.scope])
 
   const summary = useMemo(() => {
     let lowestRemaining = 100

@@ -78,3 +78,53 @@ func TestUpdateChannelStatusPersistsMultiKeyIsolation(t *testing.T) {
 	require.False(t, keyADisabled)
 	require.Equal(t, common.ChannelStatusAutoDisabled, restored.ChannelInfo.MultiKeyStatusList[1])
 }
+
+func TestUpdateChannelStatusRestoresEnabledChannelToMemoryRouting(t *testing.T) {
+	oldMemoryCacheEnabled := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = true
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled = oldMemoryCacheEnabled
+		channelSyncLock.Lock()
+		group2model2channels = nil
+		channelsIDM = nil
+		channel2advancedCustomConfig = nil
+		channelSyncLock.Unlock()
+	})
+	truncateTables(t)
+
+	priority := int64(10)
+	channel := &Channel{
+		Type:     1,
+		Name:     "recoverable-channel",
+		Key:      "sk-test",
+		Status:   common.ChannelStatusEnabled,
+		Models:   "test-model",
+		Group:    "default",
+		Priority: &priority,
+	}
+	require.NoError(t, DB.Create(channel).Error)
+	require.NoError(t, DB.Create(&Ability{
+		Group:     "default",
+		Model:     "test-model",
+		ChannelId: channel.Id,
+		Enabled:   true,
+		Priority:  &priority,
+	}).Error)
+	InitChannelCache()
+
+	selected, err := GetRandomSatisfiedChannel("default", "test-model", 0, "")
+	require.NoError(t, err)
+	require.NotNil(t, selected)
+	require.Equal(t, channel.Id, selected.Id)
+
+	require.True(t, UpdateChannelStatus(channel.Id, "", common.ChannelStatusAutoDisabled, "temporary failure"))
+	selected, err = GetRandomSatisfiedChannel("default", "test-model", 0, "")
+	require.NoError(t, err)
+	require.Nil(t, selected)
+
+	require.True(t, UpdateChannelStatus(channel.Id, "", common.ChannelStatusEnabled, ""))
+	selected, err = GetRandomSatisfiedChannel("default", "test-model", 0, "")
+	require.NoError(t, err)
+	require.NotNil(t, selected)
+	require.Equal(t, channel.Id, selected.Id)
+}

@@ -148,6 +148,8 @@ type TaskBillingContext struct {
 	SubmissionPreConsumedQuota  int                                      `json:"submission_pre_consumed_quota,omitempty"`
 	SubmissionActualQuota       int                                      `json:"submission_actual_quota,omitempty"`
 	SubmissionSettlementPending bool                                     `json:"submission_settlement_pending,omitempty"`
+	SubmissionTokenBilling      bool                                     `json:"submission_token_billing,omitempty"`
+	SubmissionSettled           bool                                     `json:"submission_settled,omitempty"`
 }
 
 // GetUpstreamTaskID 获取上游真实 task ID（用于与 provider 通信）

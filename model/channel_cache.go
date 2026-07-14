@@ -293,18 +293,53 @@ func CacheUpdateChannelStatus(id int, status int) {
 	if channel, ok := channelsIDM[id]; ok {
 		channel.Status = status
 	}
-	if status != common.ChannelStatusEnabled {
-		// delete the channel from group2model2channels
-		for group, model2channels := range group2model2channels {
-			for model, channels := range model2channels {
-				for i, channelId := range channels {
-					if channelId == id {
-						// remove the channel from the slice
-						group2model2channels[group][model] = append(channels[:i], channels[i+1:]...)
-						break
-					}
+	for group, model2channels := range group2model2channels {
+		for model, channelIDs := range model2channels {
+			filtered := channelIDs[:0]
+			for _, channelID := range channelIDs {
+				if channelID != id {
+					filtered = append(filtered, channelID)
 				}
 			}
+			group2model2channels[group][model] = filtered
+		}
+	}
+	if status != common.ChannelStatusEnabled {
+		return
+	}
+	channel, ok := channelsIDM[id]
+	if !ok {
+		return
+	}
+	if group2model2channels == nil {
+		group2model2channels = make(map[string]map[string][]int)
+	}
+	for _, group := range strings.Split(channel.Group, ",") {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			continue
+		}
+		if group2model2channels[group] == nil {
+			group2model2channels[group] = make(map[string][]int)
+		}
+		for _, modelName := range strings.Split(channel.Models, ",") {
+			modelName = strings.TrimSpace(modelName)
+			if modelName == "" {
+				continue
+			}
+			channelIDs := append(group2model2channels[group][modelName], id)
+			sort.SliceStable(channelIDs, func(i, j int) bool {
+				left := channelsIDM[channelIDs[i]]
+				right := channelsIDM[channelIDs[j]]
+				if left == nil {
+					return false
+				}
+				if right == nil {
+					return true
+				}
+				return left.GetPriority() > right.GetPriority()
+			})
+			group2model2channels[group][modelName] = channelIDs
 		}
 	}
 }

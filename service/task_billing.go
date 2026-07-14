@@ -137,6 +137,7 @@ func taskBillingContextFromRelayInfo(info *relaycommon.RelayInfo) *model.TaskBil
 		PerCallBilling:             ratio_setting.IsVideoBillingPerCall(info.OriginModelName) || (info.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(info.OriginModelName)),
 		SubmissionRequestID:        info.RequestId,
 		SubmissionPreConsumedQuota: info.FinalPreConsumedQuota,
+		SubmissionTokenBilling:     !info.IsPlayground,
 	}
 }
 
@@ -184,7 +185,7 @@ func CompleteTaskSubmissionRecord(c *gin.Context, info *relaycommon.RelayInfo, r
 	task.PrivateData.TokenId = info.TokenId
 	task.PrivateData.NodeName = common.NodeName
 	task.PrivateData.BillingContext = taskBillingContextFromRelayInfo(info)
-	if task.PrivateData.BillingContext != nil && quota != info.FinalPreConsumedQuota {
+	if task.PrivateData.BillingContext != nil && (info.Billing != nil || quota != info.FinalPreConsumedQuota) {
 		task.PrivateData.BillingContext.SubmissionActualQuota = quota
 		task.PrivateData.BillingContext.SubmissionSettlementPending = true
 		task.BillingStatus = model.TaskBillingStatusSettlementPending
@@ -220,6 +221,7 @@ func SyncTaskSubmissionBillingContext(info *relaycommon.RelayInfo) error {
 	if current := task.PrivateData.BillingContext; current != nil {
 		next.SubmissionActualQuota = current.SubmissionActualQuota
 		next.SubmissionSettlementPending = current.SubmissionSettlementPending
+		next.SubmissionSettled = current.SubmissionSettled
 		next.SettlementHasActualQuota = current.SettlementHasActualQuota
 		next.SettlementActualQuota = current.SettlementActualQuota
 		next.SettlementActualTokens = current.SettlementActualTokens
@@ -240,6 +242,7 @@ func CompleteTaskSubmissionSettlement(userID int, publicTaskID string) error {
 	}
 	task.PrivateData.BillingContext.SubmissionSettlementPending = false
 	task.PrivateData.BillingContext.SubmissionActualQuota = 0
+	task.PrivateData.BillingContext.SubmissionSettled = true
 	if task.BillingStatus == model.TaskBillingStatusSettlementPending {
 		task.BillingStatus = model.TaskBillingStatusActive
 	}
@@ -296,10 +299,26 @@ func taskModelName(task *model.Task) string {
 // durable financial adjustment are attempted independently; the task remains
 // pending until both succeed, and retries cannot issue a double refund.
 func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) error {
-	if task == nil {
+	if task == nil || task.BillingStatus == model.TaskBillingStatusRefunded {
 		return nil
 	}
 	poolErr := RollbackTaskModelQuotaPool(task)
+	if err := applyPendingTaskSubmissionSettlement(ctx, task); err != nil {
+		return errors.Join(poolErr, err)
+	}
+	submissionRefunded := false
+	if bc := task.PrivateData.BillingContext; bc != nil && !bc.SubmissionSettled {
+		var err error
+		submissionRefunded, err = finalizeTaskSubmissionReservation(ctx, task, 0, true)
+		if err != nil {
+			return errors.Join(poolErr, err)
+		}
+		if submissionRefunded {
+			bc.SubmissionActualQuota = 0
+			bc.SubmissionSettlementPending = false
+			bc.SubmissionSettled = true
+		}
+	}
 	quota := task.Quota
 	if quota == 0 {
 		if poolErr != nil {
@@ -313,21 +332,23 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) error
 		return nil
 	}
 
-	adjustment, err := ensureTaskBillingAdjustment(task, "task-refund:"+task.TaskID, -quota, -quota)
-	if err != nil {
-		logger.LogWarn(ctx, fmt.Sprintf("创建退款调整失败 task %s: %s", task.TaskID, err.Error()))
-		return errors.Join(poolErr, err)
-	}
-	if err = model.ApplyBillingAdjustment(adjustment.ID); err != nil {
-		logger.LogWarn(ctx, fmt.Sprintf("退款调整失败，等待后台重试 task %s: %s", task.TaskID, err.Error()))
-		return errors.Join(poolErr, err)
+	if !submissionRefunded {
+		adjustment, err := ensureTaskBillingAdjustment(task, "task-refund:"+task.TaskID, -quota, -quota)
+		if err != nil {
+			logger.LogWarn(ctx, fmt.Sprintf("创建退款调整失败 task %s: %s", task.TaskID, err.Error()))
+			return errors.Join(poolErr, err)
+		}
+		if err = model.ApplyBillingAdjustment(adjustment.ID); err != nil {
+			logger.LogWarn(ctx, fmt.Sprintf("退款调整失败，等待后台重试 task %s: %s", task.TaskID, err.Error()))
+			return errors.Join(poolErr, err)
+		}
 	}
 	if poolErr != nil {
 		return poolErr
 	}
 	if task.ID > 0 {
 		task.BillingStatus = model.TaskBillingStatusRefunded
-		if err = task.UpdateBillingState(); err != nil {
+		if err := task.UpdateBillingState(); err != nil {
 			return err
 		}
 	} else {
@@ -548,24 +569,8 @@ func ApplyPendingTaskSettlement(ctx context.Context, task *model.Task) error {
 		return nil
 	}
 	bc := task.PrivateData.BillingContext
-	if bc.SubmissionSettlementPending {
-		delta := bc.SubmissionActualQuota - bc.SubmissionPreConsumedQuota
-		if delta != 0 {
-			requestID := strings.TrimSpace(bc.SubmissionRequestID)
-			if requestID == "" {
-				requestID = task.TaskID
-			}
-			adjustment, err := ensureTaskBillingAdjustment(task, "relay-settle:"+requestID, delta, delta)
-			if err != nil {
-				return err
-			}
-			if err := model.ApplyBillingAdjustment(adjustment.ID); err != nil {
-				logger.LogWarn(ctx, fmt.Sprintf("任务提交结算等待后台重试 task %s: %s", task.TaskID, err.Error()))
-			}
-		}
-		task.Quota = bc.SubmissionActualQuota
-		bc.SubmissionActualQuota = 0
-		bc.SubmissionSettlementPending = false
+	if err := applyPendingTaskSubmissionSettlement(ctx, task); err != nil {
+		return err
 	}
 	if bc.SettlementActualTokens > 0 {
 		if err := AdjustTaskModelQuotaPoolTokens(task, bc.SettlementActualTokens); err != nil {
@@ -591,6 +596,91 @@ func ApplyPendingTaskSettlement(ctx context.Context, task *model.Task) error {
 		return nil
 	}
 	return task.UpdateBillingState()
+}
+
+func applyPendingTaskSubmissionSettlement(ctx context.Context, task *model.Task) error {
+	if task == nil || task.PrivateData.BillingContext == nil {
+		return nil
+	}
+	bc := task.PrivateData.BillingContext
+	if !bc.SubmissionSettlementPending {
+		return nil
+	}
+	actualQuota := bc.SubmissionActualQuota
+	usedReservation, err := finalizeTaskSubmissionReservation(ctx, task, actualQuota, false)
+	if err != nil {
+		return err
+	}
+	if !usedReservation {
+		delta := actualQuota - bc.SubmissionPreConsumedQuota
+		if delta != 0 {
+			requestID := strings.TrimSpace(bc.SubmissionRequestID)
+			if requestID == "" {
+				requestID = task.TaskID
+			}
+			adjustment, err := ensureTaskBillingAdjustment(task, "relay-settle:"+requestID, delta, delta)
+			if err != nil {
+				return err
+			}
+			if err := model.ApplyBillingAdjustment(adjustment.ID); err != nil {
+				logger.LogWarn(ctx, fmt.Sprintf("任务提交结算等待后台重试 task %s: %s", task.TaskID, err.Error()))
+			}
+		}
+	}
+	task.Quota = actualQuota
+	if err := settleTaskSubmissionModelQuotaPool(task, actualQuota); err != nil {
+		return err
+	}
+	bc.SubmissionActualQuota = 0
+	bc.SubmissionSettlementPending = false
+	bc.SubmissionSettled = true
+	return nil
+}
+
+func finalizeTaskSubmissionReservation(ctx context.Context, task *model.Task, actualQuota int, refund bool) (bool, error) {
+	if task == nil || task.PrivateData.BillingContext == nil {
+		return false, nil
+	}
+	bc := task.PrivateData.BillingContext
+	requestID := strings.TrimSpace(bc.SubmissionRequestID)
+	if requestID == "" {
+		return false, nil
+	}
+	adjustment, found, err := model.GetBillingAdjustmentByKey("relay-billing:" + requestID)
+	if err != nil || !found {
+		return false, err
+	}
+	if adjustment.UserID != task.UserId || (task.PrivateData.TokenId > 0 && adjustment.TokenID != task.PrivateData.TokenId) {
+		return true, errors.New("task submission billing reservation does not match task")
+	}
+	reservationOutcome := adjustment.ReservationOutcome
+	if reservationOutcome == "" && bc.SubmissionPreConsumedQuota > 0 && adjustment.FundingDelta == -bc.SubmissionPreConsumedQuota {
+		reservationOutcome = model.BillingReservationOutcomeRefund
+	}
+	if adjustment.Status != model.BillingAdjustmentStatusReserved && refund {
+		if reservationOutcome != model.BillingReservationOutcomeRefund {
+			return false, nil
+		}
+		if err := model.ApplyBillingAdjustment(adjustment.ID); err != nil {
+			logger.LogWarn(ctx, fmt.Sprintf("任务提交退款等待后台重试 task %s: %s", task.TaskID, err.Error()))
+		}
+		return true, nil
+	}
+	if adjustment.Status != model.BillingAdjustmentStatusReserved && reservationOutcome == model.BillingReservationOutcomeRefund {
+		return true, errors.New("task submission billing reservation was already refunded")
+	}
+	tokenBillingEnabled := bc.SubmissionTokenBilling
+	if !tokenBillingEnabled && task.PrivateData.TokenId > 0 && adjustment.TokenDelta != 0 {
+		tokenBillingEnabled = true
+	}
+	adjustment, err = model.FinalizeBillingReservation(adjustment.ID, actualQuota, tokenBillingEnabled, refund)
+	if err != nil {
+		return true, err
+	}
+	if err := model.ApplyBillingAdjustment(adjustment.ID); err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("任务提交计费调整等待后台重试 task %s: %s", task.TaskID, err.Error()))
+	}
+	return true, nil
 }
 
 func taskBillingTokenRatios(task *model.Task) (modelRatio float64, groupRatio float64, hasSnapshot bool, canRecalculate bool) {

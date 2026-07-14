@@ -1036,6 +1036,223 @@ func TestTaskSubmissionRecordLifecycle(t *testing.T) {
 	assert.JSONEq(t, `{"status":"queued"}`, string(reloaded.Data))
 }
 
+func TestPendingTaskSubmissionSettlementReusesPreConsumeReservation(t *testing.T) {
+	truncate(t)
+	const userID, tokenID = 101, 101
+	seedUser(t, userID, 10000)
+	seedToken(t, tokenID, userID, "sk-task-submission-recovery", 10000)
+	reservation, err := model.ReserveBillingQuota(model.BillingReservationParams{
+		RequestID:           "task-submission-recovery",
+		UserID:              userID,
+		TokenID:             tokenID,
+		TokenKey:            "sk-task-submission-recovery",
+		TokenBillingEnabled: true,
+		FundingSource:       BillingSourceWallet,
+		Amount:              2000,
+	})
+	require.NoError(t, err)
+
+	task := makeTask(userID, 0, 1500, tokenID, BillingSourceWallet, 0)
+	task.TaskID = "task_submission_recovery"
+	task.Status = model.TaskStatusNotStart
+	task.BillingStatus = model.TaskBillingStatusSettlementPending
+	task.PrivateData.BillingContext.SubmissionRequestID = "task-submission-recovery"
+	task.PrivateData.BillingContext.SubmissionPreConsumedQuota = 2000
+	task.PrivateData.BillingContext.SubmissionActualQuota = 1500
+	task.PrivateData.BillingContext.SubmissionSettlementPending = true
+	task.PrivateData.BillingContext.SubmissionTokenBilling = true
+	require.NoError(t, model.DB.Create(task).Error)
+
+	require.NoError(t, ApplyPendingTaskSettlement(context.Background(), task))
+	assert.Equal(t, 8500, getUserQuota(t, userID))
+	assert.Equal(t, 8500, getTokenRemainQuota(t, tokenID))
+	assert.Equal(t, 1500, getTokenUsedQuota(t, tokenID))
+
+	var adjustment model.BillingAdjustment
+	require.NoError(t, model.DB.First(&adjustment, reservation.Adjustment.ID).Error)
+	assert.Equal(t, model.BillingAdjustmentStatusSucceeded, adjustment.Status)
+	assert.Equal(t, -500, adjustment.FundingDelta)
+	assert.Equal(t, -500, adjustment.TokenDelta)
+	var legacyCount int64
+	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).
+		Where("adjustment_key = ?", "relay-settle:task-submission-recovery").Count(&legacyCount).Error)
+	assert.Zero(t, legacyCount)
+}
+
+func TestPendingTaskSubmissionSettlementIsIdempotentAfterReservationApplied(t *testing.T) {
+	truncate(t)
+	const userID, tokenID = 102, 102
+	seedUser(t, userID, 10000)
+	seedToken(t, tokenID, userID, "sk-task-submission-applied", 10000)
+	reservation, err := model.ReserveBillingQuota(model.BillingReservationParams{
+		RequestID:           "task-submission-applied",
+		UserID:              userID,
+		TokenID:             tokenID,
+		TokenKey:            "sk-task-submission-applied",
+		TokenBillingEnabled: true,
+		FundingSource:       BillingSourceWallet,
+		Amount:              2000,
+	})
+	require.NoError(t, err)
+	adjustment, err := model.FinalizeBillingReservation(reservation.Adjustment.ID, 1500, true, false)
+	require.NoError(t, err)
+	require.NoError(t, model.ApplyBillingAdjustment(adjustment.ID))
+
+	task := makeTask(userID, 0, 1500, tokenID, BillingSourceWallet, 0)
+	task.TaskID = "task_submission_applied"
+	task.Status = model.TaskStatusNotStart
+	task.BillingStatus = model.TaskBillingStatusSettlementPending
+	task.PrivateData.BillingContext.SubmissionRequestID = "task-submission-applied"
+	task.PrivateData.BillingContext.SubmissionPreConsumedQuota = 2000
+	task.PrivateData.BillingContext.SubmissionActualQuota = 1500
+	task.PrivateData.BillingContext.SubmissionSettlementPending = true
+	task.PrivateData.BillingContext.SubmissionTokenBilling = true
+	require.NoError(t, model.DB.Create(task).Error)
+
+	require.NoError(t, ApplyPendingTaskSettlement(context.Background(), task))
+	var reloaded model.Task
+	require.NoError(t, model.DB.First(&reloaded, task.ID).Error)
+	require.NoError(t, ApplyPendingTaskSettlement(context.Background(), &reloaded))
+	assert.Equal(t, 8500, getUserQuota(t, userID))
+	assert.Equal(t, 8500, getTokenRemainQuota(t, tokenID))
+	assert.Equal(t, 1500, getTokenUsedQuota(t, tokenID))
+}
+
+func TestTaskSubmissionPersistsZeroDeltaSettlementMarker(t *testing.T) {
+	truncate(t)
+	const userID, tokenID = 103, 103
+	seedUser(t, userID, 10000)
+	seedToken(t, tokenID, userID, "sk-task-submission-zero-delta", 10000)
+	reservation, err := model.ReserveBillingQuota(model.BillingReservationParams{
+		RequestID:           "task-submission-zero-delta",
+		UserID:              userID,
+		TokenID:             tokenID,
+		TokenKey:            "sk-task-submission-zero-delta",
+		TokenBillingEnabled: true,
+		FundingSource:       BillingSourceWallet,
+		Amount:              2000,
+	})
+	require.NoError(t, err)
+	info := &relaycommon.RelayInfo{
+		UserId:                userID,
+		TokenId:               tokenID,
+		UsingGroup:            "default",
+		OriginModelName:       "public-video-model",
+		RequestId:             "task-submission-zero-delta",
+		FinalPreConsumedQuota: 2000,
+		BillingSource:         BillingSourceWallet,
+		Billing:               &BillingSession{},
+		ChannelMeta:           &relaycommon.ChannelMeta{},
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{
+			PublicTaskID: "task_submission_zero_delta",
+			Action:       "generate",
+		},
+		PriceData: types.PriceData{Quota: 2000},
+	}
+	_, err = EnsureTaskSubmissionRecord(nil, info, "video")
+	require.NoError(t, err)
+	require.NoError(t, CompleteTaskSubmissionRecord(nil, info, "video", "upstream-zero", nil, 2000))
+
+	task, found, err := model.GetByTaskId(userID, info.PublicTaskID)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, task.PrivateData.BillingContext.SubmissionSettlementPending)
+	require.NoError(t, ApplyPendingTaskSettlement(context.Background(), task))
+
+	var adjustment model.BillingAdjustment
+	require.NoError(t, model.DB.First(&adjustment, reservation.Adjustment.ID).Error)
+	assert.Equal(t, model.BillingAdjustmentStatusSucceeded, adjustment.Status)
+	assert.Zero(t, adjustment.FundingDelta)
+	assert.Zero(t, adjustment.TokenDelta)
+	assert.Equal(t, 8000, getUserQuota(t, userID))
+	assert.Equal(t, 8000, getTokenRemainQuota(t, tokenID))
+}
+
+func TestFailedUnsettledTaskSubmissionRefundsReservationWithoutCredit(t *testing.T) {
+	truncate(t)
+	const userID, tokenID = 104, 104
+	seedUser(t, userID, 10000)
+	seedToken(t, tokenID, userID, "sk-task-submission-failure", 10000)
+	reservation, err := model.ReserveBillingQuota(model.BillingReservationParams{
+		RequestID:           "task-submission-failure",
+		UserID:              userID,
+		TokenID:             tokenID,
+		TokenKey:            "sk-task-submission-failure",
+		TokenBillingEnabled: true,
+		FundingSource:       BillingSourceWallet,
+		Amount:              2000,
+	})
+	require.NoError(t, err)
+
+	task := makeTask(userID, 0, 2000, tokenID, BillingSourceWallet, 0)
+	task.TaskID = "task_submission_failure"
+	task.Status = model.TaskStatusSubmitting
+	task.BillingStatus = model.TaskBillingStatusActive
+	task.PrivateData.BillingContext.SubmissionRequestID = "task-submission-failure"
+	task.PrivateData.BillingContext.SubmissionPreConsumedQuota = 2000
+	task.PrivateData.BillingContext.SubmissionTokenBilling = true
+	require.NoError(t, model.DB.Create(task).Error)
+
+	won, err := FinalizeTaskFailure(context.Background(), task, model.TaskStatusSubmitting, "submission failed")
+	require.NoError(t, err)
+	require.True(t, won)
+	assert.Equal(t, 10000, getUserQuota(t, userID))
+	assert.Equal(t, 10000, getTokenRemainQuota(t, tokenID))
+	assert.Zero(t, getTokenUsedQuota(t, tokenID))
+
+	var reloaded model.Task
+	require.NoError(t, model.DB.First(&reloaded, task.ID).Error)
+	assert.Equal(t, model.TaskBillingStatusRefunded, reloaded.BillingStatus)
+	require.NoError(t, RefundTaskQuota(context.Background(), &reloaded, "duplicate retry"))
+	assert.Equal(t, 10000, getUserQuota(t, userID))
+	assert.Equal(t, 10000, getTokenRemainQuota(t, tokenID))
+
+	var adjustment model.BillingAdjustment
+	require.NoError(t, model.DB.First(&adjustment, reservation.Adjustment.ID).Error)
+	assert.Equal(t, model.BillingAdjustmentStatusSucceeded, adjustment.Status)
+	var taskRefundCount int64
+	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).
+		Where("adjustment_key = ?", "task-refund:task_submission_failure").Count(&taskRefundCount).Error)
+	assert.Zero(t, taskRefundCount)
+}
+
+func TestFailedTaskRefundsChargeWhenSubmissionReservationAlreadySettled(t *testing.T) {
+	truncate(t)
+	const userID, tokenID = 105, 105
+	seedUser(t, userID, 10000)
+	seedToken(t, tokenID, userID, "sk-task-settled-before-failure", 10000)
+	reservation, err := model.ReserveBillingQuota(model.BillingReservationParams{
+		RequestID:           "task-settled-before-failure",
+		UserID:              userID,
+		TokenID:             tokenID,
+		TokenKey:            "sk-task-settled-before-failure",
+		TokenBillingEnabled: true,
+		FundingSource:       BillingSourceWallet,
+		Amount:              2000,
+	})
+	require.NoError(t, err)
+	adjustment, err := model.FinalizeBillingReservation(reservation.Adjustment.ID, 1500, true, false)
+	require.NoError(t, err)
+	require.NoError(t, model.ApplyBillingAdjustment(adjustment.ID))
+
+	task := makeTask(userID, 0, 1500, tokenID, BillingSourceWallet, 0)
+	task.TaskID = "task_settled_before_failure"
+	task.Status = model.TaskStatusFailure
+	task.BillingStatus = model.TaskBillingStatusRefundPending
+	task.PrivateData.BillingContext.SubmissionRequestID = "task-settled-before-failure"
+	task.PrivateData.BillingContext.SubmissionPreConsumedQuota = 2000
+	task.PrivateData.BillingContext.SubmissionTokenBilling = true
+	require.NoError(t, model.DB.Create(task).Error)
+
+	require.NoError(t, RefundTaskQuota(context.Background(), task, "upstream task failed"))
+	assert.Equal(t, 10000, getUserQuota(t, userID))
+	assert.Equal(t, 10000, getTokenRemainQuota(t, tokenID))
+	assert.Zero(t, getTokenUsedQuota(t, tokenID))
+	var taskRefund model.BillingAdjustment
+	require.NoError(t, model.DB.Where("adjustment_key = ?", "task-refund:task_settled_before_failure").First(&taskRefund).Error)
+	assert.Equal(t, model.BillingAdjustmentStatusSucceeded, taskRefund.Status)
+}
+
 func TestTaskSubmissionWithoutUpstreamIDDoesNotFallbackToPublicID(t *testing.T) {
 	truncate(t)
 	info := &relaycommon.RelayInfo{

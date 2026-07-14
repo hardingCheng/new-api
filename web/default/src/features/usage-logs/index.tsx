@@ -152,7 +152,9 @@ function UsageLogsContent() {
                 </TabsList>
               </Tabs>
             )}
-            {activeCategory === 'task' ? <ModelQuotaPoolSummary /> : null}
+            {activeCategory === 'task' ? (
+              <ModelQuotaPoolSummary scope={viewScope} />
+            ) : null}
             <div className='min-h-0 flex-1'>
               <UsageLogsTable logCategory={activeCategory} />
             </div>

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -191,4 +192,85 @@ func TestAppendAdminBillingRulesOmitsRedisKeyWithoutMutatingReservation(t *testi
 	serialized, err := common.Marshal(other)
 	require.NoError(t, err)
 	assert.NotContains(t, string(serialized), "redis_key")
+}
+
+func TestQuotaPoolReservationPersistsRecoveryBeforeRedisConsume(t *testing.T) {
+	truncate(t)
+	reservation, err := model.EnsureQuotaPoolReservation("relay:reserve:test-persisted", "pool:persisted", 25)
+	require.NoError(t, err)
+	assert.Equal(t, model.QuotaPoolAdjustmentStatusReserved, reservation.Status)
+	assert.Equal(t, int64(25), reservation.ReservedAmount)
+	assert.Equal(t, int64(-25), reservation.Delta)
+	assert.Equal(t, model.QuotaPoolReservationGuardKey(reservation.ID), reservation.GuardKey)
+	assert.Greater(t, reservation.NextRetryAt, common.GetTimestamp())
+
+	adjustment, err := model.FinalizeQuotaPoolReservation(reservation.ID, 10)
+	require.NoError(t, err)
+	assert.Equal(t, model.QuotaPoolAdjustmentStatusPending, adjustment.Status)
+	assert.Equal(t, int64(-15), adjustment.Delta)
+}
+
+func TestAbandonedQuotaPoolReservationReleasesRedisUsage(t *testing.T) {
+	redisURL := os.Getenv("MODEL_QUOTA_POOL_REDIS_TEST_URL")
+	if redisURL == "" {
+		t.Skip("MODEL_QUOTA_POOL_REDIS_TEST_URL is not set")
+	}
+	truncate(t)
+	options, err := redis.ParseURL(redisURL)
+	require.NoError(t, err)
+	client := redis.NewClient(options)
+	require.NoError(t, client.Ping(context.Background()).Err())
+	t.Cleanup(func() { _ = client.Close() })
+
+	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
+	common.RedisEnabled, common.RDB = true, client
+	t.Cleanup(func() { common.RedisEnabled, common.RDB = oldRedisEnabled, oldRDB })
+
+	poolKey := "test:pool:abandoned-reservation"
+	reservation, err := model.EnsureQuotaPoolReservation("relay:reserve:test-abandoned", poolKey, 30)
+	require.NoError(t, err)
+	require.NoError(t, client.Del(context.Background(), poolKey, reservation.GuardKey).Err())
+	t.Cleanup(func() { _ = client.Del(context.Background(), poolKey, reservation.GuardKey).Err() })
+
+	allowed, _, usedAfter, _, err := consumeModelQuotaPool(poolKey, reservation.GuardKey, 100, 30, time.Hour)
+	require.NoError(t, err)
+	require.True(t, allowed)
+	assert.Equal(t, int64(30), usedAfter)
+	require.NoError(t, model.DB.Model(&model.QuotaPoolAdjustment{}).
+		Where("id = ?", reservation.ID).Update("next_retry_at", 0).Error)
+
+	summary := ProcessPendingBillingAdjustments(context.Background(), 10)
+	assert.Equal(t, 1, summary.PoolPending)
+	assert.Equal(t, 1, summary.PoolSucceeded)
+	assert.Zero(t, summary.PoolFailed)
+	used, err := client.Get(context.Background(), poolKey).Int64()
+	require.NoError(t, err)
+	assert.Zero(t, used)
+	assert.Zero(t, client.Exists(context.Background(), reservation.GuardKey).Val())
+}
+
+func TestGetVisibleModelQuotaPoolUsageScopesUserPools(t *testing.T) {
+	previousConfig := ratio_setting.ModelQuotaPool2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelQuotaPoolByJSONString(previousConfig))
+	})
+	config := ratio_setting.ModelQuotaPoolConfig{Rules: []ratio_setting.ModelQuotaPoolRule{
+		{ID: "global", Model: "*", Scope: ratio_setting.ModelQuotaPoolScopeGlobal, Metric: ratio_setting.ModelQuotaPoolMetricRequests, Period: ratio_setting.ModelQuotaPoolPeriodDay, Limit: 100},
+		{ID: "user-1", Model: "*", Scope: ratio_setting.ModelQuotaPoolScopeUser, Metric: ratio_setting.ModelQuotaPoolMetricRequests, UserID: 1, Period: ratio_setting.ModelQuotaPoolPeriodDay, Limit: 10},
+		{ID: "user-2", Model: "*", Scope: ratio_setting.ModelQuotaPoolScopeUser, Metric: ratio_setting.ModelQuotaPoolMetricRequests, UserID: 2, Period: ratio_setting.ModelQuotaPoolPeriodDay, Limit: 20},
+	}}
+	data, err := common.Marshal(config)
+	require.NoError(t, err)
+	require.NoError(t, ratio_setting.UpdateModelQuotaPoolByJSONString(string(data)))
+
+	selfItems := GetVisibleModelQuotaPoolUsage(1, false)
+	require.Len(t, selfItems, 2)
+	assert.Equal(t, "global", selfItems[0].Rule.ID)
+	assert.Equal(t, "user-1", selfItems[1].Rule.ID)
+
+	allItems := GetVisibleModelQuotaPoolUsage(1, true)
+	require.Len(t, allItems, 3)
+	assert.Equal(t, "global", allItems[0].Rule.ID)
+	assert.Equal(t, "user-1", allItems[1].Rule.ID)
+	assert.Equal(t, "user-2", allItems[2].Rule.ID)
 }
