@@ -188,7 +188,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			newAPIError = service.NormalizeViolationFeeError(newAPIError)
 			service.RollbackModelQuotaPool(relayInfo)
 			if relayInfo.Billing != nil {
-				relayInfo.Billing.Refund(c)
+				if refundErr := relayInfo.Billing.Refund(c); refundErr != nil {
+					common.SysError("persist relay refund error: " + refundErr.Error())
+				}
 			}
 			service.ChargeViolationFeeIfNeeded(c, relayInfo, newAPIError)
 		}
@@ -607,7 +609,9 @@ func RelayTask(c *gin.Context) {
 			}
 			if !handled {
 				if relayInfo.Billing != nil {
-					relayInfo.Billing.Refund(c)
+					if refundErr := relayInfo.Billing.Refund(c); refundErr != nil {
+						common.SysError("persist task refund error: " + refundErr.Error())
+					}
 				}
 				service.RollbackModelQuotaPool(relayInfo)
 			}
@@ -695,6 +699,8 @@ func RelayTask(c *gin.Context) {
 	if taskErr == nil {
 		if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
 			common.SysError("settle task billing error: " + settleErr.Error())
+		} else if completeErr := service.CompleteTaskSubmissionSettlement(relayInfo.UserId, relayInfo.PublicTaskID); completeErr != nil {
+			common.SysError("complete task submission settlement marker error: " + completeErr.Error())
 		}
 		service.SettleModelQuotaPool(relayInfo, service.ModelQuotaPoolSettlement{
 			ActualQuota:    result.Quota,

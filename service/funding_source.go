@@ -1,10 +1,6 @@
 package service
 
-import (
-	"time"
-
-	"github.com/QuantumNous/new-api/model"
-)
+import "github.com/QuantumNous/new-api/model"
 
 // ---------------------------------------------------------------------------
 // FundingSource — 资金来源接口（钱包 or 订阅）
@@ -16,10 +12,6 @@ type FundingSource interface {
 	Source() string
 	// PreConsume 从该资金来源预扣 amount 额度
 	PreConsume(amount int) error
-	// Settle 根据差额调整资金来源（正数补扣，负数退还）
-	Settle(delta int) error
-	// Refund 退还所有预扣费
-	Refund() error
 }
 
 // ---------------------------------------------------------------------------
@@ -27,8 +19,7 @@ type FundingSource interface {
 // ---------------------------------------------------------------------------
 
 type WalletFunding struct {
-	userId   int
-	consumed int // 实际预扣的用户额度
+	userId int
 }
 
 func (w *WalletFunding) Source() string { return BillingSourceWallet }
@@ -40,27 +31,7 @@ func (w *WalletFunding) PreConsume(amount int) error {
 	if err := model.DecreaseUserQuota(w.userId, amount, false); err != nil {
 		return err
 	}
-	w.consumed = amount
 	return nil
-}
-
-func (w *WalletFunding) Settle(delta int) error {
-	if delta == 0 {
-		return nil
-	}
-	if delta > 0 {
-		return model.DecreaseUserQuota(w.userId, delta, false)
-	}
-	return model.IncreaseUserQuota(w.userId, -delta, false)
-}
-
-func (w *WalletFunding) Refund() error {
-	if w.consumed <= 0 {
-		return nil
-	}
-	// IncreaseUserQuota 是 quota += N 的非幂等操作，不能重试，否则会多退额度。
-	// 订阅的 RefundSubscriptionPreConsume 有 requestId 幂等保护所以可以重试。
-	return model.IncreaseUserQuota(w.userId, w.consumed, false)
 }
 
 // ---------------------------------------------------------------------------
@@ -99,41 +70,4 @@ func (s *SubscriptionFunding) PreConsume(_ int) error {
 		s.PlanTitle = planInfo.PlanTitle
 	}
 	return nil
-}
-
-func (s *SubscriptionFunding) Settle(delta int) error {
-	if delta == 0 {
-		return nil
-	}
-	return model.PostConsumeUserSubscriptionDelta(s.subscriptionId, int64(delta))
-}
-
-func (s *SubscriptionFunding) Refund() error {
-	if s.preConsumed <= 0 {
-		return nil
-	}
-	return refundWithRetry(func() error {
-		return model.RefundSubscriptionPreConsume(s.requestId)
-	})
-}
-
-// refundWithRetry 尝试多次执行退款操作以提高成功率，只能用于基于事务的退款函数！！！！！！
-// try to refund with retries, only for refund functions based on transactions!!!
-func refundWithRetry(fn func() error) error {
-	if fn == nil {
-		return nil
-	}
-	const maxAttempts = 3
-	var lastErr error
-	for i := 0; i < maxAttempts; i++ {
-		if err := fn(); err == nil {
-			return nil
-		} else {
-			lastErr = err
-		}
-		if i < maxAttempts-1 {
-			time.Sleep(time.Duration(200*(i+1)) * time.Millisecond)
-		}
-	}
-	return lastErr
 }

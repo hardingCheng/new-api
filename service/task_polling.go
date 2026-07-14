@@ -94,9 +94,10 @@ func sweepTimedOutTasks(ctx context.Context) {
 // TaskPollSummary is the result recorded on an async_task_poll system task row,
 // summarizing one polling pass.
 type TaskPollSummary struct {
-	UnfinishedTasks  int `json:"unfinished_tasks"`
-	PlatformsScanned int `json:"platforms_scanned"`
-	NullTasksFailed  int `json:"null_tasks_failed"`
+	UnfinishedTasks    int `json:"unfinished_tasks"`
+	PlatformsScanned   int `json:"platforms_scanned"`
+	NullTasksFailed    int `json:"null_tasks_failed"`
+	SettlementsRetried int `json:"settlements_retried"`
 }
 
 // RunTaskPollingOnce performs one async-task (Suno/video) polling pass
@@ -110,6 +111,7 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 		ctx = context.Background()
 	}
 	retryPendingTaskRefunds(ctx)
+	summary.SettlementsRetried = retryPendingTaskSettlements(ctx)
 	if GetTaskAdaptorFunc == nil {
 		return summary
 	}
@@ -182,6 +184,21 @@ func retryPendingTaskRefunds(ctx context.Context) {
 			logger.LogWarn(ctx, fmt.Sprintf("retry task refund failed task %s: %s", task.TaskID, err.Error()))
 		}
 	}
+}
+
+func retryPendingTaskSettlements(ctx context.Context) int {
+	succeeded := 0
+	for _, task := range model.GetPendingTaskSettlements(100) {
+		if ctx != nil && ctx.Err() != nil {
+			return succeeded
+		}
+		if err := ApplyPendingTaskSettlement(ctx, task); err != nil {
+			logger.LogWarn(ctx, fmt.Sprintf("retry task settlement failed task %s: %s", task.TaskID, err.Error()))
+			continue
+		}
+		succeeded++
+	}
+	return succeeded
 }
 
 // DispatchPlatformUpdate 按平台分发轮询更新
@@ -568,6 +585,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if taskResult.Progress != "" {
 		task.Progress = taskResult.Progress
 	}
+	if shouldSettle {
+		prepareTaskBillingOnComplete(ctx, adaptor, task, taskResult)
+	}
 
 	isDone := task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure
 	if isDone && snap.Status != task.Status {
@@ -589,7 +609,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	}
 
 	if shouldSettle {
-		settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
+		if err := ApplyPendingTaskSettlement(ctx, task); err != nil {
+			logger.LogWarn(ctx, fmt.Sprintf("task settlement queued task %s: %s", task.TaskID, err.Error()))
+		}
 	}
 	return nil
 }
@@ -634,26 +656,35 @@ func truncateBase64(s string) string {
 //  2. taskResult.TotalTokens > 0 → 按 token 重算
 //  3. 都不满足 → 保持预扣额度不变
 func settleTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor, task *model.Task, taskResult *relaycommon.TaskInfo) {
-	// Pool token settlement is independent from the financial billing mode.
-	// Per-call pricing and adaptor-specific quota adjustments may still report
-	// actual tokens that should replace the submission estimate.
+	prepareTaskBillingOnComplete(ctx, adaptor, task, taskResult)
+	if err := ApplyPendingTaskSettlement(ctx, task); err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("task settlement queued task %s: %s", task.TaskID, err.Error()))
+	}
+}
+
+func prepareTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor, task *model.Task, taskResult *relaycommon.TaskInfo) {
+	if task == nil || taskResult == nil || task.PrivateData.BillingContext == nil {
+		return
+	}
+	bc := task.PrivateData.BillingContext
 	if taskResult.TotalTokens > 0 {
-		AdjustTaskModelQuotaPoolTokens(task, taskResult.TotalTokens)
+		bc.SettlementActualTokens = taskResult.TotalTokens
 	}
-	// 0. 按次计费的任务不做差额结算
-	if bc := task.PrivateData.BillingContext; bc != nil && bc.PerCallBilling {
-		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 按次计费，跳过差额结算", task.TaskID))
-		return
+	if bc.PerCallBilling {
+		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 按次计费，跳过财务差额结算", task.TaskID))
+	} else if actualQuota := adaptor.AdjustBillingOnComplete(task, taskResult); actualQuota > 0 {
+		bc.SettlementHasActualQuota = true
+		bc.SettlementActualQuota = actualQuota
+		bc.SettlementReason = "adaptor计费调整"
+	} else if actualQuota, reason, clamp, ok := calculateTaskQuotaByTokens(task, taskResult.TotalTokens); ok {
+		bc.SettlementHasActualQuota = true
+		bc.SettlementActualQuota = actualQuota
+		bc.SettlementReason = reason
+		bc.SettlementQuotaClamp = clamp
 	}
-	// 1. 优先让 adaptor 决定最终额度
-	if actualQuota := adaptor.AdjustBillingOnComplete(task, taskResult); actualQuota > 0 {
-		RecalculateTaskQuota(ctx, task, actualQuota, "adaptor计费调整")
-		return
+	if bc.SettlementHasActualQuota || bc.SettlementActualTokens > 0 {
+		task.BillingStatus = model.TaskBillingStatusSettlementPending
+	} else {
+		task.BillingStatus = model.TaskBillingStatusSettled
 	}
-	// 2. 回退到 token 重算
-	if taskResult.TotalTokens > 0 {
-		RecalculateTaskQuotaByTokens(ctx, task, taskResult.TotalTokens)
-		return
-	}
-	// 3. 无调整，保持预扣额度
 }

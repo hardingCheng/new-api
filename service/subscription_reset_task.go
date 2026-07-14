@@ -83,7 +83,11 @@ func runSubscriptionQuotaResetOnce() {
 	}
 	lastCleanup := time.Unix(subscriptionCleanupLast.Load(), 0)
 	if time.Since(lastCleanup) >= subscriptionCleanupInterval {
-		if _, err := model.CleanupSubscriptionPreConsumeRecords(7 * 24 * 3600); err == nil {
+		cutoff := time.Now().Add(-7 * 24 * time.Hour).Unix()
+		_, preConsumeErr := model.CleanupSubscriptionPreConsumeRecords(7 * 24 * 3600)
+		_, billingErr := model.CleanupCompletedBillingAdjustments(cutoff, 500)
+		_, poolErr := model.CleanupCompletedQuotaPoolAdjustments(cutoff, 500)
+		if preConsumeErr == nil && billingErr == nil && poolErr == nil {
 			subscriptionCleanupLast.Store(time.Now().Unix())
 		}
 	}

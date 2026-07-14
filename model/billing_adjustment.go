@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
 )
 
@@ -18,29 +18,38 @@ const (
 )
 
 type BillingAdjustment struct {
-	ID             int64  `json:"id" gorm:"primary_key"`
-	AdjustmentKey  string `json:"adjustment_key" gorm:"type:varchar(191);uniqueIndex"`
-	UserID         int    `json:"user_id" gorm:"index"`
-	TokenID        int    `json:"token_id" gorm:"index"`
-	SubscriptionID int    `json:"subscription_id" gorm:"index"`
-	FundingSource  string `json:"funding_source" gorm:"type:varchar(32)"`
-	FundingDelta   int    `json:"funding_delta"`
-	TokenDelta     int    `json:"token_delta"`
-	Status         string `json:"status" gorm:"type:varchar(32);index"`
-	Attempts       int    `json:"attempts"`
-	LastError      string `json:"last_error" gorm:"type:text"`
-	CreatedAt      int64  `json:"created_at" gorm:"bigint;index"`
-	UpdatedAt      int64  `json:"updated_at" gorm:"bigint;index"`
+	ID                              int64  `json:"id" gorm:"primary_key"`
+	AdjustmentKey                   string `json:"adjustment_key" gorm:"type:varchar(191);uniqueIndex"`
+	UserID                          int    `json:"user_id" gorm:"index"`
+	TokenID                         int    `json:"token_id" gorm:"index"`
+	SubscriptionID                  int    `json:"subscription_id" gorm:"index"`
+	SubscriptionPreConsumeRequestID string `json:"subscription_pre_consume_request_id" gorm:"type:varchar(64);index"`
+	SubscriptionPreConsumed         int    `json:"subscription_pre_consumed"`
+	SubscriptionExtraReserved       int    `json:"subscription_extra_reserved"`
+	FundingSource                   string `json:"funding_source" gorm:"type:varchar(32)"`
+	FundingDelta                    int    `json:"funding_delta"`
+	TokenDelta                      int    `json:"token_delta"`
+	Status                          string `json:"status" gorm:"type:varchar(32);index"`
+	Attempts                        int    `json:"attempts"`
+	LastError                       string `json:"last_error" gorm:"type:text"`
+	NextRetryAt                     int64  `json:"next_retry_at" gorm:"bigint;index"`
+	CompletedAt                     int64  `json:"completed_at" gorm:"bigint;index"`
+	CacheSynced                     bool   `json:"cache_synced" gorm:"index"`
+	CreatedAt                       int64  `json:"created_at" gorm:"bigint;index"`
+	UpdatedAt                       int64  `json:"updated_at" gorm:"bigint;index"`
 }
 
 type BillingAdjustmentParams struct {
-	AdjustmentKey  string
-	UserID         int
-	TokenID        int
-	SubscriptionID int
-	FundingSource  string
-	FundingDelta   int
-	TokenDelta     int
+	AdjustmentKey                   string
+	UserID                          int
+	TokenID                         int
+	SubscriptionID                  int
+	SubscriptionPreConsumeRequestID string
+	SubscriptionPreConsumed         int
+	SubscriptionExtraReserved       int
+	FundingSource                   string
+	FundingDelta                    int
+	TokenDelta                      int
 }
 
 func EnsureBillingAdjustment(params BillingAdjustmentParams) (*BillingAdjustment, error) {
@@ -49,6 +58,9 @@ func EnsureBillingAdjustment(params BillingAdjustmentParams) (*BillingAdjustment
 		return nil, errors.New("billing adjustment key is required")
 	}
 	params.FundingSource = strings.TrimSpace(params.FundingSource)
+	if params.SubscriptionPreConsumed < 0 || params.SubscriptionExtraReserved < 0 {
+		return nil, errors.New("subscription refund amounts cannot be negative")
+	}
 	if params.FundingSource == "" {
 		params.FundingSource = BillingAdjustmentFundingWallet
 	}
@@ -67,16 +79,20 @@ func EnsureBillingAdjustment(params BillingAdjustmentParams) (*BillingAdjustment
 
 	now := common.GetTimestamp()
 	adjustment := &BillingAdjustment{
-		AdjustmentKey:  params.AdjustmentKey,
-		UserID:         params.UserID,
-		TokenID:        params.TokenID,
-		SubscriptionID: params.SubscriptionID,
-		FundingSource:  params.FundingSource,
-		FundingDelta:   params.FundingDelta,
-		TokenDelta:     params.TokenDelta,
-		Status:         BillingAdjustmentStatusPending,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		AdjustmentKey:                   params.AdjustmentKey,
+		UserID:                          params.UserID,
+		TokenID:                         params.TokenID,
+		SubscriptionID:                  params.SubscriptionID,
+		SubscriptionPreConsumeRequestID: strings.TrimSpace(params.SubscriptionPreConsumeRequestID),
+		SubscriptionPreConsumed:         params.SubscriptionPreConsumed,
+		SubscriptionExtraReserved:       params.SubscriptionExtraReserved,
+		FundingSource:                   params.FundingSource,
+		FundingDelta:                    params.FundingDelta,
+		TokenDelta:                      params.TokenDelta,
+		Status:                          BillingAdjustmentStatusPending,
+		NextRetryAt:                     now,
+		CreatedAt:                       now,
+		UpdatedAt:                       now,
 	}
 	if err := DB.Create(adjustment).Error; err != nil {
 		// A concurrent request may have created the same idempotency key.
@@ -95,6 +111,9 @@ func billingAdjustmentMatches(adjustment BillingAdjustment, params BillingAdjust
 	return adjustment.UserID == params.UserID &&
 		adjustment.TokenID == params.TokenID &&
 		adjustment.SubscriptionID == params.SubscriptionID &&
+		adjustment.SubscriptionPreConsumeRequestID == strings.TrimSpace(params.SubscriptionPreConsumeRequestID) &&
+		adjustment.SubscriptionPreConsumed == params.SubscriptionPreConsumed &&
+		adjustment.SubscriptionExtraReserved == params.SubscriptionExtraReserved &&
 		adjustment.FundingSource == params.FundingSource &&
 		adjustment.FundingDelta == params.FundingDelta &&
 		adjustment.TokenDelta == params.TokenDelta
@@ -111,13 +130,21 @@ func ApplyBillingAdjustment(adjustmentID int64) error {
 			return err
 		}
 		if adjustment.Status == BillingAdjustmentStatusSucceeded {
+			if adjustment.CacheSynced {
+				return nil
+			}
+			applied = &adjustment
 			return nil
 		}
 
 		if adjustment.FundingDelta != 0 {
 			switch adjustment.FundingSource {
 			case BillingAdjustmentFundingSubscription:
-				if err := applySubscriptionBillingDeltaTx(tx, adjustment.SubscriptionID, int64(adjustment.FundingDelta)); err != nil {
+				if adjustment.SubscriptionPreConsumeRequestID != "" {
+					if err := applySubscriptionRefundAdjustmentTx(tx, &adjustment); err != nil {
+						return err
+					}
+				} else if err := applySubscriptionBillingDeltaTx(tx, adjustment.SubscriptionID, int64(adjustment.FundingDelta)); err != nil {
 					return err
 				}
 			default:
@@ -151,10 +178,13 @@ func ApplyBillingAdjustment(adjustmentID int64) error {
 
 		now := common.GetTimestamp()
 		if err := tx.Model(&BillingAdjustment{}).Where("id = ?", adjustment.ID).Updates(map[string]interface{}{
-			"status":     BillingAdjustmentStatusSucceeded,
-			"attempts":   gorm.Expr("attempts + 1"),
-			"last_error": "",
-			"updated_at": now,
+			"status":        BillingAdjustmentStatusSucceeded,
+			"attempts":      gorm.Expr("attempts + 1"),
+			"last_error":    "",
+			"next_retry_at": int64(0),
+			"completed_at":  now,
+			"cache_synced":  !common.RedisEnabled,
+			"updated_at":    now,
 		}).Error; err != nil {
 			return err
 		}
@@ -162,15 +192,51 @@ func ApplyBillingAdjustment(adjustmentID int64) error {
 		return nil
 	})
 	if err != nil {
-		_ = DB.Model(&BillingAdjustment{}).Where("id = ?", adjustmentID).Updates(map[string]interface{}{
-			"attempts":   gorm.Expr("attempts + 1"),
-			"last_error": err.Error(),
-			"updated_at": common.GetTimestamp(),
-		}).Error
+		scheduleBillingAdjustmentRetry(adjustmentID, err)
 		return err
 	}
 	if applied != nil {
-		refreshBillingAdjustmentCaches(*applied)
+		if err := refreshBillingAdjustmentCaches(*applied); err != nil {
+			scheduleBillingAdjustmentRetry(adjustmentID, err)
+			return err
+		}
+	}
+	return nil
+}
+
+func applySubscriptionRefundAdjustmentTx(tx *gorm.DB, adjustment *BillingAdjustment) error {
+	if adjustment == nil || adjustment.FundingDelta >= 0 {
+		return errors.New("invalid subscription refund adjustment")
+	}
+	var record SubscriptionPreConsumeRecord
+	if err := lockForUpdate(tx).Where("request_id = ?", adjustment.SubscriptionPreConsumeRequestID).First(&record).Error; err != nil {
+		return err
+	}
+	if record.UserId != adjustment.UserID || record.UserSubscriptionId != adjustment.SubscriptionID {
+		return errors.New("subscription refund adjustment does not match pre-consume record")
+	}
+	if adjustment.SubscriptionPreConsumed > 0 && record.PreConsumed != int64(adjustment.SubscriptionPreConsumed) {
+		return errors.New("subscription refund adjustment amount does not match pre-consume record")
+	}
+	if record.Status == "refunded" {
+		return nil
+	}
+	refundAmount := record.PreConsumed + int64(adjustment.SubscriptionExtraReserved)
+	if refundAmount != int64(-adjustment.FundingDelta) {
+		return fmt.Errorf("subscription refund amount mismatch, adjustment=%d actual=%d", -adjustment.FundingDelta, refundAmount)
+	}
+	if refundAmount > 0 {
+		if err := applySubscriptionBillingDeltaTx(tx, adjustment.SubscriptionID, -refundAmount); err != nil {
+			return err
+		}
+	}
+	if record.Status != "refunded" {
+		if err := tx.Model(&SubscriptionPreConsumeRecord{}).Where("id = ?", record.Id).Updates(map[string]interface{}{
+			"status":     "refunded",
+			"updated_at": common.GetTimestamp(),
+		}).Error; err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -193,37 +259,71 @@ func applySubscriptionBillingDeltaTx(tx *gorm.DB, subscriptionID int, delta int6
 	return tx.Model(&UserSubscription{}).Where("id = ?", subscriptionID).Update("amount_used", newUsed).Error
 }
 
-func refreshBillingAdjustmentCaches(adjustment BillingAdjustment) {
+func refreshBillingAdjustmentCaches(adjustment BillingAdjustment) error {
+	if !common.RedisEnabled {
+		return DB.Model(&BillingAdjustment{}).Where("id = ?", adjustment.ID).Update("cache_synced", true).Error
+	}
+	if common.RDB == nil {
+		return errors.New("Redis is enabled but unavailable")
+	}
+	var cacheErr error
 	if adjustment.FundingSource != BillingAdjustmentFundingSubscription && adjustment.UserID > 0 && adjustment.FundingDelta != 0 {
-		gopool.Go(func() {
-			var err error
-			if adjustment.FundingDelta > 0 {
-				err = cacheDecrUserQuota(adjustment.UserID, int64(adjustment.FundingDelta))
-			} else {
-				err = cacheIncrUserQuota(adjustment.UserID, int64(-adjustment.FundingDelta))
-			}
-			if err != nil {
-				common.SysLog("failed to update user cache after billing adjustment: " + err.Error())
-			}
-		})
+		if err := invalidateUserCache(adjustment.UserID); err != nil {
+			cacheErr = errors.Join(cacheErr, fmt.Errorf("invalidate user quota cache: %w", err))
+		}
 	}
-	if common.RedisEnabled && adjustment.TokenID > 0 && adjustment.TokenDelta != 0 {
-		gopool.Go(func() {
-			token, err := GetTokenById(adjustment.TokenID)
-			if err != nil {
-				common.SysLog("failed to load token after billing adjustment: " + err.Error())
-				return
-			}
-			if adjustment.TokenDelta > 0 {
-				err = cacheDecrTokenQuota(token.Key, int64(adjustment.TokenDelta))
-			} else {
-				err = cacheIncrTokenQuota(token.Key, int64(-adjustment.TokenDelta))
-			}
-			if err != nil {
-				common.SysLog("failed to update token cache after billing adjustment: " + err.Error())
-			}
-		})
+	if adjustment.TokenID > 0 && adjustment.TokenDelta != 0 {
+		var token Token
+		err := DB.Select(commonKeyCol).Where("id = ?", adjustment.TokenID).First(&token).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			err = nil
+		} else if err == nil {
+			err = cacheDeleteToken(token.Key)
+		}
+		if err != nil {
+			cacheErr = errors.Join(cacheErr, fmt.Errorf("invalidate token quota cache: %w", err))
+		}
 	}
+	if cacheErr != nil {
+		return cacheErr
+	}
+	return DB.Model(&BillingAdjustment{}).Where("id = ?", adjustment.ID).Updates(map[string]interface{}{
+		"cache_synced":  true,
+		"last_error":    "",
+		"next_retry_at": int64(0),
+		"updated_at":    common.GetTimestamp(),
+	}).Error
+}
+
+func scheduleBillingAdjustmentRetry(adjustmentID int64, applyErr error) {
+	if adjustmentID <= 0 || applyErr == nil {
+		return
+	}
+	var adjustment BillingAdjustment
+	if err := DB.Select("attempts").Where("id = ?", adjustmentID).First(&adjustment).Error; err != nil {
+		return
+	}
+	attempts := adjustment.Attempts + 1
+	_ = DB.Model(&BillingAdjustment{}).Where("id = ?", adjustmentID).Updates(map[string]interface{}{
+		"attempts":      attempts,
+		"last_error":    applyErr.Error(),
+		"next_retry_at": common.GetTimestamp() + billingRetryDelaySeconds(attempts),
+		"updated_at":    common.GetTimestamp(),
+	}).Error
+}
+
+func billingRetryDelaySeconds(attempts int) int64 {
+	if attempts < 1 {
+		attempts = 1
+	}
+	delay := 15 * time.Second
+	for i := 1; i < attempts && delay < time.Hour; i++ {
+		delay *= 2
+	}
+	if delay > time.Hour {
+		delay = time.Hour
+	}
+	return int64(delay / time.Second)
 }
 
 func FindPendingBillingAdjustments(limit int) ([]*BillingAdjustment, error) {
@@ -231,14 +331,33 @@ func FindPendingBillingAdjustments(limit int) ([]*BillingAdjustment, error) {
 		limit = 100
 	}
 	var adjustments []*BillingAdjustment
-	err := DB.Where("status = ?", BillingAdjustmentStatusPending).Order("id").Limit(limit).Find(&adjustments).Error
+	now := common.GetTimestamp()
+	err := DB.Where("(status = ? OR (status = ? AND cache_synced = ?)) AND next_retry_at <= ?",
+		BillingAdjustmentStatusPending, BillingAdjustmentStatusSucceeded, false, now).
+		Order("next_retry_at, id").Limit(limit).Find(&adjustments).Error
 	return adjustments, err
 }
 
 func HasPendingBillingAdjustments() bool {
 	var count int64
-	if err := DB.Model(&BillingAdjustment{}).Where("status = ?", BillingAdjustmentStatusPending).Limit(1).Count(&count).Error; err != nil {
+	if err := DB.Model(&BillingAdjustment{}).
+		Where("status = ? OR (status = ? AND cache_synced = ?)", BillingAdjustmentStatusPending, BillingAdjustmentStatusSucceeded, false).
+		Limit(1).Count(&count).Error; err != nil {
 		return false
 	}
 	return count > 0
+}
+
+func CleanupCompletedBillingAdjustments(olderThan int64, limit int) (int64, error) {
+	if olderThan <= 0 || limit <= 0 {
+		return 0, nil
+	}
+	var ids []int64
+	if err := DB.Model(&BillingAdjustment{}).
+		Where("status = ? AND cache_synced = ? AND completed_at > 0 AND completed_at < ?", BillingAdjustmentStatusSucceeded, true, olderThan).
+		Order("id").Limit(limit).Pluck("id", &ids).Error; err != nil || len(ids) == 0 {
+		return 0, err
+	}
+	result := DB.Where("id IN ?", ids).Delete(&BillingAdjustment{})
+	return result.RowsAffected, result.Error
 }

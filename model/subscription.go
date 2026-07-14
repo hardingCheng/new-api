@@ -1391,7 +1391,9 @@ func RefundSubscriptionPreConsume(requestId string) error {
 			record.Status = "refunded"
 			return tx.Save(&record).Error
 		}
-		if err := PostConsumeUserSubscriptionDelta(record.UserSubscriptionId, -record.PreConsumed); err != nil {
+		// Keep the subscription update in this transaction. Starting another
+		// transaction here can deadlock SQLite and breaks atomicity on every DB.
+		if err := applySubscriptionBillingDeltaTx(tx, record.UserSubscriptionId, -record.PreConsumed); err != nil {
 			return err
 		}
 		record.Status = "refunded"

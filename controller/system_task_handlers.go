@@ -29,7 +29,9 @@ type billingReconcileHandler struct{}
 
 func (billingReconcileHandler) Type() string { return model.SystemTaskTypeBillingReconcile }
 
-func (billingReconcileHandler) Enabled() bool { return model.HasPendingBillingAdjustments() }
+func (billingReconcileHandler) Enabled() bool {
+	return model.HasPendingBillingAdjustments() || model.HasPendingQuotaPoolAdjustments()
+}
 
 func (billingReconcileHandler) Interval() time.Duration { return 15 * time.Second }
 
@@ -39,9 +41,9 @@ func (billingReconcileHandler) Run(ctx context.Context, task *model.SystemTask, 
 	summary := service.ProcessPendingBillingAdjustments(ctx, 100)
 	status := model.SystemTaskStatusSucceeded
 	var runErr error
-	if summary.Failed > 0 {
+	if summary.Failed > 0 || summary.PoolFailed > 0 {
 		status = model.SystemTaskStatusFailed
-		runErr = fmt.Errorf("%d billing adjustments failed", summary.Failed)
+		runErr = fmt.Errorf("%d billing adjustments and %d quota pool adjustments failed", summary.Failed, summary.PoolFailed)
 	}
 	finishSystemTaskHandler(task, runnerID, status, summary, runErr)
 }
@@ -163,6 +165,9 @@ func (asyncTaskPollHandler) Type() string { return model.SystemTaskTypeAsyncTask
 
 func (asyncTaskPollHandler) Enabled() bool {
 	if model.HasPendingTaskRefunds() {
+		return true
+	}
+	if model.HasPendingTaskSettlements() {
 		return true
 	}
 	if constant.TaskTimeoutMinutes > 0 {

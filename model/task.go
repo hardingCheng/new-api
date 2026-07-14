@@ -45,9 +45,11 @@ const (
 )
 
 const (
-	TaskBillingStatusActive        = "active"
-	TaskBillingStatusRefundPending = "refund_pending"
-	TaskBillingStatusRefunded      = "refunded"
+	TaskBillingStatusActive            = "active"
+	TaskBillingStatusRefundPending     = "refund_pending"
+	TaskBillingStatusRefunded          = "refunded"
+	TaskBillingStatusSettlementPending = "settlement_pending"
+	TaskBillingStatusSettled           = "settled"
 )
 
 type Task struct {
@@ -128,15 +130,24 @@ type TaskPrivateData struct {
 
 // TaskBillingContext 记录任务提交时的计费参数，以便轮询阶段可以重新计算额度。
 type TaskBillingContext struct {
-	ModelPrice           float64                                  `json:"model_price,omitempty"`            // 模型单价
-	GroupRatio           float64                                  `json:"group_ratio,omitempty"`            // 分组倍率
-	ModelRatio           float64                                  `json:"model_ratio,omitempty"`            // 模型倍率
-	OtherRatios          map[string]float64                       `json:"other_ratios,omitempty"`           // 附加倍率（时长、分辨率等）
-	OriginModelName      string                                   `json:"origin_model_name,omitempty"`      // 模型名称，必须为OriginModelName
-	VideoBillingMode     string                                   `json:"video_billing_mode,omitempty"`     // 视频计费模式：per_second / per_call
-	UserPricingOverrides []ratio_setting.UserPricingOverrideMatch `json:"user_pricing_overrides,omitempty"` // 用户价格覆盖命中规则
-	ModelQuotaPools      []ratio_setting.ModelQuotaPoolMatch      `json:"model_quota_pools,omitempty"`      // 模型限量池命中规则
-	PerCallBilling       bool                                     `json:"per_call_billing,omitempty"`       // 按次计费：跳过轮询阶段的差额结算
+	ModelPrice                  float64                                  `json:"model_price,omitempty"`            // 模型单价
+	GroupRatio                  float64                                  `json:"group_ratio,omitempty"`            // 分组倍率
+	ModelRatio                  float64                                  `json:"model_ratio,omitempty"`            // 模型倍率
+	OtherRatios                 map[string]float64                       `json:"other_ratios,omitempty"`           // 附加倍率（时长、分辨率等）
+	OriginModelName             string                                   `json:"origin_model_name,omitempty"`      // 模型名称，必须为OriginModelName
+	VideoBillingMode            string                                   `json:"video_billing_mode,omitempty"`     // 视频计费模式：per_second / per_call
+	UserPricingOverrides        []ratio_setting.UserPricingOverrideMatch `json:"user_pricing_overrides,omitempty"` // 用户价格覆盖命中规则
+	ModelQuotaPools             []ratio_setting.ModelQuotaPoolMatch      `json:"model_quota_pools,omitempty"`      // 模型限量池命中规则
+	PerCallBilling              bool                                     `json:"per_call_billing,omitempty"`       // 按次计费：跳过轮询阶段的差额结算
+	SettlementHasActualQuota    bool                                     `json:"settlement_has_actual_quota,omitempty"`
+	SettlementActualQuota       int                                      `json:"settlement_actual_quota,omitempty"`
+	SettlementActualTokens      int                                      `json:"settlement_actual_tokens,omitempty"`
+	SettlementReason            string                                   `json:"settlement_reason,omitempty"`
+	SettlementQuotaClamp        *common.QuotaClamp                       `json:"settlement_quota_clamp,omitempty"`
+	SubmissionRequestID         string                                   `json:"submission_request_id,omitempty"`
+	SubmissionPreConsumedQuota  int                                      `json:"submission_pre_consumed_quota,omitempty"`
+	SubmissionActualQuota       int                                      `json:"submission_actual_quota,omitempty"`
+	SubmissionSettlementPending bool                                     `json:"submission_settlement_pending,omitempty"`
 }
 
 // GetUpstreamTaskID 获取上游真实 task ID（用于与 provider 通信）
@@ -274,7 +285,10 @@ func TaskGetAllTasksForExport(limit int, queryParams SyncTaskQueryParams) ([]*Ta
 		return nil, gorm.ErrInvalidValue
 	}
 	var tasks []*Task
+	// Export only the columns used by the report. Task data and private_data may
+	// contain large provider payloads and are intentionally excluded.
 	err := applyTaskQueryFilters(DB, queryParams).
+		Select([]string{"id", "created_at", "updated_at", "task_id", "platform", "user_id", commonGroupCol, "channel_id", "quota", "action", "status", "fail_reason", "submit_time", "start_time", "finish_time", "progress", "properties"}).
 		Order("id desc").
 		Limit(limit).
 		Find(&tasks).Error
@@ -433,6 +447,14 @@ func (t *Task) UpdatePrivateData() error {
 	return DB.Model(t).Update("private_data", t.PrivateData).Error
 }
 
+func (t *Task) UpdateBillingState() error {
+	return DB.Model(t).Updates(map[string]interface{}{
+		"quota":          t.Quota,
+		"billing_status": t.BillingStatus,
+		"private_data":   t.PrivateData,
+	}).Error
+}
+
 func GetPendingTaskRefunds(limit int) []*Task {
 	if limit <= 0 {
 		limit = 100
@@ -448,6 +470,25 @@ func GetPendingTaskRefunds(limit int) []*Task {
 func HasPendingTaskRefunds() bool {
 	var id int64
 	err := DB.Model(&Task{}).Where("billing_status = ?", TaskBillingStatusRefundPending).
+		Limit(1).Pluck("id", &id).Error
+	return err == nil && id != 0
+}
+
+func GetPendingTaskSettlements(limit int) []*Task {
+	if limit <= 0 {
+		limit = 100
+	}
+	var tasks []*Task
+	if err := DB.Where("billing_status = ?", TaskBillingStatusSettlementPending).
+		Order("id").Limit(limit).Find(&tasks).Error; err != nil {
+		return nil
+	}
+	return tasks
+}
+
+func HasPendingTaskSettlements() bool {
+	var id int64
+	err := DB.Model(&Task{}).Where("billing_status = ?", TaskBillingStatusSettlementPending).
 		Limit(1).Pluck("id", &id).Error
 	return err == nil && id != 0
 }

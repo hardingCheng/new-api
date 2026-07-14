@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -54,6 +56,8 @@ func TestMain(m *testing.M) {
 		&model.SystemTask{},
 		&model.SystemTaskLock{},
 		&model.BillingAdjustment{},
+		&model.QuotaPoolAdjustment{},
+		&model.SubscriptionPreConsumeRecord{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -78,6 +82,8 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM system_task_locks")
 		model.DB.Exec("DELETE FROM system_tasks")
 		model.DB.Exec("DELETE FROM billing_adjustments")
+		model.DB.Exec("DELETE FROM quota_pool_adjustments")
+		model.DB.Exec("DELETE FROM subscription_pre_consume_records")
 	})
 }
 
@@ -102,6 +108,8 @@ func setupConcurrentBillingFileDB(t *testing.T) {
 		&model.Channel{},
 		&model.UserSubscription{},
 		&model.BillingAdjustment{},
+		&model.QuotaPoolAdjustment{},
+		&model.SubscriptionPreConsumeRecord{},
 	))
 
 	model.DB = db
@@ -565,6 +573,88 @@ func TestApplyBillingAdjustmentConcurrentWorkersChargesOnce(t *testing.T) {
 	assert.Equal(t, 1, reloaded.Attempts)
 }
 
+func TestBillingSessionRefundPersistsAndRefundsWalletOnce(t *testing.T) {
+	truncate(t)
+	const userID, tokenID, preConsumed = 81, 81, 2400
+	seedUser(t, userID, 7600)
+	seedToken(t, tokenID, userID, "sk-session-refund", 2600)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	session := &BillingSession{
+		relayInfo: &relaycommon.RelayInfo{
+			RequestId: "session-refund-once",
+			UserId:    userID,
+			TokenId:   tokenID,
+		},
+		funding:          &WalletFunding{userId: userID},
+		preConsumedQuota: preConsumed,
+		tokenConsumed:    preConsumed,
+	}
+
+	require.NoError(t, session.Refund(ctx))
+	require.NoError(t, session.Refund(ctx))
+	assert.Equal(t, 10000, getUserQuota(t, userID))
+	assert.Equal(t, 5000, getTokenRemainQuota(t, tokenID))
+	var count int64
+	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).
+		Where("adjustment_key = ?", "relay-refund:session-refund-once").Count(&count).Error)
+	assert.Equal(t, int64(1), count)
+}
+
+func TestApplySubscriptionRefundAdjustmentConcurrentWorkersRefundOnce(t *testing.T) {
+	setupConcurrentBillingFileDB(t)
+	const userID, tokenID, subscriptionID = 82, 82, 82
+	const preConsumed, extraReserved = 2000, 500
+	seedUser(t, userID, 0)
+	seedToken(t, tokenID, userID, "sk-subscription-refund", 2500)
+	seedSubscription(t, subscriptionID, userID, 10000, preConsumed+extraReserved)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPreConsumeRecord{
+		RequestId:          "subscription-refund-once",
+		UserId:             userID,
+		UserSubscriptionId: subscriptionID,
+		PreConsumed:        preConsumed,
+		Status:             "consumed",
+	}).Error)
+	adjustment, err := model.EnsureBillingAdjustment(model.BillingAdjustmentParams{
+		AdjustmentKey:                   "relay-refund:subscription-refund-once",
+		UserID:                          userID,
+		TokenID:                         tokenID,
+		SubscriptionID:                  subscriptionID,
+		SubscriptionPreConsumeRequestID: "subscription-refund-once",
+		SubscriptionPreConsumed:         preConsumed,
+		SubscriptionExtraReserved:       extraReserved,
+		FundingSource:                   BillingSourceSubscription,
+		FundingDelta:                    -(preConsumed + extraReserved),
+		TokenDelta:                      -(preConsumed + extraReserved),
+	})
+	require.NoError(t, err)
+
+	const workers = 20
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			_ = model.ApplyBillingAdjustment(adjustment.ID)
+		}()
+	}
+	close(start)
+	wg.Wait()
+	var reloaded model.BillingAdjustment
+	require.NoError(t, model.DB.First(&reloaded, adjustment.ID).Error)
+	if reloaded.Status != model.BillingAdjustmentStatusSucceeded {
+		require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).Where("id = ?", adjustment.ID).Update("next_retry_at", 0).Error)
+		summary := ProcessPendingBillingAdjustments(context.Background(), 10)
+		require.Equal(t, 1, summary.Succeeded)
+	}
+	assert.Zero(t, getSubscriptionUsed(t, subscriptionID))
+	assert.Equal(t, 5000, getTokenRemainQuota(t, tokenID))
+	var record model.SubscriptionPreConsumeRecord
+	require.NoError(t, model.DB.Where("request_id = ?", "subscription-refund-once").First(&record).Error)
+	assert.Equal(t, "refunded", record.Status)
+}
+
 func TestFinalizeTaskFailureRefundsFinancialQuotaWhenPoolReleaseIsPending(t *testing.T) {
 	truncate(t)
 	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
@@ -594,7 +684,10 @@ func TestFinalizeTaskFailureRefundsFinancialQuotaWhenPoolReleaseIsPending(t *tes
 	assert.Equal(t, tokenRemain+preConsumed, getTokenRemainQuota(t, tokenID))
 	var reloaded model.Task
 	require.NoError(t, model.DB.First(&reloaded, task.ID).Error)
-	assert.Equal(t, model.TaskBillingStatusRefundPending, reloaded.BillingStatus)
+	assert.Equal(t, model.TaskBillingStatusRefunded, reloaded.BillingStatus)
+	var poolAdjustment model.QuotaPoolAdjustment
+	require.NoError(t, model.DB.Where("operation_key LIKE ?", "task:rollback:%").First(&poolAdjustment).Error)
+	assert.Equal(t, model.QuotaPoolAdjustmentStatusPending, poolAdjustment.Status)
 }
 
 func TestProcessPendingBillingAdjustmentsRetriesAfterDependencyRecovers(t *testing.T) {
@@ -607,8 +700,15 @@ func TestProcessPendingBillingAdjustmentsRetriesAfterDependencyRecovers(t *testi
 	})
 	require.NoError(t, err)
 	require.Error(t, model.ApplyBillingAdjustment(adjustment.ID))
+	var waiting model.BillingAdjustment
+	require.NoError(t, model.DB.First(&waiting, adjustment.ID).Error)
+	assert.Greater(t, waiting.NextRetryAt, common.GetTimestamp())
+	due, err := model.FindPendingBillingAdjustments(10)
+	require.NoError(t, err)
+	assert.Empty(t, due)
 
 	seedUser(t, 88, 1000)
+	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).Where("id = ?", adjustment.ID).Update("next_retry_at", 0).Error)
 	summary := ProcessPendingBillingAdjustments(context.Background(), 10)
 	assert.Equal(t, 1, summary.Pending)
 	assert.Equal(t, 1, summary.Succeeded)
@@ -620,12 +720,46 @@ func TestProcessPendingBillingAdjustmentsRetriesAfterDependencyRecovers(t *testi
 	assert.Equal(t, 700, getUserQuota(t, 88))
 }
 
+func TestPendingSuccessfulTaskSettlementRetriesAfterBillingRecovers(t *testing.T) {
+	truncate(t)
+	task := makeTask(89, 0, 2000, 0, BillingSourceWallet, 0)
+	task.TaskID = "task_success_settlement_retry"
+	task.Status = model.TaskStatusSuccess
+	task.Progress = "100%"
+	task.BillingStatus = model.TaskBillingStatusSettlementPending
+	task.PrivateData.BillingContext.SettlementHasActualQuota = true
+	task.PrivateData.BillingContext.SettlementActualQuota = 3000
+	task.PrivateData.BillingContext.SettlementReason = "retry regression"
+	require.NoError(t, model.DB.Create(task).Error)
+
+	// The adjustment row is durable even though applying it fails while the user
+	// row is absent, so the task marker can be cleared and reconciliation owns it.
+	require.NoError(t, ApplyPendingTaskSettlement(context.Background(), task))
+	var pending model.Task
+	require.NoError(t, model.DB.First(&pending, task.ID).Error)
+	assert.Equal(t, model.TaskBillingStatusSettled, pending.BillingStatus)
+
+	seedUser(t, 89, 10000)
+	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).
+		Where("adjustment_key = ?", "task-settle:task_success_settlement_retry").
+		Update("next_retry_at", 0).Error)
+	summary := ProcessPendingBillingAdjustments(context.Background(), 10)
+	require.Equal(t, 1, summary.Succeeded)
+
+	require.NoError(t, model.DB.First(&pending, task.ID).Error)
+	assert.Equal(t, model.TaskBillingStatusSettled, pending.BillingStatus)
+	assert.Equal(t, 3000, pending.Quota)
+	assert.Equal(t, 9000, getUserQuota(t, 89))
+}
+
 func TestTaskSubmissionRecordLifecycle(t *testing.T) {
 	truncate(t)
 	info := &relaycommon.RelayInfo{
-		UserId:          6,
-		UsingGroup:      "default",
-		OriginModelName: "public-video-model",
+		UserId:                6,
+		UsingGroup:            "default",
+		OriginModelName:       "public-video-model",
+		RequestId:             "task-submission-lifecycle",
+		FinalPreConsumedQuota: 1200,
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelId:         9,
 			UpstreamModelName: "upstream-video-model",
@@ -651,6 +785,11 @@ func TestTaskSubmissionRecordLifecycle(t *testing.T) {
 	assert.Equal(t, "upstream-123", reloaded.PrivateData.UpstreamTaskID)
 	assert.True(t, reloaded.PrivateData.UsesPublicTaskID)
 	assert.Equal(t, 1100, reloaded.Quota)
+	assert.Equal(t, model.TaskBillingStatusSettlementPending, reloaded.BillingStatus)
+	require.NotNil(t, reloaded.PrivateData.BillingContext)
+	assert.True(t, reloaded.PrivateData.BillingContext.SubmissionSettlementPending)
+	assert.Equal(t, 1200, reloaded.PrivateData.BillingContext.SubmissionPreConsumedQuota)
+	assert.Equal(t, 1100, reloaded.PrivateData.BillingContext.SubmissionActualQuota)
 	assert.JSONEq(t, `{"status":"queued"}`, string(reloaded.Data))
 }
 
@@ -1006,7 +1145,7 @@ func TestCASGuardedRefund_Lose(t *testing.T) {
 	assert.Equal(t, int64(0), countLogs(t))
 }
 
-func TestCASGuardedCleanupZeroQuotaStaysPendingWhenPoolRedisUnavailable(t *testing.T) {
+func TestCASGuardedCleanupZeroQuotaQueuesPoolRollbackWhenRedisUnavailable(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()
 	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
@@ -1024,10 +1163,13 @@ func TestCASGuardedCleanupZeroQuotaStaysPendingWhenPoolRedisUnavailable(t *testi
 
 	simulatePollBilling(ctx, task, model.TaskStatus(model.TaskStatusFailure), 0)
 
-	assert.NotEmpty(t, task.PrivateData.BillingContext.ModelQuotaPools)
+	assert.Empty(t, task.PrivateData.BillingContext.ModelQuotaPools)
 	var reloaded model.Task
 	require.NoError(t, model.DB.First(&reloaded, task.ID).Error)
-	assert.Equal(t, model.TaskBillingStatusRefundPending, reloaded.BillingStatus)
+	assert.Equal(t, model.TaskBillingStatusRefunded, reloaded.BillingStatus)
+	var poolAdjustment model.QuotaPoolAdjustment
+	require.NoError(t, model.DB.Where("operation_key LIKE ?", "task:rollback:%").First(&poolAdjustment).Error)
+	assert.Equal(t, model.QuotaPoolAdjustmentStatusPending, poolAdjustment.Status)
 }
 
 func TestCASGuardedSettle_Win(t *testing.T) {
@@ -1214,7 +1356,8 @@ func TestRollbackModelQuotaPoolFromRelayInfo(t *testing.T) {
 	assert.NotContains(t, consumed, "pool:ignored")
 }
 
-func TestRollbackTaskModelQuotaPoolKeepsPendingMatchesWithoutRedis(t *testing.T) {
+func TestRollbackTaskModelQuotaPoolQueuesDurablyWithoutRedis(t *testing.T) {
+	truncate(t)
 	oldRedisEnabled := common.RedisEnabled
 	oldRDB := common.RDB
 	common.RedisEnabled = false
@@ -1230,8 +1373,12 @@ func TestRollbackTaskModelQuotaPoolKeepsPendingMatchesWithoutRedis(t *testing.T)
 	}
 
 	err := RollbackTaskModelQuotaPool(task)
-	require.Error(t, err)
-	assert.NotEmpty(t, task.PrivateData.BillingContext.ModelQuotaPools)
+	require.NoError(t, err)
+	assert.Empty(t, task.PrivateData.BillingContext.ModelQuotaPools)
+	var adjustment model.QuotaPoolAdjustment
+	require.NoError(t, model.DB.Where("operation_key LIKE ?", "task:rollback:%").First(&adjustment).Error)
+	assert.Equal(t, int64(-1), adjustment.Delta)
+	assert.Equal(t, model.QuotaPoolAdjustmentStatusPending, adjustment.Status)
 }
 
 func TestAdjustTaskModelQuotaPoolWithAdjusterUpdatesOnlySuccessfulAdjustments(t *testing.T) {
@@ -1276,4 +1423,27 @@ func TestAdjustTaskModelQuotaPoolWithAdjusterUpdatesOnlySuccessfulAdjustments(t 
 	require.Equal(t, int64(2000), matches[1].Amount)
 	require.Equal(t, int64(2000), matches[1].UsedAfter)
 	require.Equal(t, int64(8000), matches[1].Remaining)
+}
+
+func TestTaskModelQuotaPoolQueuesDuplicateRedisKeyRulesSeparately(t *testing.T) {
+	truncate(t)
+	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
+	common.RedisEnabled, common.RDB = false, nil
+	t.Cleanup(func() {
+		common.RedisEnabled, common.RDB = oldRedisEnabled, oldRDB
+	})
+	task := makeTask(1, 1, 100, 0, BillingSourceWallet, 0)
+	task.TaskID = "task_duplicate_pool_rules"
+	task.PrivateData.BillingContext.ModelQuotaPools = []ratio_setting.ModelQuotaPoolMatch{
+		{Metric: ratio_setting.ModelQuotaPoolMetricQuota, RedisKey: "pool:shared", Amount: 100},
+		{Metric: ratio_setting.ModelQuotaPoolMetricQuota, RedisKey: "pool:shared", Amount: 100},
+	}
+
+	require.NoError(t, AdjustTaskModelQuotaPoolQuota(task, 50))
+	var adjustments []model.QuotaPoolAdjustment
+	require.NoError(t, model.DB.Order("id").Find(&adjustments).Error)
+	require.Len(t, adjustments, 2)
+	assert.Equal(t, int64(-50), adjustments[0].Delta)
+	assert.Equal(t, int64(-50), adjustments[1].Delta)
+	assert.NotEqual(t, adjustments[0].OperationKey, adjustments[1].OperationKey)
 }
