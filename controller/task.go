@@ -79,7 +79,7 @@ func GetUserTask(c *gin.Context) {
 
 const (
 	taskExportMaxRangeSeconds = int64(31 * 24 * 60 * 60)
-	taskExportMaxRows         = 50000
+	taskExportMaxRows         = 5000
 )
 
 // GetAllTaskExport 返回指定时间范围内的任务，供后台导出报表使用。
@@ -130,7 +130,7 @@ func GetAllTaskExport(c *gin.Context) {
 		return
 	}
 	if len(items) > taskExportMaxRows {
-		common.ApiErrorMsg(c, "task export exceeds 50000 rows; narrow the filters")
+		common.ApiErrorMsg(c, "task export exceeds 5000 rows; narrow the filters")
 		return
 	}
 	common.ApiSuccess(c, gin.H{"items": tasksToDto(items, true)})

@@ -74,3 +74,22 @@ func TestGetAllTaskExportReturnsRowsWithinBoundedRange(t *testing.T) {
 	require.True(t, response.Success, response.Message)
 	assert.Len(t, response.Data.Items, 1)
 }
+
+func TestGetAllTaskExportDoesNotLoadLargeTaskPayloads(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Task{}))
+	require.NoError(t, db.Create(&model.Task{
+		TaskID:      "task_export_large_payload",
+		SubmitTime:  150,
+		Status:      model.TaskStatusSuccess,
+		Progress:    "100%",
+		Data:        []byte(`{"large":"payload"}`),
+		PrivateData: model.TaskPrivateData{Key: "must-not-be-loaded"},
+	}).Error)
+
+	items, err := model.TaskGetAllTasksForExport(10, model.SyncTaskQueryParams{StartTimestamp: 100, EndTimestamp: 200})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Empty(t, items[0].Data)
+	assert.Empty(t, items[0].PrivateData.Key)
+}

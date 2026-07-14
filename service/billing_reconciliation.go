@@ -8,9 +8,12 @@ import (
 )
 
 type BillingReconciliationSummary struct {
-	Pending   int `json:"pending"`
-	Succeeded int `json:"succeeded"`
-	Failed    int `json:"failed"`
+	Pending       int `json:"pending"`
+	Succeeded     int `json:"succeeded"`
+	Failed        int `json:"failed"`
+	PoolPending   int `json:"pool_pending"`
+	PoolSucceeded int `json:"pool_succeeded"`
+	PoolFailed    int `json:"pool_failed"`
 }
 
 func ProcessPendingBillingAdjustments(ctx context.Context, limit int) BillingReconciliationSummary {
@@ -30,6 +33,24 @@ func ProcessPendingBillingAdjustments(ctx context.Context, limit int) BillingRec
 			continue
 		}
 		summary.Succeeded++
+	}
+	poolAdjustments, err := model.FindPendingQuotaPoolAdjustments(limit)
+	if err != nil {
+		summary.PoolFailed++
+		logger.LogError(ctx, "load pending quota pool adjustments failed: "+err.Error())
+		return summary
+	}
+	summary.PoolPending = len(poolAdjustments)
+	for _, adjustment := range poolAdjustments {
+		if ctx != nil && ctx.Err() != nil {
+			break
+		}
+		if err := applyQuotaPoolAdjustment(adjustment); err != nil {
+			summary.PoolFailed++
+			logger.LogError(ctx, "retry quota pool adjustment failed: "+err.Error())
+			continue
+		}
+		summary.PoolSucceeded++
 	}
 	return summary
 }

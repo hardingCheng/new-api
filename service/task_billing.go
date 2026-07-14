@@ -126,15 +126,17 @@ func EnsureTaskSubmissionRecord(c *gin.Context, info *relaycommon.RelayInfo, pla
 
 func taskBillingContextFromRelayInfo(info *relaycommon.RelayInfo) *model.TaskBillingContext {
 	return &model.TaskBillingContext{
-		ModelPrice:           info.PriceData.ModelPrice,
-		GroupRatio:           info.PriceData.GroupRatioInfo.GroupRatio,
-		ModelRatio:           info.PriceData.ModelRatio,
-		OtherRatios:          info.PriceData.OtherRatios(),
-		OriginModelName:      info.OriginModelName,
-		VideoBillingMode:     ratio_setting.GetVideoBillingMode(info.OriginModelName),
-		UserPricingOverrides: info.UserPricingOverrides,
-		ModelQuotaPools:      info.ModelQuotaPools,
-		PerCallBilling:       ratio_setting.IsVideoBillingPerCall(info.OriginModelName) || (info.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(info.OriginModelName)),
+		ModelPrice:                 info.PriceData.ModelPrice,
+		GroupRatio:                 info.PriceData.GroupRatioInfo.GroupRatio,
+		ModelRatio:                 info.PriceData.ModelRatio,
+		OtherRatios:                info.PriceData.OtherRatios(),
+		OriginModelName:            info.OriginModelName,
+		VideoBillingMode:           ratio_setting.GetVideoBillingMode(info.OriginModelName),
+		UserPricingOverrides:       info.UserPricingOverrides,
+		ModelQuotaPools:            info.ModelQuotaPools,
+		PerCallBilling:             ratio_setting.IsVideoBillingPerCall(info.OriginModelName) || (info.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(info.OriginModelName)),
+		SubmissionRequestID:        info.RequestId,
+		SubmissionPreConsumedQuota: info.FinalPreConsumedQuota,
 	}
 }
 
@@ -182,6 +184,11 @@ func CompleteTaskSubmissionRecord(c *gin.Context, info *relaycommon.RelayInfo, r
 	task.PrivateData.TokenId = info.TokenId
 	task.PrivateData.NodeName = common.NodeName
 	task.PrivateData.BillingContext = taskBillingContextFromRelayInfo(info)
+	if task.PrivateData.BillingContext != nil && quota != info.FinalPreConsumedQuota {
+		task.PrivateData.BillingContext.SubmissionActualQuota = quota
+		task.PrivateData.BillingContext.SubmissionSettlementPending = true
+		task.BillingStatus = model.TaskBillingStatusSettlementPending
+	}
 	if c != nil {
 		if referenceSeconds := c.GetInt("reference_video_seconds"); referenceSeconds > 0 {
 			task.Properties.HasReferenceVideo = true
@@ -209,8 +216,34 @@ func SyncTaskSubmissionBillingContext(info *relaycommon.RelayInfo) error {
 	if err != nil || !found {
 		return err
 	}
-	task.PrivateData.BillingContext = taskBillingContextFromRelayInfo(info)
+	next := taskBillingContextFromRelayInfo(info)
+	if current := task.PrivateData.BillingContext; current != nil {
+		next.SubmissionActualQuota = current.SubmissionActualQuota
+		next.SubmissionSettlementPending = current.SubmissionSettlementPending
+		next.SettlementHasActualQuota = current.SettlementHasActualQuota
+		next.SettlementActualQuota = current.SettlementActualQuota
+		next.SettlementActualTokens = current.SettlementActualTokens
+		next.SettlementReason = current.SettlementReason
+		next.SettlementQuotaClamp = current.SettlementQuotaClamp
+	}
+	task.PrivateData.BillingContext = next
 	return task.UpdatePrivateData()
+}
+
+func CompleteTaskSubmissionSettlement(userID int, publicTaskID string) error {
+	task, found, err := model.GetByTaskId(userID, publicTaskID)
+	if err != nil || !found {
+		return err
+	}
+	if task.PrivateData.BillingContext == nil || !task.PrivateData.BillingContext.SubmissionSettlementPending {
+		return nil
+	}
+	task.PrivateData.BillingContext.SubmissionSettlementPending = false
+	task.PrivateData.BillingContext.SubmissionActualQuota = 0
+	if task.BillingStatus == model.TaskBillingStatusSettlementPending {
+		task.BillingStatus = model.TaskBillingStatusActive
+	}
+	return task.UpdateBillingState()
 }
 
 // taskBillingOther 从 task 的 BillingContext 构建日志 Other 字段。
@@ -273,7 +306,8 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) error
 			return poolErr
 		}
 		if task.ID > 0 {
-			return task.UpdateBillingStatus(model.TaskBillingStatusRefunded)
+			task.BillingStatus = model.TaskBillingStatusRefunded
+			return task.UpdateBillingState()
 		}
 		task.BillingStatus = model.TaskBillingStatusRefunded
 		return nil
@@ -292,7 +326,8 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) error
 		return poolErr
 	}
 	if task.ID > 0 {
-		if err = task.UpdateBillingStatus(model.TaskBillingStatusRefunded); err != nil {
+		task.BillingStatus = model.TaskBillingStatusRefunded
+		if err = task.UpdateBillingState(); err != nil {
 			return err
 		}
 	} else {
@@ -365,6 +400,10 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	quotaDelta := actualQuota - preConsumedQuota
 
 	if quotaDelta == 0 {
+		if err := AdjustTaskModelQuotaPoolQuota(task, actualQuota); err != nil {
+			logger.LogError(ctx, fmt.Sprintf("任务 %s 限量池结算入队失败: %s", task.TaskID, err.Error()))
+			return false
+		}
 		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 预扣费准确（%s，%s）",
 			task.TaskID, logger.LogQuota(actualQuota), reason))
 		return true
@@ -390,7 +429,10 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	}
 
 	task.Quota = actualQuota
-	AdjustTaskModelQuotaPoolQuota(task, actualQuota)
+	if err := AdjustTaskModelQuotaPoolQuota(task, actualQuota); err != nil {
+		logger.LogError(ctx, fmt.Sprintf("任务 %s 限量池结算入队失败: %s", task.TaskID, err.Error()))
+		return false
+	}
 	if err := task.UpdateQuota(); err != nil {
 		logger.LogError(ctx, fmt.Sprintf("差额结算回写 quota 失败 task %s: %s", task.TaskID, err.Error()))
 	}
@@ -440,8 +482,18 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 // 当任务成功且返回了 totalTokens 时，根据模型倍率和分组倍率重新计算实际扣费额度，
 // 与预扣费的差额进行补扣或退还。支持钱包和订阅计费来源。
 func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTokens int) {
-	if totalTokens <= 0 {
+	actualQuota, reason, clamp, ok := calculateTaskQuotaByTokens(task, totalTokens)
+	if !ok {
 		return
+	}
+	if RecalculateTaskQuota(ctx, task, actualQuota, reason, clamp) {
+		_ = AdjustTaskModelQuotaPoolTokens(task, totalTokens)
+	}
+}
+
+func calculateTaskQuotaByTokens(task *model.Task, totalTokens int) (int, string, *common.QuotaClamp, bool) {
+	if task == nil || totalTokens <= 0 {
+		return 0, "", nil, false
 	}
 
 	modelName := taskModelName(task)
@@ -449,14 +501,14 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	// 获取模型价格和倍率
 	modelRatio, groupRatio, hasSnapshot, canRecalculate := taskBillingTokenRatios(task)
 	if hasSnapshot && !canRecalculate {
-		return
+		return 0, "", nil, false
 	}
 	if !hasSnapshot {
 		var hasRatioSetting bool
 		modelRatio, hasRatioSetting, _ = ratio_setting.GetModelRatio(modelName)
 		// 只有配置了倍率(非固定价格)时才按 token 重新计费
 		if !hasRatioSetting || modelRatio <= 0 {
-			return
+			return 0, "", nil, false
 		}
 
 		// 获取用户和组的倍率信息
@@ -468,7 +520,7 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 			}
 		}
 		if group == "" {
-			return
+			return 0, "", nil, false
 		}
 
 		groupRatio = ratio_setting.GetGroupRatio(group)
@@ -488,9 +540,57 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	actualQuota, clamp := common.QuotaFromFloatChecked(float64(totalTokens) * modelRatio * groupRatio * otherMultiplier)
 
 	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f, otherMultiplier=%.4f", totalTokens, modelRatio, groupRatio, otherMultiplier)
-	if RecalculateTaskQuota(ctx, task, actualQuota, reason, clamp) {
-		AdjustTaskModelQuotaPoolTokens(task, totalTokens)
+	return actualQuota, reason, clamp, actualQuota > 0
+}
+
+func ApplyPendingTaskSettlement(ctx context.Context, task *model.Task) error {
+	if task == nil || task.PrivateData.BillingContext == nil {
+		return nil
 	}
+	bc := task.PrivateData.BillingContext
+	if bc.SubmissionSettlementPending {
+		delta := bc.SubmissionActualQuota - bc.SubmissionPreConsumedQuota
+		if delta != 0 {
+			requestID := strings.TrimSpace(bc.SubmissionRequestID)
+			if requestID == "" {
+				requestID = task.TaskID
+			}
+			adjustment, err := ensureTaskBillingAdjustment(task, "relay-settle:"+requestID, delta, delta)
+			if err != nil {
+				return err
+			}
+			if err := model.ApplyBillingAdjustment(adjustment.ID); err != nil {
+				logger.LogWarn(ctx, fmt.Sprintf("任务提交结算等待后台重试 task %s: %s", task.TaskID, err.Error()))
+			}
+		}
+		task.Quota = bc.SubmissionActualQuota
+		bc.SubmissionActualQuota = 0
+		bc.SubmissionSettlementPending = false
+	}
+	if bc.SettlementActualTokens > 0 {
+		if err := AdjustTaskModelQuotaPoolTokens(task, bc.SettlementActualTokens); err != nil {
+			return err
+		}
+	}
+	if bc.SettlementHasActualQuota {
+		clamps := make([]*common.QuotaClamp, 0, 1)
+		if bc.SettlementQuotaClamp != nil {
+			clamps = append(clamps, bc.SettlementQuotaClamp)
+		}
+		if !RecalculateTaskQuota(ctx, task, bc.SettlementActualQuota, bc.SettlementReason, clamps...) {
+			return errors.New("task quota settlement is still pending")
+		}
+	}
+	bc.SettlementHasActualQuota = false
+	bc.SettlementActualQuota = 0
+	bc.SettlementActualTokens = 0
+	bc.SettlementReason = ""
+	bc.SettlementQuotaClamp = nil
+	task.BillingStatus = model.TaskBillingStatusSettled
+	if task.ID <= 0 {
+		return nil
+	}
+	return task.UpdateBillingState()
 }
 
 func taskBillingTokenRatios(task *model.Task) (modelRatio float64, groupRatio float64, hasSnapshot bool, canRecalculate bool) {
