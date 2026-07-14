@@ -10,6 +10,29 @@ const semiUiDir = path.resolve(
   path.dirname(require.resolve('@douyinfe/semi-ui')),
   '../..',
 )
+const vchartDir = path.dirname(
+  require.resolve('@visactor/vchart/package.json'),
+)
+const vchartRequire = createRequire(path.join(vchartDir, 'package.json'))
+const vchartPackageNames = [
+  '@visactor/vchart',
+  '@visactor/vdataset',
+  '@visactor/vgrammar-core',
+  '@visactor/vrender-components',
+  '@visactor/vrender-core',
+  '@visactor/vrender-kits',
+  '@visactor/vscale',
+  '@visactor/vutils',
+  '@visactor/vutils-extension',
+]
+const vchartAliases = Object.fromEntries(
+  vchartPackageNames.map((packageName) => [
+    packageName,
+    packageName === '@visactor/vchart'
+      ? vchartDir
+      : path.dirname(path.dirname(vchartRequire.resolve(packageName))),
+  ]),
+)
 
 export default defineConfig(({ envMode }) => {
   const env = loadEnv({ mode: envMode, prefixes: ['VITE_'] })
@@ -43,6 +66,7 @@ export default defineConfig(({ envMode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
+        ...vchartAliases,
         '@douyinfe/semi-ui/dist/css/semi.css': path.resolve(
           semiUiDir,
           'dist/css/semi.css',
