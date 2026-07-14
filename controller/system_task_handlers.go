@@ -30,7 +30,8 @@ type billingReconcileHandler struct{}
 func (billingReconcileHandler) Type() string { return model.SystemTaskTypeBillingReconcile }
 
 func (billingReconcileHandler) Enabled() bool {
-	return model.HasPendingBillingAdjustments() || model.HasPendingQuotaPoolAdjustments()
+	now := common.GetTimestamp()
+	return model.HasDueBillingAdjustments(now) || model.HasDueQuotaPoolAdjustments(now)
 }
 
 func (billingReconcileHandler) Interval() time.Duration { return 15 * time.Second }
