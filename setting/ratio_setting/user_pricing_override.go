@@ -283,6 +283,18 @@ func matchUserPricingModel(pattern, modelName string) bool {
 	return wildcardMatch(pattern, modelName)
 }
 
+// GetUserGroupRatioOverride 返回用户在某分组上的个性倍率覆盖(仅匹配全模型的 ratio 规则;
+// 带模型条件的规则无法折算成单一分组倍率,不参与)。供分组选择器等展示场景使用,
+// 计费路径走 ApplyUserPricingOverrides,两边语义保持一致。
+func GetUserGroupRatioOverride(userID int, username, userGroup, groupName string) (float64, bool) {
+	matches := MatchUserPricingOverride(userID, username, userGroup, groupName, "")
+	best, ok := bestUserPricingMatch(matches, UserPricingRuleRatio)
+	if !ok {
+		return 0, false
+	}
+	return best.Rule.Value, true
+}
+
 func bestUserPricingMatch(matches []UserPricingOverrideMatch, ruleType string) (UserPricingOverrideMatch, bool) {
 	bestScore := -1
 	var best UserPricingOverrideMatch

@@ -103,3 +103,32 @@ func TestApplyUserPricingOverridesDefaultWhenNoMatch(t *testing.T) {
 		t.Fatalf("unexpected override result: usePrice=%v modelPrice=%v modelRatio=%v groupRatio=%v matches=%d", res.UsePrice, res.ModelPrice, res.ModelRatio, res.GroupRatio, len(res.Matches))
 	}
 }
+
+func TestGetUserGroupRatioOverride(t *testing.T) {
+	t.Cleanup(func() {
+		_ = UpdateUserPricingOverrideByJSONString("{}")
+	})
+	err := UpdateUserPricingOverrideByJSONString(`{
+		"rules": [
+			{"user_id": 14, "group_pattern": "gpt稳定分组", "type": "ratio", "value": 0.17},
+			{"user_id": 14, "group_pattern": "claudemax分组", "model_pattern": "claude-*", "type": "ratio", "value": 0.5},
+			{"user_id": 14, "group_pattern": "claude特价分组", "type": "ratio", "value": 0.2, "disabled": true}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+
+	if v, ok := GetUserGroupRatioOverride(14, "sakiko", "z", "gpt稳定分组"); !ok || v != 0.17 {
+		t.Fatalf("expected 0.17 override, got %v ok=%v", v, ok)
+	}
+	if _, ok := GetUserGroupRatioOverride(14, "sakiko", "z", "claudemax分组"); ok {
+		t.Fatal("model-scoped rule must not surface as a group-level ratio")
+	}
+	if _, ok := GetUserGroupRatioOverride(14, "sakiko", "z", "claude特价分组"); ok {
+		t.Fatal("disabled rule must not apply")
+	}
+	if _, ok := GetUserGroupRatioOverride(99, "other", "z", "gpt稳定分组"); ok {
+		t.Fatal("other user must not match")
+	}
+}

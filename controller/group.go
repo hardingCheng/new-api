@@ -32,8 +32,13 @@ func GetUserGroups(c *gin.Context) {
 	for groupName, _ := range ratio_setting.GetGroupRatioCopy() {
 		// UserUsableGroups contains the groups that the user can use
 		if desc, ok := userUsableGroups[groupName]; ok {
+			ratio := service.GetUserGroupRatio(userGroup, groupName)
+			// 用户个性定价的全模型 ratio 规则会在计费时覆盖组倍率,展示保持一致
+			if override, ok := ratio_setting.GetUserGroupRatioOverride(userId, "", userGroup, groupName); ok {
+				ratio = override
+			}
 			usableGroups[groupName] = map[string]interface{}{
-				"ratio": service.GetUserGroupRatio(userGroup, groupName),
+				"ratio": ratio,
 				"desc":  desc,
 			}
 		}
