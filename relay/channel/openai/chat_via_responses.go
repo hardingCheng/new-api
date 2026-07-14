@@ -33,6 +33,11 @@ func OaiResponsesToChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
 	}
 
+	// chatdump：保留完整上游 Responses API 响应体
+	if ds := getDumpSession(c); ds.Enabled() {
+		ds.SetResponse(body)
+	}
+
 	if err := common.Unmarshal(body, &responsesResp); err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
@@ -218,6 +223,10 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 	}
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		// chatdump：原样保留每一条上游 Responses SSE 事件
+		if ds := getDumpSession(c); ds.Enabled() {
+			ds.AppendStreamEvent("", []byte(data))
+		}
 		if streamErr != nil {
 			sr.Stop(streamErr)
 			return

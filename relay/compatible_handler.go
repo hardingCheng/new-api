@@ -14,6 +14,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/chatdump"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -70,6 +71,28 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	}
 	adaptor.Init(info)
 
+	// chatdump：覆盖 OpenAI 兼容入口
+	dumpSession := chatdump.NewSession(request.Model)
+	if dumpSession.Enabled() {
+		dumpSession.SetMeta(map[string]any{
+			"upstream_model": request.Model,
+			"origin_model":   info.OriginModelName,
+			"user_id":        info.UserId,
+			"user_email":     info.UserEmail,
+			"token_id":       info.TokenId,
+			"channel_id":     info.ChannelId,
+			"channel_type":   info.ChannelType,
+			"relay_format":   string(info.RelayFormat),
+			"stream":         info.IsStream || lo.FromPtrOr(request.Stream, false),
+			"ip":             c.ClientIP(),
+			"user_agent":     c.Request.UserAgent(),
+			"request_path":   info.RequestURLPath,
+			"client_headers": chatdump.ExtractClientHeaders(c.GetHeader),
+		})
+		c.Set("chatdump_session", dumpSession)
+		defer dumpSession.Flush()
+	}
+
 	passThroughGlobal := model_setting.GetGlobalSettings().PassThroughRequestEnabled
 	if info.RelayMode == relayconstant.RelayModeChatCompletions &&
 		!passThroughGlobal &&
@@ -102,6 +125,11 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		if common.DebugEnabled {
 			if debugBytes, bErr := storage.Bytes(); bErr == nil {
 				logger.LogDebug(c, "requestBody: %s", debugBytes)
+			}
+		}
+		if dumpSession.Enabled() {
+			if body, berr := storage.Bytes(); berr == nil {
+				dumpSession.SetRequest(body)
 			}
 		}
 		requestBody = common.ReaderOnly(storage)
@@ -175,6 +203,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 		logger.LogDebug(c, "text request body: %s", jsonData)
 
+		dumpSession.SetRequest(jsonData)
 		body, size, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
@@ -188,6 +217,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	var httpResp *http.Response
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
+		dumpSession.SetError("do_request_failed: " + err.Error())
 		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
 	}
 
@@ -196,19 +226,28 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	if resp != nil {
 		httpResp = resp.(*http.Response)
 		info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
+		dumpSession.SetMeta(map[string]any{"stream": info.IsStream})
 		if httpResp.StatusCode != http.StatusOK {
 			newApiErr := service.RelayErrorHandler(c.Request.Context(), httpResp, false)
 			// reset status code 重置状态码
 			service.ResetStatusCode(newApiErr, statusCodeMappingStr)
+			if newApiErr != nil {
+				dumpSession.SetError(fmt.Sprintf("upstream_status=%d %s", httpResp.StatusCode, newApiErr.Error()))
+			}
 			return newApiErr
 		}
 	}
 
 	usage, newApiErr := adaptor.DoResponse(c, httpResp, info)
 	if newApiErr != nil {
+		dumpSession.SetError("do_response_failed: " + newApiErr.Error())
 		// reset status code 重置状态码
 		service.ResetStatusCode(newApiErr, statusCodeMappingStr)
 		return newApiErr
+	}
+
+	if u, ok := usage.(*dto.Usage); ok && u != nil {
+		dumpSession.SetUsage(u)
 	}
 
 	var containAudioTokens = usage.(*dto.Usage).CompletionTokenDetails.AudioTokens > 0 || usage.(*dto.Usage).PromptTokensDetails.AudioTokens > 0

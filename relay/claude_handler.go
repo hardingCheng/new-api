@@ -14,6 +14,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/chatdump"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
@@ -107,6 +108,28 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		info.UpstreamModelName = request.Model
 	}
 
+	// chatdump：根据上游模型名判定是否抓取
+	dumpSession := chatdump.NewSession(request.Model)
+	if dumpSession.Enabled() {
+		dumpSession.SetMeta(map[string]any{
+			"upstream_model": request.Model,
+			"origin_model":   info.OriginModelName,
+			"user_id":        info.UserId,
+			"user_email":     info.UserEmail,
+			"token_id":       info.TokenId,
+			"channel_id":     info.ChannelId,
+			"channel_type":   info.ChannelType,
+			"relay_format":   string(info.RelayFormat),
+			"stream":         info.IsStream || (request.Stream != nil && *request.Stream),
+			"ip":             c.ClientIP(),
+			"user_agent":     c.Request.UserAgent(),
+			"request_path":   info.RequestURLPath,
+			"client_headers": chatdump.ExtractClientHeaders(c.GetHeader),
+		})
+		c.Set("chatdump_session", dumpSession)
+		defer dumpSession.Flush()
+	}
+
 	if info.ChannelSetting.SystemPrompt != "" {
 		if request.System == nil {
 			request.SetStringSystem(info.ChannelSetting.SystemPrompt)
@@ -156,6 +179,11 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
 		info.UpstreamRequestBodySize = storage.Size()
+		if dumpSession.Enabled() {
+			if body, berr := storage.Bytes(); berr == nil {
+				dumpSession.SetRequest(body)
+			}
+		}
 		requestBody = common.ReaderOnly(storage)
 	} else {
 		convertedRequest, err := adaptor.ConvertClaudeRequest(c, info, request)
@@ -183,6 +211,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 
 		logger.LogDebug(c, "requestBody: %s", jsonData)
+		dumpSession.SetRequest(jsonData)
 		body, size, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
@@ -197,25 +226,35 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	var httpResp *http.Response
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
+		dumpSession.SetError("do_request_failed: " + err.Error())
 		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
 	}
 
 	if resp != nil {
 		httpResp = resp.(*http.Response)
 		info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
+		dumpSession.SetMeta(map[string]any{"stream": info.IsStream})
 		if httpResp.StatusCode != http.StatusOK {
 			newAPIError = service.RelayErrorHandler(c.Request.Context(), httpResp, false)
 			// reset status code 重置状态码
 			service.ResetStatusCode(newAPIError, statusCodeMappingStr)
+			if newAPIError != nil {
+				dumpSession.SetError(fmt.Sprintf("upstream_status=%d %s", httpResp.StatusCode, newAPIError.Error()))
+			}
 			return newAPIError
 		}
 	}
 
 	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
 	if newAPIError != nil {
+		dumpSession.SetError("do_response_failed: " + newAPIError.Error())
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError
+	}
+
+	if u, ok := usage.(*dto.Usage); ok && u != nil {
+		dumpSession.SetUsage(u)
 	}
 
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)

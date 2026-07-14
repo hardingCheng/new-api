@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relay/reasonmap"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/chatdump"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
@@ -785,12 +786,36 @@ func FormatClaudeResponseInfo(claudeResponse *dto.ClaudeResponse, oaiResponse *d
 	return true
 }
 
+func getDumpSession(c *gin.Context) *chatdump.Session {
+	if v, ok := c.Get("chatdump_session"); ok {
+		if s, ok := v.(*chatdump.Session); ok {
+			return s
+		}
+	}
+	return nil
+}
+
 func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo, data string) *types.NewAPIError {
+	// chatdump：原样保留每一条 SSE data
+	if ds := getDumpSession(c); ds.Enabled() {
+		ds.AppendStreamEvent("", []byte(data))
+	}
 	var claudeResponse dto.ClaudeResponse
 	err := common.UnmarshalJsonStr(data, &claudeResponse)
 	if err != nil {
 		common.SysLog("error unmarshalling stream response: " + err.Error())
 		return types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
+	// chatdump：聚合可读文本和思考链
+	if ds := getDumpSession(c); ds.Enabled() {
+		if claudeResponse.Type == "content_block_delta" && claudeResponse.Delta != nil {
+			if claudeResponse.Delta.Text != nil {
+				ds.AppendText(*claudeResponse.Delta.Text)
+			}
+			if claudeResponse.Delta.Thinking != nil {
+				ds.AppendThinking(*claudeResponse.Delta.Thinking)
+			}
+		}
 	}
 	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
 		return types.WithClaudeError(*claudeError, http.StatusInternalServerError)
@@ -894,6 +919,10 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 }
 
 func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo, httpResp *http.Response, data []byte) *types.NewAPIError {
+	// chatdump：保留完整响应体
+	if ds := getDumpSession(c); ds.Enabled() {
+		ds.SetResponse(data)
+	}
 	var claudeResponse dto.ClaudeResponse
 	err := common.Unmarshal(data, &claudeResponse)
 	if err != nil {
@@ -901,6 +930,19 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	}
 	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
 		return types.WithClaudeError(*claudeError, http.StatusInternalServerError)
+	}
+	// chatdump：聚合非流式回复的文本和思考链
+	if ds := getDumpSession(c); ds.Enabled() {
+		for _, msg := range claudeResponse.Content {
+			switch msg.Type {
+			case "text":
+				ds.AppendText(msg.GetText())
+			case "thinking":
+				if msg.Thinking != nil {
+					ds.AppendThinking(*msg.Thinking)
+				}
+			}
+		}
 	}
 	maybeMarkClaudeRefusal(c, claudeResponse.StopReason)
 	if claudeInfo.Usage == nil {
