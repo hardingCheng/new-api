@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -11,11 +12,41 @@ import (
 )
 
 const (
+	BillingAdjustmentStatusReserved      = "reserved"
 	BillingAdjustmentStatusPending       = "pending"
 	BillingAdjustmentStatusSucceeded     = "succeeded"
 	BillingAdjustmentFundingWallet       = "wallet"
 	BillingAdjustmentFundingSubscription = "subscription"
 )
+
+const billingReservationRecoveryDelay = 6 * time.Hour
+
+var billingSQLiteWriteMu sync.Mutex
+
+func runBillingTransaction(fn func(*gorm.DB) error) error {
+	if !common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+		return DB.Transaction(fn)
+	}
+	billingSQLiteWriteMu.Lock()
+	defer billingSQLiteWriteMu.Unlock()
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		err = DB.Transaction(fn)
+		if err == nil || (!strings.Contains(err.Error(), "database is locked") && !strings.Contains(err.Error(), "SQLITE_BUSY")) {
+			return err
+		}
+		time.Sleep(time.Duration(attempt+1) * 5 * time.Millisecond)
+	}
+	return err
+}
+
+func lockBillingAdjustmentWrite() func() {
+	if !common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+		return func() {}
+	}
+	billingSQLiteWriteMu.Lock()
+	return billingSQLiteWriteMu.Unlock
+}
 
 type BillingAdjustment struct {
 	ID                              int64  `json:"id" gorm:"primary_key"`
@@ -52,7 +83,318 @@ type BillingAdjustmentParams struct {
 	TokenDelta                      int
 }
 
+type BillingReservationParams struct {
+	RequestID             string
+	UserID                int
+	TokenID               int
+	TokenKey              string
+	TokenUnlimited        bool
+	TokenBillingEnabled   bool
+	FundingSource         string
+	Amount                int
+	SubscriptionModelName string
+}
+
+type BillingReservationResult struct {
+	Adjustment   *BillingAdjustment
+	Subscription *SubscriptionPreConsumeResult
+}
+
+// ReserveBillingQuota atomically records the recovery action and deducts all
+// pre-consumed quota. A process crash leaves a due reserved row whose default
+// action is a full refund.
+func ReserveBillingQuota(params BillingReservationParams) (*BillingReservationResult, error) {
+	params.RequestID = strings.TrimSpace(params.RequestID)
+	params.TokenKey = strings.TrimSpace(params.TokenKey)
+	params.FundingSource = strings.TrimSpace(params.FundingSource)
+	if params.RequestID == "" || params.UserID <= 0 || params.Amount < 0 {
+		return nil, errors.New("invalid billing reservation")
+	}
+	if params.FundingSource != BillingAdjustmentFundingWallet && params.FundingSource != BillingAdjustmentFundingSubscription {
+		return nil, fmt.Errorf("invalid billing reservation funding source %q", params.FundingSource)
+	}
+	if params.FundingSource == BillingAdjustmentFundingSubscription && params.Amount <= 0 {
+		return nil, errors.New("subscription billing reservation amount must be positive")
+	}
+	if params.TokenBillingEnabled && params.TokenID <= 0 {
+		return nil, errors.New("billing reservation token is required")
+	}
+
+	adjustmentKey := "relay-billing:" + params.RequestID
+	reservationNow := GetDBTimestamp()
+	result := &BillingReservationResult{}
+	err := runBillingTransaction(func(tx *gorm.DB) error {
+		var existing BillingAdjustment
+		query := tx.Where("adjustment_key = ?", adjustmentKey).Limit(1).Find(&existing)
+		if query.Error != nil {
+			return query.Error
+		}
+		if query.RowsAffected > 0 {
+			if !billingReservationMatches(existing, params) {
+				return fmt.Errorf("billing reservation key %s was reused with different values", adjustmentKey)
+			}
+			result.Adjustment = &existing
+			if existing.SubscriptionID > 0 {
+				result.Subscription = subscriptionResultFromAdjustment(tx, existing)
+			}
+			return nil
+		}
+
+		var subscription *SubscriptionPreConsumeResult
+		switch params.FundingSource {
+		case BillingAdjustmentFundingSubscription:
+			var err error
+			subscription, err = preConsumeUserSubscriptionTx(tx, params.RequestID, params.UserID, params.SubscriptionModelName, 0, int64(params.Amount), reservationNow)
+			if err != nil {
+				return err
+			}
+		case BillingAdjustmentFundingWallet:
+			if params.Amount > 0 {
+				var user User
+				if err := lockForUpdate(tx).Where("id = ?", params.UserID).First(&user).Error; err != nil {
+					return err
+				}
+				if user.Quota < params.Amount {
+					return fmt.Errorf("user quota is not enough, user remain quota: %d, need quota: %d", user.Quota, params.Amount)
+				}
+				if err := tx.Model(&User{}).Where("id = ?", params.UserID).
+					Update("quota", gorm.Expr("quota - ?", params.Amount)).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		tokenAmount := 0
+		if params.TokenBillingEnabled {
+			var token Token
+			if err := lockForUpdate(tx).Where("id = ?", params.TokenID).First(&token).Error; err != nil {
+				return err
+			}
+			if token.UserId != params.UserID || (params.TokenKey != "" && token.Key != params.TokenKey) {
+				return errors.New("billing reservation token does not match request")
+			}
+			if !params.TokenUnlimited && token.RemainQuota < params.Amount {
+				return fmt.Errorf("token quota is not enough, token remain quota: %d, need quota: %d", token.RemainQuota, params.Amount)
+			}
+			if params.Amount > 0 {
+				if err := tx.Model(&Token{}).Where("id = ?", token.Id).Updates(map[string]interface{}{
+					"remain_quota":  gorm.Expr("remain_quota - ?", params.Amount),
+					"used_quota":    gorm.Expr("used_quota + ?", params.Amount),
+					"accessed_time": common.GetTimestamp(),
+				}).Error; err != nil {
+					return err
+				}
+				tokenAmount = params.Amount
+			}
+		}
+
+		now := common.GetTimestamp()
+		adjustment := &BillingAdjustment{
+			AdjustmentKey: adjustmentKey,
+			UserID:        params.UserID,
+			TokenID:       params.TokenID,
+			FundingSource: params.FundingSource,
+			FundingDelta:  -params.Amount,
+			TokenDelta:    -tokenAmount,
+			Status:        BillingAdjustmentStatusReserved,
+			NextRetryAt:   now + int64(billingReservationRecoveryDelay/time.Second),
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		}
+		if subscription != nil {
+			adjustment.SubscriptionID = subscription.UserSubscriptionId
+			adjustment.SubscriptionPreConsumeRequestID = params.RequestID
+			adjustment.SubscriptionPreConsumed = params.Amount
+		}
+		if err := tx.Create(adjustment).Error; err != nil {
+			return err
+		}
+		result.Adjustment = adjustment
+		result.Subscription = subscription
+		return nil
+	})
+	if err != nil {
+		// A concurrent transaction with the same request ID may have committed
+		// after our initial lookup. Its failed transaction did not retain deductions.
+		var existing BillingAdjustment
+		if findErr := DB.Where("adjustment_key = ?", adjustmentKey).First(&existing).Error; findErr == nil && billingReservationMatches(existing, params) {
+			result.Adjustment = &existing
+			if existing.SubscriptionID > 0 {
+				result.Subscription = subscriptionResultFromAdjustment(DB, existing)
+			}
+			err = nil
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	refreshBillingReservationCaches(params.UserID, params.TokenKey, params.FundingSource)
+	return result, nil
+}
+
+func billingReservationMatches(adjustment BillingAdjustment, params BillingReservationParams) bool {
+	tokenDelta := 0
+	if params.TokenBillingEnabled {
+		tokenDelta = -params.Amount
+	}
+	return adjustment.UserID == params.UserID &&
+		adjustment.TokenID == params.TokenID &&
+		adjustment.FundingSource == params.FundingSource &&
+		adjustment.FundingDelta == -params.Amount &&
+		adjustment.TokenDelta == tokenDelta
+}
+
+func subscriptionResultFromAdjustment(tx *gorm.DB, adjustment BillingAdjustment) *SubscriptionPreConsumeResult {
+	result := &SubscriptionPreConsumeResult{
+		UserSubscriptionId: adjustment.SubscriptionID,
+		PreConsumed:        int64(adjustment.SubscriptionPreConsumed),
+	}
+	var subscription UserSubscription
+	if err := tx.Where("id = ?", adjustment.SubscriptionID).First(&subscription).Error; err == nil {
+		result.AmountTotal = subscription.AmountTotal
+		result.AmountUsedBefore = subscription.AmountUsed
+		result.AmountUsedAfter = subscription.AmountUsed
+	}
+	return result
+}
+
+func ExtendBillingReservation(adjustmentID int64, amount int, tokenBillingEnabled bool, tokenUnlimited bool, tokenKey string) (*BillingAdjustment, error) {
+	if adjustmentID <= 0 || amount <= 0 {
+		return nil, errors.New("invalid billing reservation extension")
+	}
+	var updated BillingAdjustment
+	err := runBillingTransaction(func(tx *gorm.DB) error {
+		if err := lockForUpdate(tx).Where("id = ?", adjustmentID).First(&updated).Error; err != nil {
+			return err
+		}
+		if updated.Status != BillingAdjustmentStatusReserved {
+			return errors.New("billing reservation is already finalized")
+		}
+		switch updated.FundingSource {
+		case BillingAdjustmentFundingSubscription:
+			if err := applySubscriptionBillingDeltaTx(tx, updated.SubscriptionID, int64(amount)); err != nil {
+				return err
+			}
+			updated.SubscriptionExtraReserved += amount
+		case BillingAdjustmentFundingWallet:
+			var user User
+			if err := lockForUpdate(tx).Where("id = ?", updated.UserID).First(&user).Error; err != nil {
+				return err
+			}
+			if user.Quota < amount {
+				return fmt.Errorf("user quota is not enough, user remain quota: %d, need quota: %d", user.Quota, amount)
+			}
+			if err := tx.Model(&User{}).Where("id = ?", updated.UserID).
+				Update("quota", gorm.Expr("quota - ?", amount)).Error; err != nil {
+				return err
+			}
+		default:
+			return errors.New("invalid billing reservation funding source")
+		}
+		if tokenBillingEnabled {
+			var token Token
+			if err := lockForUpdate(tx).Where("id = ?", updated.TokenID).First(&token).Error; err != nil {
+				return err
+			}
+			if !tokenUnlimited && token.RemainQuota < amount {
+				return fmt.Errorf("token quota is not enough, token remain quota: %d, need quota: %d", token.RemainQuota, amount)
+			}
+			if err := tx.Model(&Token{}).Where("id = ?", token.Id).Updates(map[string]interface{}{
+				"remain_quota":  gorm.Expr("remain_quota - ?", amount),
+				"used_quota":    gorm.Expr("used_quota + ?", amount),
+				"accessed_time": common.GetTimestamp(),
+			}).Error; err != nil {
+				return err
+			}
+		}
+		updated.FundingDelta -= amount
+		if tokenBillingEnabled {
+			updated.TokenDelta -= amount
+		}
+		updated.NextRetryAt = common.GetTimestamp() + int64(billingReservationRecoveryDelay/time.Second)
+		updated.UpdatedAt = common.GetTimestamp()
+		return tx.Model(&BillingAdjustment{}).Where("id = ?", updated.ID).Updates(map[string]interface{}{
+			"funding_delta":               updated.FundingDelta,
+			"token_delta":                 updated.TokenDelta,
+			"subscription_extra_reserved": updated.SubscriptionExtraReserved,
+			"next_retry_at":               updated.NextRetryAt,
+			"updated_at":                  updated.UpdatedAt,
+		}).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	refreshBillingReservationCaches(updated.UserID, tokenKey, updated.FundingSource)
+	return &updated, nil
+}
+
+// FinalizeBillingReservation turns the pre-existing recovery row into either
+// the actual settlement delta or an immediate full refund. The first durable
+// finalization wins; retries only apply that recorded outcome.
+func FinalizeBillingReservation(adjustmentID int64, actualQuota int, tokenBillingEnabled bool, refund bool) (*BillingAdjustment, error) {
+	if adjustmentID <= 0 || actualQuota < 0 {
+		return nil, errors.New("invalid billing reservation finalization")
+	}
+	var adjustment BillingAdjustment
+	err := runBillingTransaction(func(tx *gorm.DB) error {
+		if err := lockForUpdate(tx).Where("id = ?", adjustmentID).First(&adjustment).Error; err != nil {
+			return err
+		}
+		if adjustment.Status != BillingAdjustmentStatusReserved {
+			return nil
+		}
+		if !refund {
+			reservedFunding := -adjustment.FundingDelta
+			reservedToken := -adjustment.TokenDelta
+			adjustment.FundingDelta = actualQuota - reservedFunding
+			if tokenBillingEnabled {
+				adjustment.TokenDelta = actualQuota - reservedToken
+			} else {
+				adjustment.TokenDelta = 0
+			}
+			adjustment.SubscriptionPreConsumeRequestID = ""
+			adjustment.SubscriptionPreConsumed = 0
+			adjustment.SubscriptionExtraReserved = 0
+		}
+		adjustment.Status = BillingAdjustmentStatusPending
+		adjustment.NextRetryAt = common.GetTimestamp()
+		adjustment.UpdatedAt = common.GetTimestamp()
+		return tx.Model(&BillingAdjustment{}).Where("id = ? AND status = ?", adjustment.ID, BillingAdjustmentStatusReserved).Updates(map[string]interface{}{
+			"funding_delta":                       adjustment.FundingDelta,
+			"token_delta":                         adjustment.TokenDelta,
+			"subscription_pre_consume_request_id": adjustment.SubscriptionPreConsumeRequestID,
+			"subscription_pre_consumed":           adjustment.SubscriptionPreConsumed,
+			"subscription_extra_reserved":         adjustment.SubscriptionExtraReserved,
+			"status":                              adjustment.Status,
+			"next_retry_at":                       adjustment.NextRetryAt,
+			"updated_at":                          adjustment.UpdatedAt,
+		}).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &adjustment, nil
+}
+
+func refreshBillingReservationCaches(userID int, tokenKey string, fundingSource string) {
+	if !common.RedisEnabled {
+		return
+	}
+	if fundingSource == BillingAdjustmentFundingWallet && userID > 0 {
+		if err := invalidateUserCache(userID); err != nil {
+			common.SysLog("failed to invalidate billing reservation user cache: " + err.Error())
+		}
+	}
+	if strings.TrimSpace(tokenKey) != "" {
+		if err := cacheDeleteToken(tokenKey); err != nil {
+			common.SysLog("failed to invalidate billing reservation token cache: " + err.Error())
+		}
+	}
+}
+
 func EnsureBillingAdjustment(params BillingAdjustmentParams) (*BillingAdjustment, error) {
+	unlock := lockBillingAdjustmentWrite()
+	defer unlock()
 	params.AdjustmentKey = strings.TrimSpace(params.AdjustmentKey)
 	if params.AdjustmentKey == "" {
 		return nil, errors.New("billing adjustment key is required")
@@ -124,7 +466,7 @@ func ApplyBillingAdjustment(adjustmentID int64) error {
 		return errors.New("invalid billing adjustment id")
 	}
 	var applied *BillingAdjustment
-	err := DB.Transaction(func(tx *gorm.DB) error {
+	err := runBillingTransaction(func(tx *gorm.DB) error {
 		var adjustment BillingAdjustment
 		if err := lockForUpdate(tx).Where("id = ?", adjustmentID).First(&adjustment).Error; err != nil {
 			return err
@@ -332,8 +674,8 @@ func FindPendingBillingAdjustments(limit int) ([]*BillingAdjustment, error) {
 	}
 	var adjustments []*BillingAdjustment
 	now := common.GetTimestamp()
-	err := DB.Where("(status = ? OR (status = ? AND cache_synced = ?)) AND next_retry_at <= ?",
-		BillingAdjustmentStatusPending, BillingAdjustmentStatusSucceeded, false, now).
+	err := DB.Where("(status = ? OR status = ? OR (status = ? AND cache_synced = ?)) AND next_retry_at <= ?",
+		BillingAdjustmentStatusReserved, BillingAdjustmentStatusPending, BillingAdjustmentStatusSucceeded, false, now).
 		Order("next_retry_at, id").Limit(limit).Find(&adjustments).Error
 	return adjustments, err
 }
@@ -341,7 +683,18 @@ func FindPendingBillingAdjustments(limit int) ([]*BillingAdjustment, error) {
 func HasPendingBillingAdjustments() bool {
 	var count int64
 	if err := DB.Model(&BillingAdjustment{}).
-		Where("status = ? OR (status = ? AND cache_synced = ?)", BillingAdjustmentStatusPending, BillingAdjustmentStatusSucceeded, false).
+		Where("status = ? OR status = ? OR (status = ? AND cache_synced = ?)", BillingAdjustmentStatusReserved, BillingAdjustmentStatusPending, BillingAdjustmentStatusSucceeded, false).
+		Limit(1).Count(&count).Error; err != nil {
+		return false
+	}
+	return count > 0
+}
+
+func HasDueBillingAdjustments(now int64) bool {
+	var count int64
+	if err := DB.Model(&BillingAdjustment{}).
+		Where("(status = ? OR status = ? OR (status = ? AND cache_synced = ?)) AND next_retry_at <= ?",
+			BillingAdjustmentStatusReserved, BillingAdjustmentStatusPending, BillingAdjustmentStatusSucceeded, false, now).
 		Limit(1).Count(&count).Error; err != nil {
 		return false
 	}

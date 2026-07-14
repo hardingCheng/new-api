@@ -53,6 +53,7 @@ func TestMain(m *testing.M) {
 		&model.Channel{},
 		&model.TopUp{},
 		&model.UserSubscription{},
+		&model.SubscriptionPlan{},
 		&model.SystemTask{},
 		&model.SystemTaskLock{},
 		&model.BillingAdjustment{},
@@ -79,6 +80,7 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM channels")
 		model.DB.Exec("DELETE FROM top_ups")
 		model.DB.Exec("DELETE FROM user_subscriptions")
+		model.DB.Exec("DELETE FROM subscription_plans")
 		model.DB.Exec("DELETE FROM system_task_locks")
 		model.DB.Exec("DELETE FROM system_tasks")
 		model.DB.Exec("DELETE FROM billing_adjustments")
@@ -107,6 +109,7 @@ func setupConcurrentBillingFileDB(t *testing.T) {
 		&model.Log{},
 		&model.Channel{},
 		&model.UserSubscription{},
+		&model.SubscriptionPlan{},
 		&model.BillingAdjustment{},
 		&model.QuotaPoolAdjustment{},
 		&model.SubscriptionPreConsumeRecord{},
@@ -585,7 +588,7 @@ func TestBillingSessionRefundPersistsAndRefundsWalletOnce(t *testing.T) {
 			UserId:    userID,
 			TokenId:   tokenID,
 		},
-		funding:          &WalletFunding{userId: userID},
+		funding:          &WalletFunding{},
 		preConsumedQuota: preConsumed,
 		tokenConsumed:    preConsumed,
 	}
@@ -598,6 +601,246 @@ func TestBillingSessionRefundPersistsAndRefundsWalletOnce(t *testing.T) {
 	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).
 		Where("adjustment_key = ?", "relay-refund:session-refund-once").Count(&count).Error)
 	assert.Equal(t, int64(1), count)
+}
+
+func TestBillingSessionUsesDurableReservationForWalletSettlement(t *testing.T) {
+	truncate(t)
+	const userID, tokenID = 91, 91
+	seedUser(t, userID, 10000)
+	seedToken(t, tokenID, userID, "sk-durable-session", 10000)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	info := &relaycommon.RelayInfo{
+		RequestId:       "durable-wallet-session",
+		UserId:          userID,
+		TokenId:         tokenID,
+		TokenKey:        "sk-durable-session",
+		ForcePreConsume: true,
+	}
+	info.UserSetting.BillingPreference = "wallet_only"
+
+	session, apiErr := NewBillingSession(ctx, info, 2000)
+	require.Nil(t, apiErr)
+	require.NotNil(t, session)
+	assert.Equal(t, 8000, getUserQuota(t, userID))
+	assert.Equal(t, 8000, getTokenRemainQuota(t, tokenID))
+
+	var reserved model.BillingAdjustment
+	require.NoError(t, model.DB.Where("adjustment_key = ?", "relay-billing:"+info.RequestId).First(&reserved).Error)
+	assert.Equal(t, model.BillingAdjustmentStatusReserved, reserved.Status)
+	assert.Equal(t, -2000, reserved.FundingDelta)
+	assert.Equal(t, -2000, reserved.TokenDelta)
+
+	require.NoError(t, session.Settle(1500))
+	assert.Equal(t, 8500, getUserQuota(t, userID))
+	assert.Equal(t, 8500, getTokenRemainQuota(t, tokenID))
+	assert.Equal(t, 1500, getTokenUsedQuota(t, tokenID))
+	require.NoError(t, model.DB.First(&reserved, reserved.ID).Error)
+	assert.Equal(t, model.BillingAdjustmentStatusSucceeded, reserved.Status)
+	assert.Equal(t, -500, reserved.FundingDelta)
+	assert.Equal(t, -500, reserved.TokenDelta)
+}
+
+func TestAbandonedBillingReservationIsRefundedWhenDue(t *testing.T) {
+	truncate(t)
+	const userID, tokenID = 92, 92
+	seedUser(t, userID, 5000)
+	seedToken(t, tokenID, userID, "sk-abandoned-session", 5000)
+	reservation, err := model.ReserveBillingQuota(model.BillingReservationParams{
+		RequestID:           "abandoned-wallet-session",
+		UserID:              userID,
+		TokenID:             tokenID,
+		TokenKey:            "sk-abandoned-session",
+		TokenBillingEnabled: true,
+		FundingSource:       BillingSourceWallet,
+		Amount:              1200,
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).
+		Where("id = ?", reservation.Adjustment.ID).Update("next_retry_at", 0).Error)
+
+	summary := ProcessPendingBillingAdjustments(context.Background(), 10)
+	assert.Equal(t, 1, summary.Succeeded)
+	assert.Equal(t, 5000, getUserQuota(t, userID))
+	assert.Equal(t, 5000, getTokenRemainQuota(t, tokenID))
+	assert.Zero(t, getTokenUsedQuota(t, tokenID))
+	var adjustment model.BillingAdjustment
+	require.NoError(t, model.DB.First(&adjustment, reservation.Adjustment.ID).Error)
+	assert.Equal(t, model.BillingAdjustmentStatusSucceeded, adjustment.Status)
+}
+
+func TestBillingReservationFailureDoesNotPartiallyDeductToken(t *testing.T) {
+	truncate(t)
+	const userID, tokenID = 93, 93
+	seedUser(t, userID, 100)
+	seedToken(t, tokenID, userID, "sk-atomic-failure", 1000)
+
+	_, err := model.ReserveBillingQuota(model.BillingReservationParams{
+		RequestID:           "atomic-reservation-failure",
+		UserID:              userID,
+		TokenID:             tokenID,
+		TokenKey:            "sk-atomic-failure",
+		TokenBillingEnabled: true,
+		FundingSource:       BillingSourceWallet,
+		Amount:              200,
+	})
+	require.Error(t, err)
+	assert.Equal(t, 100, getUserQuota(t, userID))
+	assert.Equal(t, 1000, getTokenRemainQuota(t, tokenID))
+	assert.Zero(t, getTokenUsedQuota(t, tokenID))
+	var count int64
+	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).
+		Where("adjustment_key = ?", "relay-billing:atomic-reservation-failure").Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestBillingReservationExtensionFailureDoesNotDeductFunding(t *testing.T) {
+	truncate(t)
+	const userID, tokenID = 96, 96
+	seedUser(t, userID, 1000)
+	seedToken(t, tokenID, userID, "sk-extension-atomic", 150)
+	reservation, err := model.ReserveBillingQuota(model.BillingReservationParams{
+		RequestID:           "atomic-extension-failure",
+		UserID:              userID,
+		TokenID:             tokenID,
+		TokenKey:            "sk-extension-atomic",
+		TokenBillingEnabled: true,
+		FundingSource:       BillingSourceWallet,
+		Amount:              100,
+	})
+	require.NoError(t, err)
+
+	_, err = model.ExtendBillingReservation(reservation.Adjustment.ID, 100, true, false, "sk-extension-atomic")
+	require.Error(t, err)
+	assert.Equal(t, 900, getUserQuota(t, userID))
+	assert.Equal(t, 50, getTokenRemainQuota(t, tokenID))
+	assert.Equal(t, 100, getTokenUsedQuota(t, tokenID))
+	var adjustment model.BillingAdjustment
+	require.NoError(t, model.DB.First(&adjustment, reservation.Adjustment.ID).Error)
+	assert.Equal(t, -100, adjustment.FundingDelta)
+	assert.Equal(t, -100, adjustment.TokenDelta)
+}
+
+func TestSubscriptionReservationAndRefundShareOneDurableLifecycle(t *testing.T) {
+	truncate(t)
+	const userID, tokenID, subscriptionID, planID = 97, 97, 97, 97
+	seedUser(t, userID, 0)
+	seedToken(t, tokenID, userID, "sk-subscription-lifecycle", 5000)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:               planID,
+		Title:            "test plan",
+		Enabled:          true,
+		TotalAmount:      10000,
+		QuotaResetPeriod: model.SubscriptionResetNever,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.UserSubscription{
+		Id:          subscriptionID,
+		UserId:      userID,
+		PlanId:      planID,
+		AmountTotal: 10000,
+		Status:      "active",
+		StartTime:   time.Now().Add(-time.Hour).Unix(),
+		EndTime:     time.Now().Add(24 * time.Hour).Unix(),
+	}).Error)
+
+	reservation, err := model.ReserveBillingQuota(model.BillingReservationParams{
+		RequestID:             "subscription-durable-lifecycle",
+		UserID:                userID,
+		TokenID:               tokenID,
+		TokenKey:              "sk-subscription-lifecycle",
+		TokenBillingEnabled:   true,
+		FundingSource:         BillingSourceSubscription,
+		Amount:                1400,
+		SubscriptionModelName: "display-model",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, reservation.Subscription)
+	assert.Equal(t, int64(1400), getSubscriptionUsed(t, subscriptionID))
+	assert.Equal(t, 3600, getTokenRemainQuota(t, tokenID))
+
+	adjustment, err := model.FinalizeBillingReservation(reservation.Adjustment.ID, 0, true, true)
+	require.NoError(t, err)
+	require.NoError(t, model.ApplyBillingAdjustment(adjustment.ID))
+	assert.Zero(t, getSubscriptionUsed(t, subscriptionID))
+	assert.Equal(t, 5000, getTokenRemainQuota(t, tokenID))
+	assert.Zero(t, getTokenUsedQuota(t, tokenID))
+	var record model.SubscriptionPreConsumeRecord
+	require.NoError(t, model.DB.Where("request_id = ?", "subscription-durable-lifecycle").First(&record).Error)
+	assert.Equal(t, "refunded", record.Status)
+}
+
+func TestConcurrentBillingReservationDeductsSameRequestOnce(t *testing.T) {
+	setupConcurrentBillingFileDB(t)
+	const workers = 12
+	const userID, tokenID, amount = 94, 94, 1250
+	seedUser(t, userID, 10000)
+	seedToken(t, tokenID, userID, "sk-concurrent-reservation", 10000)
+
+	start := make(chan struct{})
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := model.ReserveBillingQuota(model.BillingReservationParams{
+				RequestID:           "concurrent-reservation-once",
+				UserID:              userID,
+				TokenID:             tokenID,
+				TokenKey:            "sk-concurrent-reservation",
+				TokenBillingEnabled: true,
+				FundingSource:       BillingSourceWallet,
+				Amount:              amount,
+			})
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	successes := 0
+	for err := range errs {
+		if err == nil {
+			successes++
+		}
+	}
+	assert.Greater(t, successes, 0)
+	assert.Equal(t, 10000-amount, getUserQuota(t, userID))
+	assert.Equal(t, 10000-amount, getTokenRemainQuota(t, tokenID))
+	assert.Equal(t, amount, getTokenUsedQuota(t, tokenID))
+	var count int64
+	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).
+		Where("adjustment_key = ?", "relay-billing:concurrent-reservation-once").Count(&count).Error)
+	assert.Equal(t, int64(1), count)
+}
+
+func TestBillingReconciliationDueChecksRespectBackoff(t *testing.T) {
+	truncate(t)
+	now := common.GetTimestamp()
+	adjustment, err := model.EnsureBillingAdjustment(model.BillingAdjustmentParams{
+		AdjustmentKey: "relay-settle:not-due-yet",
+		UserID:        95,
+		FundingSource: BillingSourceWallet,
+		FundingDelta:  10,
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).
+		Where("id = ?", adjustment.ID).Update("next_retry_at", now+3600).Error)
+	pool, err := model.EnsureQuotaPoolAdjustment("pool:not-due-yet", "pool:key", 10)
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.QuotaPoolAdjustment{}).
+		Where("id = ?", pool.ID).Update("next_retry_at", now+3600).Error)
+
+	assert.True(t, model.HasPendingBillingAdjustments())
+	assert.True(t, model.HasPendingQuotaPoolAdjustments())
+	assert.False(t, model.HasDueBillingAdjustments(now))
+	assert.False(t, model.HasDueQuotaPoolAdjustments(now))
+	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).
+		Where("id = ?", adjustment.ID).Update("next_retry_at", now).Error)
+	require.NoError(t, model.DB.Model(&model.QuotaPoolAdjustment{}).
+		Where("id = ?", pool.ID).Update("next_retry_at", now).Error)
+	assert.True(t, model.HasDueBillingAdjustments(now))
+	assert.True(t, model.HasDueQuotaPoolAdjustments(now))
 }
 
 func TestApplySubscriptionRefundAdjustmentConcurrentWorkersRefundOnce(t *testing.T) {

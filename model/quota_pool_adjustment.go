@@ -116,6 +116,16 @@ func HasPendingQuotaPoolAdjustments() bool {
 	return count > 0
 }
 
+func HasDueQuotaPoolAdjustments(now int64) bool {
+	var count int64
+	if err := DB.Model(&QuotaPoolAdjustment{}).
+		Where("status = ? AND next_retry_at <= ?", QuotaPoolAdjustmentStatusPending, now).
+		Limit(1).Count(&count).Error; err != nil {
+		return false
+	}
+	return count > 0
+}
+
 func CleanupCompletedQuotaPoolAdjustments(olderThan int64, limit int) (int64, error) {
 	if olderThan <= 0 || limit <= 0 {
 		return 0, nil

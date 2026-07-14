@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -202,11 +203,7 @@ func SettleModelQuotaPool(info *relaycommon.RelayInfo, settlement ModelQuotaPool
 		}
 	}
 	if firstErr != nil {
-		// The original reservation is still valid. Keep it instead of letting the
-		// request safety defer roll back successful usage when even the durable
-		// adjustment row could not be created.
-		info.ModelQuotaPoolSettled = true
-		common.SysError("persist model quota pool settlement failed; keeping estimate: " + firstErr.Error())
+		common.SysError("persist or apply model quota pool settlement failed: " + firstErr.Error())
 		return firstErr
 	}
 	info.ModelQuotaPoolSettled = true
@@ -369,12 +366,27 @@ func queueModelQuotaPoolAdjustment(operationPrefix string, redisKey string, delt
 		}
 	}
 	if err != nil {
-		return err
+		if directErr := applyQuotaPoolAdjustmentDirect(operationKey, redisKey, delta); directErr == nil {
+			return nil
+		} else {
+			return errors.Join(err, directErr)
+		}
 	}
 	if err := applyQuotaPoolAdjustment(adjustment); err != nil {
 		common.SysError("model quota pool adjustment queued for retry: " + err.Error())
 	}
 	return nil
+}
+
+func applyQuotaPoolAdjustmentDirect(operationKey string, redisKey string, delta int64) error {
+	if !common.RedisEnabled || common.RDB == nil {
+		return errors.New("model quota pool Redis is unavailable")
+	}
+	digest := sha256.Sum256([]byte(operationKey))
+	markerKey := fmt.Sprintf("%s:adjustment:%x", modelQuotaPoolRedisPrefix, digest[:16])
+	_, err := modelQuotaPoolAdjustOnceScript.Run(context.Background(), common.RDB,
+		[]string{redisKey, markerKey}, delta).Result()
+	return err
 }
 
 func applyQuotaPoolAdjustment(adjustment *model.QuotaPoolAdjustment) error {
@@ -386,10 +398,7 @@ func applyQuotaPoolAdjustment(adjustment *model.QuotaPoolAdjustment) error {
 		model.MarkQuotaPoolAdjustmentFailed(adjustment.ID, err)
 		return err
 	}
-	digest := sha256.Sum256([]byte(adjustment.OperationKey))
-	markerKey := fmt.Sprintf("%s:adjustment:%x", modelQuotaPoolRedisPrefix, digest[:16])
-	if _, err := modelQuotaPoolAdjustOnceScript.Run(context.Background(), common.RDB,
-		[]string{adjustment.RedisKey, markerKey}, adjustment.Delta).Result(); err != nil {
+	if err := applyQuotaPoolAdjustmentDirect(adjustment.OperationKey, adjustment.RedisKey, adjustment.Delta); err != nil {
 		model.MarkQuotaPoolAdjustmentFailed(adjustment.ID, err)
 		return err
 	}
