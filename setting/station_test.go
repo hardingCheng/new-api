@@ -48,6 +48,16 @@ func TestStationConfigs(t *testing.T) {
 		t.Fatal("expected unconfigured provider to fall back to global")
 	}
 
+	if got := GetStationDomainByGroup("z"); got != "z.open-api.ai" {
+		t.Fatalf("expected z group to resolve to its station domain, got %q", got)
+	}
+	if got := GetStationDomainByGroup("hz"); got != "" {
+		t.Fatalf("expected group without station to resolve empty, got %q", got)
+	}
+	if got := GetStationDomainByGroup(""); got != "" {
+		t.Fatalf("expected empty group to resolve empty, got %q", got)
+	}
+
 	if err := UpdateStationConfigsByJsonString(""); err != nil {
 		t.Fatalf("empty string should reset configs: %v", err)
 	}

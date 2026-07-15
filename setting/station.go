@@ -83,6 +83,26 @@ func GetStationByHost(host string) *StationConfig {
 	return nil
 }
 
+// GetStationDomainByGroup 返回注册分组归属的分站域名;
+// 多个域名命中同一分组时取字典序最小的,分组无分站返回空串。
+func GetStationDomainByGroup(group string) string {
+	if group == "" {
+		return ""
+	}
+	stationConfigsMutex.RLock()
+	defer stationConfigsMutex.RUnlock()
+	domain := ""
+	for host, cfg := range stationConfigs {
+		if cfg.Group != group {
+			continue
+		}
+		if domain == "" || host < domain {
+			domain = host
+		}
+	}
+	return domain
+}
+
 // GetStationOAuthClient 返回某分站下指定 OAuth 提供方的凭据;
 // 分站未配置(或凭据不完整)返回 false,调用方回退全局凭据。
 func GetStationOAuthClient(host string, provider string) (StationOAuthClient, bool) {

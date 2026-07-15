@@ -136,19 +136,21 @@ func recordLoginAudit(user *model.User, c *gin.Context) {
 
 // setup session & cookies and then return user info
 func setupLogin(user *model.User, c *gin.Context) {
-	model.UpdateUserLastLoginAt(user.Id)
-	session := sessions.Default(c)
-	session.Set("id", user.Id)
-	session.Set("username", user.Username)
-	session.Set("role", user.Role)
-	session.Set("status", user.Status)
-	session.Set("group", user.Group)
-	err := session.Save()
-	if err != nil {
+	// 跨站登录:账号归属其他分站时不在本站建会话,发一次性令牌跳回归属分站
+	if redirect := crossStationLoginURL(user, c); redirect != "" {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "",
+			"success": true,
+			"data": map[string]any{
+				"cross_login_url": redirect,
+			},
+		})
+		return
+	}
+	if err := establishSession(user, c); err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserSessionSaveFailed)
 		return
 	}
-	recordLoginAudit(user, c)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "",
 		"success": true,
@@ -161,6 +163,21 @@ func setupLogin(user *model.User, c *gin.Context) {
 			"group":        user.Group,
 		},
 	})
+}
+
+func establishSession(user *model.User, c *gin.Context) error {
+	model.UpdateUserLastLoginAt(user.Id)
+	session := sessions.Default(c)
+	session.Set("id", user.Id)
+	session.Set("username", user.Username)
+	session.Set("role", user.Role)
+	session.Set("status", user.Status)
+	session.Set("group", user.Group)
+	if err := session.Save(); err != nil {
+		return err
+	}
+	recordLoginAudit(user, c)
+	return nil
 }
 
 func Logout(c *gin.Context) {

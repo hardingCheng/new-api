@@ -56,9 +56,15 @@ export function useAuthRedirect() {
    * @param redirectTo - Redirect path after login
    */
   const handleLoginSuccess = async (
-    userData?: { id?: number } | null,
+    userData?: { id?: number; cross_login_url?: string } | null,
     redirectTo?: string
   ) => {
+    // Account belongs to another station: hand the browser over to it
+    if (userData?.cross_login_url) {
+      window.location.href = userData.cross_login_url
+      return
+    }
+
     // Save user ID if available
     if (userData?.id) {
       saveUserId(userData.id)

@@ -184,6 +184,14 @@ function OAuthCallback() {
             }
             return
           }
+          // Account belongs to another station: hand the browser over to it
+          const crossLoginUrl = (
+            loginUser as { cross_login_url?: string } | null
+          )?.cross_login_url
+          if (crossLoginUrl) {
+            window.location.replace(crossLoginUrl)
+            return
+          }
           // Otherwise it's a login, use payload user if available
           if (loginUser) {
             useAuthStore.getState().auth.setUser(loginUser)

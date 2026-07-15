@@ -107,6 +107,14 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
         throw new Error('No user data received from login')
       }
 
+      // Account belongs to another station: hand the browser over to it
+      const crossLoginUrl = (userData as { cross_login_url?: string })
+        .cross_login_url
+      if (crossLoginUrl) {
+        window.location.href = crossLoginUrl
+        return
+      }
+
       // Update auth store
       auth.setUser(userData as User)
 
