@@ -60,13 +60,15 @@ type Channel struct {
 }
 
 type ChannelInfo struct {
-	IsMultiKey             bool                  `json:"is_multi_key"`                        // 是否多Key模式
-	MultiKeySize           int                   `json:"multi_key_size"`                      // 多Key模式下的Key数量
-	MultiKeyStatusList     map[int]int           `json:"multi_key_status_list"`               // key状态列表，key index -> status
-	MultiKeyDisabledReason map[int]string        `json:"multi_key_disabled_reason,omitempty"` // key禁用原因列表，key index -> reason
-	MultiKeyDisabledTime   map[int]int64         `json:"multi_key_disabled_time,omitempty"`   // key禁用时间列表，key index -> time
-	MultiKeyPollingIndex   int                   `json:"multi_key_polling_index"`             // 多Key模式下轮询的key索引
-	MultiKeyMode           constant.MultiKeyMode `json:"multi_key_mode"`
+	IsMultiKey                   bool                  `json:"is_multi_key"`                               // 是否多Key模式
+	MultiKeySize                 int                   `json:"multi_key_size"`                             // 多Key模式下的Key数量
+	MultiKeyStatusList           map[int]int           `json:"multi_key_status_list"`                      // key状态列表，key index -> status
+	MultiKeyDisabledReason       map[int]string        `json:"multi_key_disabled_reason,omitempty"`        // key禁用原因列表，key index -> reason
+	MultiKeyDisabledTime         map[int]int64         `json:"multi_key_disabled_time,omitempty"`          // key禁用时间列表，key index -> time
+	MultiKeyAutoRecoveryDisabled map[int]bool          `json:"multi_key_auto_recovery_disabled,omitempty"` // key是否禁止自动恢复
+	MultiKeyPollingIndex         int                   `json:"multi_key_polling_index"`                    // 多Key模式下轮询的key索引
+	MultiKeyMode                 constant.MultiKeyMode `json:"multi_key_mode"`
+	AutoRecoveryDisabled         bool                  `json:"auto_recovery_disabled,omitempty"` // 渠道是否禁止自动探测恢复
 }
 
 type ChannelSortOptions struct {
@@ -326,6 +328,10 @@ func (channel *Channel) SetOtherInfo(otherInfo map[string]interface{}) {
 		return
 	}
 	channel.OtherInfo = string(otherInfoBytes)
+}
+
+func (channel *Channel) IsAutoRecoveryDisabled() bool {
+	return channel != nil && channel.Status == common.ChannelStatusAutoDisabled && channel.ChannelInfo.AutoRecoveryDisabled
 }
 
 func (channel *Channel) GetTag() string {
@@ -658,13 +664,18 @@ func CleanupChannelPollingLocks() {
 	})
 }
 
-func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason string) bool {
+func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason string, disableAutoRecovery bool) bool {
 	keys := channel.GetKeys()
 	if len(keys) == 0 {
-		if channel.Status == status {
+		if channel.Status == status && (!disableAutoRecovery || channel.ChannelInfo.AutoRecoveryDisabled) {
 			return false
 		}
 		channel.Status = status
+		channel.ChannelInfo.AutoRecoveryDisabled = status != common.ChannelStatusEnabled && disableAutoRecovery
+		info := channel.GetOtherInfo()
+		info["status_reason"] = reason
+		info["status_time"] = common.GetTimestamp()
+		channel.SetOtherInfo(info)
 	} else {
 		keyIndex := -1
 		for i, key := range keys {
@@ -678,10 +689,11 @@ func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason
 				common.SysLog(fmt.Sprintf("failed to update multi-key status: channel_id=%d, using key not found", channel.Id))
 				return false
 			}
-			if channel.Status == status {
+			if channel.Status == status && (!disableAutoRecovery || channel.ChannelInfo.AutoRecoveryDisabled) {
 				return false
 			}
 			channel.Status = status
+			channel.ChannelInfo.AutoRecoveryDisabled = status != common.ChannelStatusEnabled && disableAutoRecovery
 			info := channel.GetOtherInfo()
 			info["status_reason"] = reason
 			info["status_time"] = common.GetTimestamp()
@@ -695,13 +707,14 @@ func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason
 		if savedStatus, ok := channel.ChannelInfo.MultiKeyStatusList[keyIndex]; ok {
 			currentStatus = savedStatus
 		}
-		if currentStatus == status {
+		if currentStatus == status && (!disableAutoRecovery || channel.ChannelInfo.MultiKeyAutoRecoveryDisabled[keyIndex]) {
 			return false
 		}
 		if status == common.ChannelStatusEnabled {
 			delete(channel.ChannelInfo.MultiKeyStatusList, keyIndex)
 			delete(channel.ChannelInfo.MultiKeyDisabledReason, keyIndex)
 			delete(channel.ChannelInfo.MultiKeyDisabledTime, keyIndex)
+			delete(channel.ChannelInfo.MultiKeyAutoRecoveryDisabled, keyIndex)
 		} else {
 			channel.ChannelInfo.MultiKeyStatusList[keyIndex] = status
 			if channel.ChannelInfo.MultiKeyDisabledReason == nil {
@@ -712,15 +725,29 @@ func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason
 			}
 			channel.ChannelInfo.MultiKeyDisabledReason[keyIndex] = reason
 			channel.ChannelInfo.MultiKeyDisabledTime[keyIndex] = common.GetTimestamp()
+			if disableAutoRecovery {
+				if channel.ChannelInfo.MultiKeyAutoRecoveryDisabled == nil {
+					channel.ChannelInfo.MultiKeyAutoRecoveryDisabled = make(map[int]bool)
+				}
+				channel.ChannelInfo.MultiKeyAutoRecoveryDisabled[keyIndex] = true
+			}
 		}
 		if !hasEnabledMultiKey(keys, channel.ChannelInfo.MultiKeyStatusList) {
 			channel.Status = common.ChannelStatusAutoDisabled
+			channel.ChannelInfo.AutoRecoveryDisabled = true
+			for index := range keys {
+				if !channel.ChannelInfo.MultiKeyAutoRecoveryDisabled[index] {
+					channel.ChannelInfo.AutoRecoveryDisabled = false
+					break
+				}
+			}
 			info := channel.GetOtherInfo()
 			info["status_reason"] = "All keys are disabled"
 			info["status_time"] = common.GetTimestamp()
 			channel.SetOtherInfo(info)
 		} else if status == common.ChannelStatusEnabled {
 			channel.Status = common.ChannelStatusEnabled
+			channel.ChannelInfo.AutoRecoveryDisabled = false
 		}
 	}
 	return true
@@ -740,6 +767,14 @@ func hasEnabledMultiKey(keys []string, statusList map[int]int) bool {
 }
 
 func UpdateChannelStatus(channelId int, usingKey string, status int, reason string) bool {
+	return updateChannelStatus(channelId, usingKey, status, reason, false)
+}
+
+func UpdateChannelStatusWithoutAutoRecovery(channelId int, usingKey string, status int, reason string) bool {
+	return updateChannelStatus(channelId, usingKey, status, reason, true)
+}
+
+func updateChannelStatus(channelId int, usingKey string, status int, reason string, disableAutoRecovery bool) bool {
 	channelStatusLock.Lock()
 	defer channelStatusLock.Unlock()
 
@@ -752,11 +787,11 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 		}
 		beforeStatus := channel.Status
 		if channel.ChannelInfo.IsMultiKey {
-			if !handlerMultiKeyUpdate(&channel, usingKey, status, reason) {
+			if !handlerMultiKeyUpdate(&channel, usingKey, status, reason, disableAutoRecovery) {
 				return nil
 			}
 		} else {
-			if channel.Status == status {
+			if channel.Status == status && (!disableAutoRecovery || channel.ChannelInfo.AutoRecoveryDisabled) {
 				return nil
 			}
 			info := channel.GetOtherInfo()
@@ -764,6 +799,7 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			info["status_time"] = common.GetTimestamp()
 			channel.SetOtherInfo(info)
 			channel.Status = status
+			channel.ChannelInfo.AutoRecoveryDisabled = status != common.ChannelStatusEnabled && disableAutoRecovery
 		}
 		if err := tx.Omit("key").Save(&channel).Error; err != nil {
 			return err

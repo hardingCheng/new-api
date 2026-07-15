@@ -381,7 +381,7 @@ func ShouldTripChannelBreakerWithRule(c *gin.Context, channelError types.Channel
 
 // shouldInstantDisableChannel 判断错误是否命中"立即禁用"规则。
 // 立即禁用为开箱即用的内置保护，独立于全局熔断开关。
-// 命中条件（AND 语义）：InstantDisableEnabled && 状态码命中 && 关键词命中。
+// 命中条件：InstantDisableEnabled && 状态码命中 &&（上游额度错误码命中 || 关键词命中）。
 // 关键安全约束：
 //   - 我方预扣费 / 用户额度不足等错误均带 skipRetry，绝不能据此禁用上游渠道；
 //   - 余额耗尽是终态（充值前会持续 403），无视渠道 AutoBan 设置强制禁用，
@@ -407,11 +407,17 @@ func shouldInstantDisableChannel(c *gin.Context, channelError types.ChannelError
 	if !rule.InstantDisableEnabled || shouldExcludeChannelBreakerByRule(c, rule) {
 		return false, "", emptyRule
 	}
-	// AND 语义：状态码与关键词都必须配置且都命中，避免误伤
-	if len(rule.InstantDisableStatusCodes) == 0 || len(rule.InstantDisableKeywords) == 0 {
+	if len(rule.InstantDisableStatusCodes) == 0 {
 		return false, "", emptyRule
 	}
 	if !shouldMatchStatusCodeRanges(rule.InstantDisableStatusCodes, err.StatusCode) {
+		return false, "", emptyRule
+	}
+	if isUpstreamQuotaError(err) {
+		reason := fmt.Sprintf("命中立即禁用规则「%s」(status_code=%d, error_code=%s)", rule.Name, err.StatusCode, err.GetErrorCode())
+		return true, reason, rule
+	}
+	if len(rule.InstantDisableKeywords) == 0 {
 		return false, "", emptyRule
 	}
 	matched, keywords := AcSearch(strings.ToLower(err.Error()), rule.InstantDisableKeywords, true)
@@ -426,14 +432,20 @@ func shouldInstantDisableChannel(c *gin.Context, channelError types.ChannelError
 // 仅当 errorType 为我方 NewAPIError 且错误码是内部额度码时才成立，
 // 以避免误伤上游（尤其上游本身是 new-api）返回的同名错误码。
 func isOwnQuotaError(err *types.NewAPIError) bool {
-	if err.GetErrorType() != types.ErrorTypeNewAPIError {
-		return false
-	}
-	switch err.GetErrorCode() {
+	return err != nil && err.GetErrorType() == types.ErrorTypeNewAPIError && isQuotaErrorCode(err.GetErrorCode())
+}
+
+func isUpstreamQuotaError(err *types.NewAPIError) bool {
+	return err != nil && err.GetErrorType() != types.ErrorTypeNewAPIError && isQuotaErrorCode(err.GetErrorCode())
+}
+
+func isQuotaErrorCode(errorCode types.ErrorCode) bool {
+	switch errorCode {
 	case types.ErrorCodeInsufficientUserQuota, types.ErrorCodePreConsumeTokenQuotaFailed:
 		return true
+	default:
+		return false
 	}
-	return false
 }
 
 // HandleInstantDisableChannel 命中立即禁用规则时执行：单 Key 渠道禁用渠道，
@@ -448,7 +460,7 @@ func HandleInstantDisableChannel(c *gin.Context, channelError types.ChannelError
 	// UpdateChannelStatus 会在最后一个可用 Key 被禁用后自动禁用整个渠道。
 	disableTarget := instantDisableTarget(channelError)
 	markChannelBreakerTargetQuarantined(disableTarget)
-	DisableChannel(disableTarget, reason)
+	DisableChannelWithoutAutoRecovery(disableTarget, reason)
 
 	model.RecordChannelBreakerLog(&model.ChannelBreakerLog{
 		ChannelId:  channelError.ChannelId,
@@ -965,11 +977,12 @@ func runtimeRuleFromConfig(rule common.ChannelBreakerRule, fallback channelBreak
 }
 
 // defaultInstantDisableKeywordList 内置"立即禁用"关键词：上游渠道账号余额耗尽时的典型返回。
-// 与状态码 403 取 AND 语义，开箱即用，无需管理员配置。
+// 供未返回结构化额度错误码的上游与状态码 403 配合兜底，开箱即用。
 var defaultInstantDisableKeywordList = []string{
 	"insufficient account balance",
 	"insufficient user quota",
 	"insufficient_user_quota",
+	"用户额度不足",
 	"预扣费额度失败",
 }
 

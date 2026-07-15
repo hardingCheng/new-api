@@ -85,6 +85,14 @@ func buildChannelBreakerBarkBody(ctx ChannelBreakerNotificationContext) string {
 
 // disable & notify
 func DisableChannel(channelError types.ChannelError, reason string) {
+	disableChannel(channelError, reason, false)
+}
+
+func DisableChannelWithoutAutoRecovery(channelError types.ChannelError, reason string) {
+	disableChannel(channelError, reason, true)
+}
+
+func disableChannel(channelError types.ChannelError, reason string, disableAutoRecovery bool) {
 	common.SysLog(fmt.Sprintf("通道「%s」（#%d）准备禁用，原因：%s", channelError.ChannelName, channelError.ChannelId, common.LocalLogPreview(reason)))
 
 	if !channelError.AutoBan {
@@ -92,20 +100,33 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 		return
 	}
 
-	success := model.UpdateChannelStatus(channelError.ChannelId, channelError.UsingKey, common.ChannelStatusAutoDisabled, reason)
+	var success bool
+	if disableAutoRecovery {
+		success = model.UpdateChannelStatusWithoutAutoRecovery(channelError.ChannelId, channelError.UsingKey, common.ChannelStatusAutoDisabled, reason)
+	} else {
+		success = model.UpdateChannelStatus(channelError.ChannelId, channelError.UsingKey, common.ChannelStatusAutoDisabled, reason)
+	}
 	if success {
 		ClearChannelBreaker(channelError)
 		subject := fmt.Sprintf("通道「%s」（#%d）已被禁用", channelError.ChannelName, channelError.ChannelId)
 		content := fmt.Sprintf("通道「%s」（#%d）已被禁用，原因：%s", channelError.ChannelName, channelError.ChannelId, reason)
+		if channelError.IsMultiKey && channelError.UsingKey != "" {
+			keyHash := ChannelBreakerKeyHash(channelError.UsingKey)
+			subject = fmt.Sprintf("通道「%s」（#%d）的故障密钥已被禁用", channelError.ChannelName, channelError.ChannelId)
+			content = fmt.Sprintf("通道「%s」（#%d）的故障密钥已被禁用，密钥哈希：%s，原因：%s", channelError.ChannelName, channelError.ChannelId, keyHash, reason)
+		}
+		if disableAutoRecovery {
+			content += "；已关闭自动探测恢复，请处理后手动启用"
+		}
 		NotifyRootUser(formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), subject, content)
-		notifyChannelDisabledBark(channelError, reason)
+		notifyChannelDisabledBark(channelError, reason, disableAutoRecovery)
 	}
 }
 
 // notifyChannelDisabledBark 渠道被自动禁用时发送系统级 Bark 严重告警（独立于 NotifyRootUser，
 // 用于"渠道没钱被禁用"这类需要立即感知的场景）。受 BarkAlertEnabled 与 ChannelDisableAlertEnabled
-// 控制，并按 ChannelDisableAlertCooldownSecond 做每渠道去重。仅在真正发生状态变更时调用。
-func notifyChannelDisabledBark(channelError types.ChannelError, reason string) {
+// 控制，并按 ChannelDisableAlertCooldownSecond 做每渠道去重。仅在禁用状态或终态标记真正变更时调用。
+func notifyChannelDisabledBark(channelError types.ChannelError, reason string, disableAutoRecovery bool) {
 	monitorSetting := operation_setting.GetMonitorSetting()
 	if !monitorSetting.BarkAlertEnabled || !monitorSetting.ChannelDisableAlertEnabled {
 		return
@@ -114,7 +135,7 @@ func notifyChannelDisabledBark(channelError types.ChannelError, reason string) {
 		return
 	}
 	subject := fmt.Sprintf("通道「%s」（#%d）已被禁用", channelError.ChannelName, channelError.ChannelId)
-	body := buildChannelDisabledBarkBody(channelError, reason)
+	body := buildChannelDisabledBarkBody(channelError, reason, disableAutoRecovery)
 	if err := SendSystemBarkNotify(subject, body, "new-api 渠道禁用告警", "critical", monitorSetting.ChannelDisableAlertSound); err != nil {
 		common.SysError(fmt.Sprintf("failed to send channel disabled bark notify for channel %d: %s", channelError.ChannelId, err.Error()))
 	}
@@ -144,12 +165,18 @@ func allowChannelDisableNotify(channelId int, cooldownSecond int) bool {
 	return true
 }
 
-func buildChannelDisabledBarkBody(channelError types.ChannelError, reason string) string {
+func buildChannelDisabledBarkBody(channelError types.ChannelError, reason string, disableAutoRecovery bool) string {
 	channelTypeName := constant.GetChannelTypeName(channelError.ChannelType)
 	lines := []string{
 		fmt.Sprintf("渠道：%s (#%d)", channelError.ChannelName, channelError.ChannelId),
 		fmt.Sprintf("类型：%s (%d)", channelTypeName, channelError.ChannelType),
 		fmt.Sprintf("原因：%s", reason),
+	}
+	if channelError.IsMultiKey && channelError.UsingKey != "" {
+		lines = append(lines, fmt.Sprintf("密钥哈希：%s", ChannelBreakerKeyHash(channelError.UsingKey)))
+	}
+	if disableAutoRecovery {
+		lines = append(lines, "自动恢复：已关闭（请处理后手动启用）")
 	}
 	return strings.Join(lines, "\n")
 }
