@@ -215,8 +215,8 @@ func RequestEpay(c *gin.Context) {
 		return
 	}
 
-	callBackAddress := service.GetCallbackAddress()
-	returnUrl, _ := url.Parse(paymentReturnPath("/console/topup"))
+	callBackAddress := service.GetCallbackAddress(c.Request.Host)
+	returnUrl, _ := url.Parse(paymentReturnPath(c.Request.Host, "/console/topup"))
 	notifyUrl, _ := url.Parse(callBackAddress + "/api/user/epay/notify")
 	tradeNo := fmt.Sprintf("%s%d", common.GetRandomString(6), time.Now().Unix())
 	tradeNo = fmt.Sprintf("USR%dNO%s", id, tradeNo)

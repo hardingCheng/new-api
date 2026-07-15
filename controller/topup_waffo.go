@@ -243,12 +243,12 @@ func RequestWaffoPay(c *gin.Context) {
 		return
 	}
 
-	callbackAddr := service.GetCallbackAddress()
+	callbackAddr := service.GetCallbackAddress(c.Request.Host)
 	notifyUrl := callbackAddr + "/api/waffo/webhook"
 	if setting.WaffoNotifyUrl != "" {
 		notifyUrl = setting.WaffoNotifyUrl
 	}
-	returnUrl := paymentReturnPath("/console/topup?show_history=true")
+	returnUrl := paymentReturnPath(c.Request.Host, "/console/topup?show_history=true")
 	if setting.WaffoReturnUrl != "" {
 		returnUrl = setting.WaffoReturnUrl
 	}
