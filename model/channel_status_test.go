@@ -25,19 +25,96 @@ func TestHandlerMultiKeyUpdateIsIsolatedAndIdempotent(t *testing.T) {
 		},
 	}
 
-	require.True(t, handlerMultiKeyUpdate(channel, "key-a", common.ChannelStatusAutoDisabled, "balance exhausted"))
+	require.True(t, handlerMultiKeyUpdate(channel, "key-a", common.ChannelStatusAutoDisabled, "balance exhausted", false))
 	require.Equal(t, common.ChannelStatusEnabled, channel.Status)
 	require.Equal(t, common.ChannelStatusAutoDisabled, channel.ChannelInfo.MultiKeyStatusList[0])
 
-	require.False(t, handlerMultiKeyUpdate(channel, "key-a", common.ChannelStatusAutoDisabled, "duplicate"))
+	require.False(t, handlerMultiKeyUpdate(channel, "key-a", common.ChannelStatusAutoDisabled, "duplicate", false))
 
-	require.True(t, handlerMultiKeyUpdate(channel, "key-b", common.ChannelStatusAutoDisabled, "balance exhausted"))
+	require.True(t, handlerMultiKeyUpdate(channel, "key-b", common.ChannelStatusAutoDisabled, "balance exhausted", false))
 	require.Equal(t, common.ChannelStatusAutoDisabled, channel.Status)
 
-	require.True(t, handlerMultiKeyUpdate(channel, "key-a", common.ChannelStatusEnabled, ""))
+	require.True(t, handlerMultiKeyUpdate(channel, "key-a", common.ChannelStatusEnabled, "", false))
 	require.Equal(t, common.ChannelStatusEnabled, channel.Status)
 	_, disabled := channel.ChannelInfo.MultiKeyStatusList[0]
 	require.False(t, disabled)
+}
+
+func TestUpdateChannelStatusWithoutAutoRecoveryPersistsUntilManualEnable(t *testing.T) {
+	setupChannelStatusTest(t)
+	channel := &Channel{
+		Type:   1,
+		Name:   "terminal-disabled-channel",
+		Key:    "key-a",
+		Status: common.ChannelStatusEnabled,
+	}
+	require.NoError(t, DB.Create(channel).Error)
+
+	require.True(t, UpdateChannelStatusWithoutAutoRecovery(
+		channel.Id, "", common.ChannelStatusAutoDisabled, "upstream quota exhausted"))
+
+	var disabled Channel
+	require.NoError(t, DB.First(&disabled, channel.Id).Error)
+	require.True(t, disabled.IsAutoRecoveryDisabled())
+
+	require.True(t, UpdateChannelStatus(channel.Id, "", common.ChannelStatusEnabled, "manual recovery"))
+
+	var enabled Channel
+	require.NoError(t, DB.First(&enabled, channel.Id).Error)
+	require.Equal(t, common.ChannelStatusEnabled, enabled.Status)
+	require.False(t, enabled.ChannelInfo.AutoRecoveryDisabled)
+	require.False(t, enabled.IsAutoRecoveryDisabled())
+}
+
+func TestMultiKeyAutoRecoveryStopsOnlyWhenEveryKeyIsTerminal(t *testing.T) {
+	setupChannelStatusTest(t)
+
+	terminalChannel := &Channel{
+		Type:   1,
+		Name:   "terminal-multi-key",
+		Key:    "key-a\nkey-b",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: ChannelInfo{
+			IsMultiKey:   true,
+			MultiKeySize: 2,
+		},
+	}
+	require.NoError(t, DB.Create(terminalChannel).Error)
+	require.True(t, UpdateChannelStatusWithoutAutoRecovery(
+		terminalChannel.Id, "key-a", common.ChannelStatusAutoDisabled, "upstream quota exhausted"))
+
+	var firstKeyDisabled Channel
+	require.NoError(t, DB.First(&firstKeyDisabled, terminalChannel.Id).Error)
+	require.Equal(t, common.ChannelStatusEnabled, firstKeyDisabled.Status)
+	require.False(t, firstKeyDisabled.IsAutoRecoveryDisabled())
+
+	require.True(t, UpdateChannelStatusWithoutAutoRecovery(
+		terminalChannel.Id, "key-b", common.ChannelStatusAutoDisabled, "upstream quota exhausted"))
+
+	var allKeysTerminal Channel
+	require.NoError(t, DB.First(&allKeysTerminal, terminalChannel.Id).Error)
+	require.True(t, allKeysTerminal.IsAutoRecoveryDisabled())
+
+	mixedChannel := &Channel{
+		Type:   1,
+		Name:   "mixed-multi-key",
+		Key:    "key-a\nkey-b",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: ChannelInfo{
+			IsMultiKey:   true,
+			MultiKeySize: 2,
+		},
+	}
+	require.NoError(t, DB.Create(mixedChannel).Error)
+	require.True(t, UpdateChannelStatusWithoutAutoRecovery(
+		mixedChannel.Id, "key-a", common.ChannelStatusAutoDisabled, "upstream quota exhausted"))
+	require.True(t, UpdateChannelStatus(
+		mixedChannel.Id, "key-b", common.ChannelStatusAutoDisabled, "temporary upstream failure"))
+
+	var mixedDisabled Channel
+	require.NoError(t, DB.First(&mixedDisabled, mixedChannel.Id).Error)
+	require.Equal(t, common.ChannelStatusAutoDisabled, mixedDisabled.Status)
+	require.False(t, mixedDisabled.IsAutoRecoveryDisabled())
 }
 
 func TestUpdateChannelStatusPersistsMultiKeyIsolation(t *testing.T) {

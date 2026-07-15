@@ -784,6 +784,28 @@ func TestBuildChannelBreakerBarkBodyIncludesRequestDetails(t *testing.T) {
 	require.Contains(t, body, "原因：upstream returned 429")
 }
 
+func TestBuildChannelDisabledBarkBodyIncludesTerminalRecoveryState(t *testing.T) {
+	channelError := types.ChannelError{
+		ChannelId:   99,
+		ChannelType: constant.ChannelTypeOpenAI,
+		ChannelName: "quota-exhausted",
+	}
+
+	body := buildChannelDisabledBarkBody(channelError, "upstream quota exhausted", true)
+
+	require.Contains(t, body, "渠道：quota-exhausted (#99)")
+	require.Contains(t, body, "原因：upstream quota exhausted")
+	require.Contains(t, body, "自动恢复：已关闭（请处理后手动启用）")
+
+	recoverableBody := buildChannelDisabledBarkBody(channelError, "temporary upstream failure", false)
+	require.NotContains(t, recoverableBody, "自动恢复：已关闭")
+
+	channelError.IsMultiKey = true
+	channelError.UsingKey = "key-a"
+	multiKeyBody := buildChannelDisabledBarkBody(channelError, "upstream quota exhausted", true)
+	require.Contains(t, multiKeyBody, "密钥哈希："+ChannelBreakerKeyHash("key-a"))
+}
+
 func TestLowBalanceThresholdQuotaUsesCNYThreshold(t *testing.T) {
 	oldQuotaPerUnit := common.QuotaPerUnit
 	oldExchangeRate := operation_setting.USDExchangeRate
@@ -891,6 +913,62 @@ func TestInstantDisableBuiltinDefault(t *testing.T) {
 	}, http.StatusForbidden)
 	should, _, _ = shouldInstantDisableChannel(c, channelError, upstreamNewApiErr)
 	require.True(t, should)
+}
+
+func TestInstantDisableBuiltinDefaultDistinguishesChineseQuotaErrorSource(t *testing.T) {
+	common.SetChannelBreakerEnabled(false)
+	common.SetChannelBreakerRules(nil)
+	disableRedisForBreakerTest(t)
+
+	c := testBreakerContext("/v1/chat/completions")
+	channelError := types.ChannelError{ChannelId: 3002, UsingKey: "key-a", AutoBan: false}
+	message := "用户额度不足, 剩余额度: ＄0.000000"
+
+	upstreamErr := types.WithOpenAIError(types.OpenAIError{
+		Message: message,
+		Type:    string(types.ErrorCodeInsufficientUserQuota),
+		Code:    string(types.ErrorCodeInsufficientUserQuota),
+	}, http.StatusForbidden)
+	should, reason, rule := shouldInstantDisableChannel(c, channelError, upstreamErr)
+	require.True(t, should)
+	require.Contains(t, reason, "error_code=insufficient_user_quota")
+	require.Equal(t, "global-default", rule.Id)
+
+	upstreamStructuredErr := types.WithOpenAIError(types.OpenAIError{
+		Message: "billing rejected by upstream",
+		Type:    string(types.ErrorCodeInsufficientUserQuota),
+		Code:    string(types.ErrorCodeInsufficientUserQuota),
+	}, http.StatusForbidden)
+	should, _, _ = shouldInstantDisableChannel(c, channelError, upstreamStructuredErr)
+	require.True(t, should)
+
+	upstreamUnstructuredErr := types.WithOpenAIError(types.OpenAIError{
+		Message: message,
+		Type:    "upstream_error",
+		Code:    "unknown_error",
+	}, http.StatusForbidden)
+	should, reason, _ = shouldInstantDisableChannel(c, channelError, upstreamUnstructuredErr)
+	require.True(t, should)
+	require.Contains(t, reason, "keyword=用户额度不足")
+
+	ownQuotaErr := types.NewErrorWithStatusCode(
+		errors.New(message), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
+		types.ErrOptionWithSkipRetry())
+	should, _, _ = shouldInstantDisableChannel(c, channelError, ownQuotaErr)
+	require.False(t, should)
+
+	ownQuotaWithoutSkipRetry := types.NewErrorWithStatusCode(
+		errors.New(message), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden)
+	should, _, _ = shouldInstantDisableChannel(c, channelError, ownQuotaWithoutSkipRetry)
+	require.False(t, should)
+
+	upstreamNonForbiddenErr := types.WithOpenAIError(types.OpenAIError{
+		Message: message,
+		Type:    string(types.ErrorCodeInsufficientUserQuota),
+		Code:    string(types.ErrorCodeInsufficientUserQuota),
+	}, http.StatusTooManyRequests)
+	should, _, _ = shouldInstantDisableChannel(c, channelError, upstreamNonForbiddenErr)
+	require.False(t, should)
 }
 
 func TestInstantDisableTriggersOnFirstHit(t *testing.T) {

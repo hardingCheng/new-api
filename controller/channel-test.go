@@ -1023,6 +1023,9 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 func selectChannelsForAutomaticTest(channels []*model.Channel, mode string) []*model.Channel {
 	selected := make([]*model.Channel, 0, len(channels))
 	for _, channel := range channels {
+		if channel.IsAutoRecoveryDisabled() {
+			continue
+		}
 		if channel.Status == common.ChannelStatusManuallyDisabled {
 			continue
 		}
@@ -1112,7 +1115,7 @@ func retestRecoverableChannels(ctx context.Context) error {
 	channelByID := make(map[int]*model.Channel, len(channels))
 	for _, channel := range channels {
 		channelByID[channel.Id] = channel
-		if channel.Status != common.ChannelStatusAutoDisabled {
+		if channel.Status != common.ChannelStatusAutoDisabled || channel.IsAutoRecoveryDisabled() {
 			continue
 		}
 		result := testChannelAnyModel(ctx, channel, testUserID)
