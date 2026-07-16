@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,8 +32,12 @@ type ChannelBreakerNotificationContext struct {
 	StatusCode   int
 }
 
-func formatNotifyType(channelId int, status int) string {
-	return fmt.Sprintf("%s_%d_%d", dto.NotifyTypeChannelUpdate, channelId, status)
+func formatNotifyType(channelId int, status int, usingKeys ...string) string {
+	notifyType := fmt.Sprintf("%s_%d_%d", dto.NotifyTypeChannelUpdate, channelId, status)
+	if len(usingKeys) > 0 && usingKeys[0] != "" {
+		notifyType += "_" + ChannelBreakerKeyHash(usingKeys[0])
+	}
+	return notifyType
 }
 
 func NotifyChannelBreakerOpen(ctx ChannelBreakerNotificationContext) {
@@ -47,7 +52,7 @@ func NotifyChannelBreakerOpen(ctx ChannelBreakerNotificationContext) {
 			common.SysError(fmt.Sprintf("failed to send channel breaker bark notify for channel %d: %s", channelError.ChannelId, err.Error()))
 		}
 	}
-	NotifyRootUser(formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), subject, content)
+	NotifyRootUser(formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled, channelError.UsingKey), subject, content)
 }
 
 func buildChannelBreakerBarkBody(ctx ChannelBreakerNotificationContext) string {
@@ -118,7 +123,7 @@ func disableChannel(channelError types.ChannelError, reason string, disableAutoR
 		if disableAutoRecovery {
 			content += "；已关闭自动探测恢复，请处理后手动启用"
 		}
-		NotifyRootUser(formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), subject, content)
+		NotifyRootUser(formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled, channelError.UsingKey), subject, content)
 		notifyChannelDisabledBark(channelError, reason, disableAutoRecovery)
 	}
 }
@@ -131,7 +136,7 @@ func notifyChannelDisabledBark(channelError types.ChannelError, reason string, d
 	if !monitorSetting.BarkAlertEnabled || !monitorSetting.ChannelDisableAlertEnabled {
 		return
 	}
-	if !allowChannelDisableNotify(channelError.ChannelId, monitorSetting.ChannelDisableAlertCooldownSecond) {
+	if !allowChannelDisableNotify(channelError, monitorSetting.ChannelDisableAlertCooldownSecond) {
 		return
 	}
 	subject := fmt.Sprintf("通道「%s」（#%d）已被禁用", channelError.ChannelName, channelError.ChannelId)
@@ -141,27 +146,31 @@ func notifyChannelDisabledBark(channelError types.ChannelError, reason string, d
 	}
 }
 
-// allowChannelDisableNotify 判断该渠道是否已过冷却窗口，过则记录本次时间并放行。
-func allowChannelDisableNotify(channelId int, cooldownSecond int) bool {
+// allowChannelDisableNotify 判断该渠道或多 Key 渠道中的指定 Key 是否已过冷却窗口。
+func allowChannelDisableNotify(channelError types.ChannelError, cooldownSecond int) bool {
 	if cooldownSecond <= 0 {
 		return true
 	}
+	dedupKey := strconv.Itoa(channelError.ChannelId)
+	if channelError.IsMultiKey && channelError.UsingKey != "" {
+		dedupKey += ":" + ChannelBreakerKeyHash(channelError.UsingKey)
+	}
 	if channelBreakerRedisEnabled() {
-		key := fmt.Sprintf("channel_disable_notify:%d", channelId)
+		key := "channel_disable_notify:" + dedupKey
 		allowed, err := common.RDB.SetNX(context.Background(), key, "1", time.Duration(cooldownSecond)*time.Second).Result()
 		if err == nil {
 			return allowed
 		}
-		common.SysError(fmt.Sprintf("failed to deduplicate channel disable notification for channel %d: %s", channelId, err.Error()))
+		common.SysError(fmt.Sprintf("failed to deduplicate channel disable notification for channel %d: %s", channelError.ChannelId, err.Error()))
 	}
 	now := time.Now()
 	cooldown := time.Duration(cooldownSecond) * time.Second
-	if last, ok := channelDisableNotifyMemory.Load(channelId); ok {
+	if last, ok := channelDisableNotifyMemory.Load(dedupKey); ok {
 		if lastTime, ok := last.(time.Time); ok && now.Sub(lastTime) < cooldown {
 			return false
 		}
 	}
-	channelDisableNotifyMemory.Store(channelId, now)
+	channelDisableNotifyMemory.Store(dedupKey, now)
 	return true
 }
 
@@ -188,7 +197,7 @@ func EnableChannel(channelId int, usingKey string, channelName string) {
 		ClearChannelBreaker(types.ChannelError{ChannelId: channelId, UsingKey: usingKey})
 		subject := fmt.Sprintf("通道「%s」（#%d）已被启用", channelName, channelId)
 		content := fmt.Sprintf("通道「%s」（#%d）已被启用", channelName, channelId)
-		NotifyRootUser(formatNotifyType(channelId, common.ChannelStatusEnabled), subject, content)
+		NotifyRootUser(formatNotifyType(channelId, common.ChannelStatusEnabled, usingKey), subject, content)
 	}
 }
 

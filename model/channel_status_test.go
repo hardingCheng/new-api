@@ -117,6 +117,71 @@ func TestMultiKeyAutoRecoveryStopsOnlyWhenEveryKeyIsTerminal(t *testing.T) {
 	require.False(t, mixedDisabled.IsAutoRecoveryDisabled())
 }
 
+func TestRecalculateMultiKeyStatusUsesRecoverableKeyState(t *testing.T) {
+	tests := []struct {
+		name                 string
+		statusList           map[int]int
+		autoRecoveryDisabled map[int]bool
+		expectedStatus       int
+		expectedSkipRecovery bool
+	}{
+		{
+			name:                 "all terminal",
+			statusList:           map[int]int{0: common.ChannelStatusAutoDisabled, 1: common.ChannelStatusAutoDisabled},
+			autoRecoveryDisabled: map[int]bool{0: true, 1: true},
+			expectedStatus:       common.ChannelStatusAutoDisabled,
+			expectedSkipRecovery: true,
+		},
+		{
+			name:                 "one recoverable",
+			statusList:           map[int]int{0: common.ChannelStatusAutoDisabled, 1: common.ChannelStatusAutoDisabled},
+			autoRecoveryDisabled: map[int]bool{0: true},
+			expectedStatus:       common.ChannelStatusAutoDisabled,
+			expectedSkipRecovery: false,
+		},
+		{
+			name:                 "terminal and manual",
+			statusList:           map[int]int{0: common.ChannelStatusAutoDisabled, 1: common.ChannelStatusManuallyDisabled},
+			autoRecoveryDisabled: map[int]bool{0: true},
+			expectedStatus:       common.ChannelStatusAutoDisabled,
+			expectedSkipRecovery: true,
+		},
+		{
+			name:                 "all manual",
+			statusList:           map[int]int{0: common.ChannelStatusManuallyDisabled, 1: common.ChannelStatusManuallyDisabled},
+			expectedStatus:       common.ChannelStatusManuallyDisabled,
+			expectedSkipRecovery: true,
+		},
+		{
+			name:                 "enabled key wins",
+			statusList:           map[int]int{0: common.ChannelStatusAutoDisabled},
+			autoRecoveryDisabled: map[int]bool{0: true, 1: true},
+			expectedStatus:       common.ChannelStatusEnabled,
+			expectedSkipRecovery: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			channel := &Channel{
+				Key:    "key-a\nkey-b",
+				Status: common.ChannelStatusEnabled,
+				ChannelInfo: ChannelInfo{
+					IsMultiKey:                   true,
+					MultiKeySize:                 2,
+					MultiKeyStatusList:           test.statusList,
+					MultiKeyAutoRecoveryDisabled: test.autoRecoveryDisabled,
+				},
+			}
+
+			channel.RecalculateMultiKeyStatus()
+
+			require.Equal(t, test.expectedStatus, channel.Status)
+			require.Equal(t, test.expectedSkipRecovery, channel.ChannelInfo.AutoRecoveryDisabled)
+		})
+	}
+}
+
 func TestUpdateChannelStatusPersistsMultiKeyIsolation(t *testing.T) {
 	setupChannelStatusTest(t)
 	channel := &Channel{
