@@ -188,10 +188,16 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		var bodyMap map[string]interface{}
 		if err := common.Unmarshal(cachedBody, &bodyMap); err == nil {
 			bodyMap["model"] = info.UpstreamModelName
-			if req, err := relaycommon.GetTaskRequest(c); err == nil && relaycommon.EffectiveTaskDuration(req) > 0 {
-				bodyMap["seconds"] = req.Seconds
-				if _, exists := bodyMap["duration"]; exists {
-					bodyMap["duration"] = req.Duration
+			if req, err := relaycommon.GetTaskRequest(c); err == nil {
+				duration := relaycommon.EffectiveTaskDuration(req)
+				if duration > 0 {
+					bodyMap["seconds"] = strconv.Itoa(duration)
+					_, hasDuration := bodyMap["duration"]
+					if hasDuration || relaycommon.IsSeedanceVideoModel(req.Model) ||
+						relaycommon.IsSeedanceVideoModel(info.OriginModelName) ||
+						relaycommon.IsSeedanceVideoModel(info.UpstreamModelName) {
+						bodyMap["duration"] = duration
+					}
 				}
 			}
 			if req, err := relaycommon.GetTaskRequest(c); err == nil {
@@ -218,7 +224,12 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		writer := multipart.NewWriter(&buf)
 		writer.WriteField("model", info.UpstreamModelName)
 		taskReq, _ := relaycommon.GetTaskRequest(c)
-		hasDuration := relaycommon.EffectiveTaskDuration(taskReq) > 0
+		duration := relaycommon.EffectiveTaskDuration(taskReq)
+		hasDuration := duration > 0
+		_, hasDurationField := formData.Value["duration"]
+		writeDuration := hasDurationField || relaycommon.IsSeedanceVideoModel(taskReq.Model) ||
+			relaycommon.IsSeedanceVideoModel(info.OriginModelName) ||
+			relaycommon.IsSeedanceVideoModel(info.UpstreamModelName)
 		hasInputReference := false
 		for key, values := range formData.Value {
 			if key == "model" {
@@ -235,9 +246,9 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 			}
 		}
 		if hasDuration {
-			writer.WriteField("seconds", taskReq.Seconds)
-			if _, exists := formData.Value["duration"]; exists {
-				writer.WriteField("duration", strconv.Itoa(taskReq.Duration))
+			writer.WriteField("seconds", strconv.Itoa(duration))
+			if writeDuration {
+				writer.WriteField("duration", strconv.Itoa(duration))
 			}
 		}
 		if !hasInputReference && relaycommon.ShouldFillGrokImagineInputReference(info, taskReq) {
