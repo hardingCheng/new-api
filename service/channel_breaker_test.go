@@ -380,14 +380,15 @@ func TestChannelBreakerRedisConcurrentStateTransitions(t *testing.T) {
 	ClearChannelBreakerQuarantine(quarantined.ChannelId, quarantined.UsingKey, true)
 	require.True(t, CanUseChannelByBreaker(testBreakerContext("/v1/chat/completions"), quarantined))
 
-	channelDisableNotifyMemory.Delete(91002)
+	notifyTarget := types.ChannelError{ChannelId: 91002}
+	channelDisableNotifyMemory.Delete("91002")
 	require.NoError(t, client.Del(context.Background(), "channel_disable_notify:91002").Err())
 	var notifications atomic.Int64
 	for i := 0; i < 64; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if allowChannelDisableNotify(91002, 60) {
+			if allowChannelDisableNotify(notifyTarget, 60) {
 				notifications.Add(1)
 			}
 		}()
@@ -395,6 +396,16 @@ func TestChannelBreakerRedisConcurrentStateTransitions(t *testing.T) {
 	wg.Wait()
 	require.Equal(t, int64(1), notifications.Load())
 	require.NoError(t, client.Del(context.Background(), "channel_disable_notify:91002").Err())
+
+	notifyKeyA := types.ChannelError{ChannelId: 91002, IsMultiKey: true, UsingKey: "key-a"}
+	notifyKeyB := types.ChannelError{ChannelId: 91002, IsMultiKey: true, UsingKey: "key-b"}
+	keyARedisKey := "channel_disable_notify:91002:" + ChannelBreakerKeyHash("key-a")
+	keyBRedisKey := "channel_disable_notify:91002:" + ChannelBreakerKeyHash("key-b")
+	require.NoError(t, client.Del(context.Background(), keyARedisKey, keyBRedisKey).Err())
+	require.True(t, allowChannelDisableNotify(notifyKeyA, 60))
+	require.False(t, allowChannelDisableNotify(notifyKeyA, 60))
+	require.True(t, allowChannelDisableNotify(notifyKeyB, 60))
+	require.NoError(t, client.Del(context.Background(), keyARedisKey, keyBRedisKey).Err())
 }
 
 func TestChannelBreakerRedisUnavailableFailsOpen(t *testing.T) {
@@ -435,14 +446,24 @@ func TestChannelBreakerQuarantineKeyScope(t *testing.T) {
 func TestChannelDisableNotificationLocalDeduplication(t *testing.T) {
 	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
 	common.RedisEnabled, common.RDB = false, nil
-	channelDisableNotifyMemory.Delete(91005)
+	keyA := types.ChannelError{ChannelId: 91005, IsMultiKey: true, UsingKey: "key-a"}
+	keyB := types.ChannelError{ChannelId: 91005, IsMultiKey: true, UsingKey: "key-b"}
+	keyADedup := "91005:" + ChannelBreakerKeyHash("key-a")
+	keyBDedup := "91005:" + ChannelBreakerKeyHash("key-b")
+	channelDisableNotifyMemory.Delete(keyADedup)
+	channelDisableNotifyMemory.Delete(keyBDedup)
 	t.Cleanup(func() {
-		channelDisableNotifyMemory.Delete(91005)
+		channelDisableNotifyMemory.Delete(keyADedup)
+		channelDisableNotifyMemory.Delete(keyBDedup)
 		common.RedisEnabled, common.RDB = oldRedisEnabled, oldRDB
 	})
 
-	require.True(t, allowChannelDisableNotify(91005, 60))
-	require.False(t, allowChannelDisableNotify(91005, 60))
+	require.True(t, allowChannelDisableNotify(keyA, 60))
+	require.False(t, allowChannelDisableNotify(keyA, 60))
+	require.True(t, allowChannelDisableNotify(keyB, 60))
+	require.NotEqual(t,
+		formatNotifyType(keyA.ChannelId, common.ChannelStatusAutoDisabled, keyA.UsingKey),
+		formatNotifyType(keyB.ChannelId, common.ChannelStatusAutoDisabled, keyB.UsingKey))
 }
 
 func TestChannelBreakerHalfOpenRestoresWithMixedMajoritySuccess(t *testing.T) {

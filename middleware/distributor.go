@@ -453,6 +453,14 @@ func getTaskOriginModelName(c *gin.Context) string {
 }
 
 func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, modelName string) *types.NewAPIError {
+	return setupContextForSelectedChannel(c, channel, modelName, nil)
+}
+
+func SetupContextForSelectedChannelKey(c *gin.Context, channel *model.Channel, modelName string, keyIndex int) *types.NewAPIError {
+	return setupContextForSelectedChannel(c, channel, modelName, &keyIndex)
+}
+
+func setupContextForSelectedChannel(c *gin.Context, channel *model.Channel, modelName string, selectedKeyIndex *int) *types.NewAPIError {
 	c.Set("original_model", modelName) // for retry
 	if channel == nil {
 		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
@@ -477,11 +485,23 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelModelMapping, channel.GetModelMapping())
 	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
 
-	key, index, newAPIError := channel.GetNextEnabledKeyWithFilter(func(key string, index int) bool {
-		return service.CanUseSelectedChannelKeyByBreaker(c, channel, key)
-	})
-	if newAPIError != nil {
-		return newAPIError
+	var key string
+	var index int
+	if selectedKeyIndex == nil {
+		var newAPIError *types.NewAPIError
+		key, index, newAPIError = channel.GetNextEnabledKeyWithFilter(func(key string, index int) bool {
+			return service.CanUseSelectedChannelKeyByBreaker(c, channel, key)
+		})
+		if newAPIError != nil {
+			return newAPIError
+		}
+	} else {
+		keys := channel.GetKeys()
+		index = *selectedKeyIndex
+		if !channel.ChannelInfo.IsMultiKey || index < 0 || index >= len(keys) {
+			return types.NewError(errors.New("invalid selected channel key"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
+		key = keys[index]
 	}
 	if channel.ChannelInfo.IsMultiKey {
 		if !service.AllowSelectedChannelKeyByBreaker(c, channel, key) {

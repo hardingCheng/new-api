@@ -1086,7 +1086,11 @@ func UpdateChannel(c *gin.Context) {
 				channel.Key = strings.Join(allKeys, "\n")
 			}
 		case "replace":
-			// 覆盖模式：直接使用新密钥（默认行为，不需要特殊处理）
+			channel.ChannelInfo.MultiKeyStatusList = nil
+			channel.ChannelInfo.MultiKeyDisabledTime = nil
+			channel.ChannelInfo.MultiKeyDisabledReason = nil
+			channel.ChannelInfo.MultiKeyAutoRecoveryDisabled = nil
+			channel.ChannelInfo.AutoRecoveryDisabled = false
 		}
 	}
 	err = channel.Update()
@@ -1664,6 +1668,8 @@ func ManageMultiKeys(c *gin.Context) {
 		}
 
 		channel.ChannelInfo.MultiKeyStatusList[keyIndex] = 2 // disabled
+		delete(channel.ChannelInfo.MultiKeyAutoRecoveryDisabled, keyIndex)
+		channel.RecalculateMultiKeyStatus()
 
 		err = channel.Update()
 		if err != nil {
@@ -1707,6 +1713,8 @@ func ManageMultiKeys(c *gin.Context) {
 		if channel.ChannelInfo.MultiKeyDisabledReason != nil {
 			delete(channel.ChannelInfo.MultiKeyDisabledReason, keyIndex)
 		}
+		delete(channel.ChannelInfo.MultiKeyAutoRecoveryDisabled, keyIndex)
+		channel.RecalculateMultiKeyStatus()
 
 		err = channel.Update()
 		if err != nil {
@@ -1732,6 +1740,8 @@ func ManageMultiKeys(c *gin.Context) {
 		channel.ChannelInfo.MultiKeyStatusList = make(map[int]int)
 		channel.ChannelInfo.MultiKeyDisabledTime = make(map[int]int64)
 		channel.ChannelInfo.MultiKeyDisabledReason = make(map[int]string)
+		channel.ChannelInfo.MultiKeyAutoRecoveryDisabled = make(map[int]bool)
+		channel.RecalculateMultiKeyStatus()
 
 		err = channel.Update()
 		if err != nil {
@@ -1771,6 +1781,7 @@ func ManageMultiKeys(c *gin.Context) {
 			// 只禁用当前启用的密钥
 			if status == 1 {
 				channel.ChannelInfo.MultiKeyStatusList[i] = 2 // disabled
+				delete(channel.ChannelInfo.MultiKeyAutoRecoveryDisabled, i)
 				disabledCount++
 			}
 		}
@@ -1782,6 +1793,7 @@ func ManageMultiKeys(c *gin.Context) {
 			})
 			return
 		}
+		channel.RecalculateMultiKeyStatus()
 
 		err = channel.Update()
 		if err != nil {
@@ -1822,6 +1834,7 @@ func ManageMultiKeys(c *gin.Context) {
 		var newStatusList = make(map[int]int)
 		var newDisabledTime = make(map[int]int64)
 		var newDisabledReason = make(map[int]string)
+		var newAutoRecoveryDisabled = make(map[int]bool)
 
 		newIndex := 0
 		for i, key := range keys {
@@ -1848,6 +1861,9 @@ func ManageMultiKeys(c *gin.Context) {
 					newDisabledReason[newIndex] = r
 				}
 			}
+			if channel.ChannelInfo.MultiKeyAutoRecoveryDisabled[i] {
+				newAutoRecoveryDisabled[newIndex] = true
+			}
 			newIndex++
 		}
 
@@ -1865,6 +1881,8 @@ func ManageMultiKeys(c *gin.Context) {
 		channel.ChannelInfo.MultiKeyStatusList = newStatusList
 		channel.ChannelInfo.MultiKeyDisabledTime = newDisabledTime
 		channel.ChannelInfo.MultiKeyDisabledReason = newDisabledReason
+		channel.ChannelInfo.MultiKeyAutoRecoveryDisabled = newAutoRecoveryDisabled
+		channel.RecalculateMultiKeyStatus()
 
 		err = channel.Update()
 		if err != nil {
@@ -1886,6 +1904,7 @@ func ManageMultiKeys(c *gin.Context) {
 		var newStatusList = make(map[int]int)
 		var newDisabledTime = make(map[int]int64)
 		var newDisabledReason = make(map[int]string)
+		var newAutoRecoveryDisabled = make(map[int]bool)
 
 		newIndex := 0
 		for i, key := range keys {
@@ -1914,6 +1933,9 @@ func ManageMultiKeys(c *gin.Context) {
 							newDisabledReason[newIndex] = r
 						}
 					}
+					if channel.ChannelInfo.MultiKeyAutoRecoveryDisabled[i] {
+						newAutoRecoveryDisabled[newIndex] = true
+					}
 				}
 				newIndex++
 			}
@@ -1933,6 +1955,8 @@ func ManageMultiKeys(c *gin.Context) {
 		channel.ChannelInfo.MultiKeyStatusList = newStatusList
 		channel.ChannelInfo.MultiKeyDisabledTime = newDisabledTime
 		channel.ChannelInfo.MultiKeyDisabledReason = newDisabledReason
+		channel.ChannelInfo.MultiKeyAutoRecoveryDisabled = newAutoRecoveryDisabled
+		channel.RecalculateMultiKeyStatus()
 
 		err = channel.Update()
 		if err != nil {

@@ -42,6 +42,10 @@ type testResult struct {
 	newAPIError *types.NewAPIError
 }
 
+type channelTestKeySelection struct {
+	Index int
+}
+
 func (r testResult) successful() bool {
 	return r.context != nil && r.localErr == nil && r.newAPIError == nil
 }
@@ -77,7 +81,7 @@ func resolveChannelTestUserID(c *gin.Context) (int, error) {
 	return rootUser.Id, nil
 }
 
-func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) testResult {
+func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool, keySelections ...channelTestKeySelection) testResult {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -178,7 +182,12 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	group, _ := model.GetUserGroup(testUserID, false)
 	c.Set("group", group)
 
-	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, testModel)
+	var newAPIError *types.NewAPIError
+	if len(keySelections) > 0 {
+		newAPIError = middleware.SetupContextForSelectedChannelKey(c, channel, testModel, keySelections[0].Index)
+	} else {
+		newAPIError = middleware.SetupContextForSelectedChannel(c, channel, testModel)
+	}
 	if newAPIError != nil {
 		return testResult{
 			context:     c,
@@ -1072,11 +1081,13 @@ func TestAllChannels(c *gin.Context) {
 	})
 }
 
-func testChannelAnyModel(ctx context.Context, channel *model.Channel, testUserID int) testResult {
+func testChannelAnyModel(ctx context.Context, channel *model.Channel, testUserID int, keySelections ...channelTestKeySelection) testResult {
 	models := channel.GetModels()
 	isStream := shouldUseStreamForAutomaticChannelTest(channel)
 	if len(models) == 0 {
-		return testChannel(ctx, channel, testUserID, "", "", isStream)
+		result := testChannel(ctx, channel, testUserID, "", "", isStream, keySelections...)
+		handleTerminalRecoveryError(channel, result, keySelections)
+		return result
 	}
 	var last testResult
 	for i, modelName := range models {
@@ -1084,8 +1095,11 @@ func testChannelAnyModel(ctx context.Context, channel *model.Channel, testUserID
 		if modelName == "" {
 			continue
 		}
-		last = testChannel(ctx, channel, testUserID, modelName, "", isStream)
+		last = testChannel(ctx, channel, testUserID, modelName, "", isStream, keySelections...)
 		if last.successful() {
+			return last
+		}
+		if handleTerminalRecoveryError(channel, last, keySelections) {
 			return last
 		}
 		if i < len(models)-1 && common.RequestInterval > 0 {
@@ -1093,6 +1107,56 @@ func testChannelAnyModel(ctx context.Context, channel *model.Channel, testUserID
 		}
 	}
 	return last
+}
+
+func handleTerminalRecoveryError(channel *model.Channel, result testResult, keySelections []channelTestKeySelection) bool {
+	if len(keySelections) == 0 || result.context == nil || result.newAPIError == nil {
+		return false
+	}
+	usingKey := common.GetContextKeyString(result.context, constant.ContextKeyChannelKey)
+	if usingKey == "" {
+		return false
+	}
+	exempt := common.IsChannelBreakerExemptChannel(channel.Id)
+	channelError := types.NewChannelError(
+		channel.Id, channel.Type, channel.Name, true, usingKey, channel.GetAutoBan(), exempt)
+	handled, _ := service.HandleInstantDisableChannel(result.context, *channelError, result.newAPIError)
+	return handled
+}
+
+func testRecoverableChannelAnyModel(ctx context.Context, channel *model.Channel, testUserID int) testResult {
+	if !channel.ChannelInfo.IsMultiKey {
+		return testChannelAnyModel(ctx, channel, testUserID)
+	}
+	var last testResult
+	recoverableKeyIndexes := recoverableMultiKeyIndexes(channel)
+	for _, index := range recoverableKeyIndexes {
+		last = testChannelAnyModel(ctx, channel, testUserID, channelTestKeySelection{Index: index})
+		if last.successful() {
+			return last
+		}
+	}
+	if len(recoverableKeyIndexes) == 0 {
+		return testResult{localErr: errors.New("no recoverable channel keys")}
+	}
+	return last
+}
+
+func recoverableMultiKeyIndexes(channel *model.Channel) []int {
+	if channel == nil || !channel.ChannelInfo.IsMultiKey {
+		return nil
+	}
+	recoverableKeyIndexes := make([]int, 0)
+	for index := range channel.GetKeys() {
+		status := common.ChannelStatusEnabled
+		if savedStatus, ok := channel.ChannelInfo.MultiKeyStatusList[index]; ok {
+			status = savedStatus
+		}
+		if status == common.ChannelStatusAutoDisabled && !channel.ChannelInfo.MultiKeyAutoRecoveryDisabled[index] {
+			recoverableKeyIndexes = append(recoverableKeyIndexes, index)
+		}
+	}
+	return recoverableKeyIndexes
 }
 
 var retestDisabledChannelsLock sync.Mutex
@@ -1119,7 +1183,7 @@ func retestRecoverableChannels(ctx context.Context) error {
 		if channel.Status != common.ChannelStatusAutoDisabled || channel.IsAutoRecoveryDisabled() {
 			continue
 		}
-		result := testChannelAnyModel(ctx, channel, testUserID)
+		result := testRecoverableChannelAnyModel(ctx, channel, testUserID)
 		if result.successful() && service.ShouldEnableChannel(result.newAPIError, channel.Status) {
 			service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
 		}

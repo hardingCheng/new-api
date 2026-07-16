@@ -587,6 +587,13 @@ func (channel *Channel) Update() error {
 				}
 			}
 		}
+		if channel.ChannelInfo.MultiKeyAutoRecoveryDisabled != nil {
+			for idx := range channel.ChannelInfo.MultiKeyAutoRecoveryDisabled {
+				if idx >= channel.ChannelInfo.MultiKeySize {
+					delete(channel.ChannelInfo.MultiKeyAutoRecoveryDisabled, idx)
+				}
+			}
+		}
 	}
 	var err error
 	err = DB.Model(channel).Updates(channel).Error
@@ -730,40 +737,56 @@ func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason
 					channel.ChannelInfo.MultiKeyAutoRecoveryDisabled = make(map[int]bool)
 				}
 				channel.ChannelInfo.MultiKeyAutoRecoveryDisabled[keyIndex] = true
+			} else if currentStatus != status {
+				delete(channel.ChannelInfo.MultiKeyAutoRecoveryDisabled, keyIndex)
 			}
 		}
-		if !hasEnabledMultiKey(keys, channel.ChannelInfo.MultiKeyStatusList) {
-			channel.Status = common.ChannelStatusAutoDisabled
-			channel.ChannelInfo.AutoRecoveryDisabled = true
-			for index := range keys {
-				if !channel.ChannelInfo.MultiKeyAutoRecoveryDisabled[index] {
-					channel.ChannelInfo.AutoRecoveryDisabled = false
-					break
-				}
-			}
+		channel.RecalculateMultiKeyStatus()
+		if channel.Status == common.ChannelStatusAutoDisabled {
 			info := channel.GetOtherInfo()
 			info["status_reason"] = "All keys are disabled"
 			info["status_time"] = common.GetTimestamp()
 			channel.SetOtherInfo(info)
-		} else if status == common.ChannelStatusEnabled {
-			channel.Status = common.ChannelStatusEnabled
-			channel.ChannelInfo.AutoRecoveryDisabled = false
 		}
 	}
 	return true
 }
 
-func hasEnabledMultiKey(keys []string, statusList map[int]int) bool {
-	for i := range keys {
-		if statusList == nil {
-			return true
+func (channel *Channel) RecalculateMultiKeyStatus() {
+	if channel == nil || !channel.ChannelInfo.IsMultiKey {
+		return
+	}
+	keys := channel.GetKeys()
+	if len(keys) == 0 {
+		channel.Status = common.ChannelStatusAutoDisabled
+		channel.ChannelInfo.AutoRecoveryDisabled = true
+		return
+	}
+	hasRecoverableKey := false
+	allManuallyDisabled := true
+	for index := range keys {
+		status := common.ChannelStatusEnabled
+		if savedStatus, ok := channel.ChannelInfo.MultiKeyStatusList[index]; ok {
+			status = savedStatus
 		}
-		status, ok := statusList[i]
-		if !ok || status == common.ChannelStatusEnabled {
-			return true
+		if status == common.ChannelStatusEnabled {
+			channel.Status = common.ChannelStatusEnabled
+			channel.ChannelInfo.AutoRecoveryDisabled = false
+			return
+		}
+		if status != common.ChannelStatusManuallyDisabled {
+			allManuallyDisabled = false
+		}
+		if status == common.ChannelStatusAutoDisabled && !channel.ChannelInfo.MultiKeyAutoRecoveryDisabled[index] {
+			hasRecoverableKey = true
 		}
 	}
-	return false
+	if allManuallyDisabled {
+		channel.Status = common.ChannelStatusManuallyDisabled
+	} else {
+		channel.Status = common.ChannelStatusAutoDisabled
+	}
+	channel.ChannelInfo.AutoRecoveryDisabled = !hasRecoverableKey
 }
 
 func UpdateChannelStatus(channelId int, usingKey string, status int, reason string) bool {
