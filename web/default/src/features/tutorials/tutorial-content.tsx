@@ -36,7 +36,27 @@ export type TutorialStep = {
   title: string
   description: string
   codeBlocks?: TutorialCodeBlock[]
+  tabGroups?: TutorialTabGroup[]
   note?: string
+}
+
+export type TutorialTab = {
+  value: string
+  label: string
+  title?: string
+  description?: string
+  codeBlocks?: TutorialCodeBlock[]
+  tabGroups?: TutorialTabGroup[]
+  actionLabel?: string
+  actionUrl?: string
+  note?: string
+}
+
+export type TutorialTabGroup = {
+  label?: string
+  ariaLabel: string
+  defaultValue: string
+  tabs: TutorialTab[]
 }
 
 export type Tutorial = {
@@ -51,19 +71,6 @@ export type Tutorial = {
   accentClassName: string
   officialUrl?: string
   steps: TutorialStep[]
-}
-
-function getShellApiKeyCommands(apiKeyVariable: string): TutorialCodeBlock[] {
-  return [
-    {
-      label: 'macOS / Linux',
-      code: `export ${apiKeyVariable}="sk-your-api-key"`,
-    },
-    {
-      label: 'Windows PowerShell',
-      code: `$env:${apiKeyVariable}="sk-your-api-key"`,
-    },
-  ]
 }
 
 export function getTutorials(t: TFunction, origin: string): Tutorial[] {
@@ -130,48 +137,191 @@ export function getTutorials(t: TFunction, origin: string): Tutorial[] {
         'Install Codex CLI and connect it to this station through a custom Responses API provider.'
       ),
       category: t('Coding Tools'),
-      duration: t('5 minutes'),
+      duration: t('10 minutes'),
       level: t('Beginner'),
       icon: TerminalSquare,
       accentClassName: 'bg-identity-green/15 text-identity-green',
       officialUrl: 'https://developers.openai.com/codex/cli',
       steps: [
         {
-          title: t('Install Codex CLI'),
+          title: t('Choose a Codex client and install it'),
           description: t(
-            'Install the latest stable command-line client. Node.js users can use npm on Windows, macOS, or Linux.'
+            'Codex CLI, the VS Code extension, and the desktop app can share the same user-level configuration. Choose the surface you plan to use first.'
           ),
-          codeBlocks: [
+          tabGroups: [
             {
-              label: 'npm',
-              code: 'npm install -g @openai/codex@latest',
+              label: t('Choose a client'),
+              ariaLabel: t('Codex client'),
+              defaultValue: 'cli',
+              tabs: [
+                {
+                  value: 'cli',
+                  label: 'Codex CLI',
+                  title: t('Use Codex from a terminal'),
+                  description: t(
+                    'Best for terminal-first development, local automation, and repeatable commands.'
+                  ),
+                  tabGroups: [
+                    {
+                      label: t('Choose your operating system'),
+                      ariaLabel: t('Operating system'),
+                      defaultValue: 'macos-linux',
+                      tabs: [
+                        {
+                          value: 'macos-linux',
+                          label: 'macOS / Linux',
+                          title: t('Official standalone installer'),
+                          description: t(
+                            'Open Terminal and run the official installer. Run the same command later to update Codex.'
+                          ),
+                          codeBlocks: [
+                            {
+                              label: 'Terminal',
+                              code: 'curl -fsSL https://chatgpt.com/codex/install.sh | sh',
+                            },
+                          ],
+                        },
+                        {
+                          value: 'windows',
+                          label: 'Windows',
+                          title: t('Install with npm in PowerShell'),
+                          description: t(
+                            'Install Node.js first, then open PowerShell as your normal user and install Codex globally.'
+                          ),
+                          codeBlocks: [
+                            {
+                              label: 'PowerShell',
+                              code: 'npm install -g @openai/codex@latest',
+                            },
+                          ],
+                          actionLabel: t('Download Node.js'),
+                          actionUrl: 'https://nodejs.org/en/download',
+                          note: t(
+                            'If native Windows tooling causes compatibility problems, run Codex inside WSL and follow the Linux instructions.'
+                          ),
+                        },
+                        {
+                          value: 'npm',
+                          label: 'npm',
+                          title: t('Cross-platform npm installation'),
+                          description: t(
+                            'Use this method when Node.js is already installed on Windows, macOS, or Linux.'
+                          ),
+                          codeBlocks: [
+                            {
+                              label: 'npm',
+                              code: 'npm install -g @openai/codex@latest',
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  value: 'vscode',
+                  label: t('VS Code extension'),
+                  title: t('Use Codex beside your code'),
+                  description: t(
+                    'Install the official OpenAI extension in VS Code, Cursor, or Windsurf. The command below installs it in VS Code.'
+                  ),
+                  codeBlocks: [
+                    {
+                      label: 'VS Code CLI',
+                      code: 'code --install-extension openai.chatgpt',
+                    },
+                  ],
+                  actionLabel: t('Open VS Code Marketplace'),
+                  actionUrl:
+                    'https://marketplace.visualstudio.com/items?itemName=openai.chatgpt',
+                  note: t(
+                    'After installation, open the Command Palette and run “Codex: Open Codex Sidebar” if the Codex icon is not visible.'
+                  ),
+                },
+                {
+                  value: 'desktop',
+                  label: t('Desktop app'),
+                  title: t('Use Codex in the desktop app'),
+                  description: t(
+                    'Download the current ChatGPT desktop app, which includes Codex workflows for local projects and long-running work.'
+                  ),
+                  actionLabel: t('Open official download page'),
+                  actionUrl:
+                    'https://developers.openai.com/codex/quickstart?setup=app',
+                  note: t(
+                    'Install the app under the same operating-system user account so it can use the same Codex configuration and credential store.'
+                  ),
+                },
+              ],
             },
           ],
         },
         {
-          title: t('Create the Codex configuration'),
+          title: t('Open the Codex configuration folder'),
           description: t(
-            'Create the config file in the user-level Codex directory. Use a custom provider because Codex sends requests through the Responses API.'
+            'Create the user-level Codex folder and open it in your file manager. The path is different on Windows, macOS, and Linux.'
           ),
-          codeBlocks: [
+          tabGroups: [
             {
-              label: 'macOS / Linux',
-              code: '~/.codex/config.toml',
-            },
-            {
-              label: 'Windows',
-              code: '%USERPROFILE%\\.codex\\config.toml',
-            },
-            {
-              label: 'config.toml',
-              code: `model_provider = "station"
-model = "gpt-5.6"
-
-[model_providers.station]
-name = "Current Station"
-base_url = "${apiBaseUrl}"
-env_key = "OPENAI_API_KEY"
-wire_api = "responses"`,
+              ariaLabel: t('Operating system'),
+              defaultValue: 'windows',
+              tabs: [
+                {
+                  value: 'windows',
+                  label: 'Windows',
+                  title: t('Open the folder in File Explorer'),
+                  description: t(
+                    'Run both commands in PowerShell. The first creates the folder if it does not exist.'
+                  ),
+                  codeBlocks: [
+                    {
+                      label: 'PowerShell',
+                      code: `New-Item -ItemType Directory -Force "$env:USERPROFILE\\.codex"
+Start-Process "$env:USERPROFILE\\.codex"`,
+                    },
+                    {
+                      label: t('Configuration file path'),
+                      code: '%USERPROFILE%\\.codex\\config.toml',
+                    },
+                  ],
+                },
+                {
+                  value: 'macos',
+                  label: 'macOS',
+                  title: t('Open the folder in Finder'),
+                  description: t(
+                    'Run the command in Terminal to create the folder and open it in Finder.'
+                  ),
+                  codeBlocks: [
+                    {
+                      label: 'Terminal',
+                      code: 'mkdir -p ~/.codex && open ~/.codex',
+                    },
+                    {
+                      label: t('Configuration file path'),
+                      code: '~/.codex/config.toml',
+                    },
+                  ],
+                },
+                {
+                  value: 'linux',
+                  label: 'Linux',
+                  title: t('Open the configuration directory'),
+                  description: t(
+                    'Create the directory first. If your desktop supports xdg-open, the second command opens it in the file manager.'
+                  ),
+                  codeBlocks: [
+                    {
+                      label: 'Terminal',
+                      code: 'mkdir -p ~/.codex && xdg-open ~/.codex',
+                    },
+                    {
+                      label: t('Configuration file path'),
+                      code: '~/.codex/config.toml',
+                    },
+                  ],
+                },
+              ],
             },
           ],
           note: t(
@@ -179,16 +329,176 @@ wire_api = "responses"`,
           ),
         },
         {
-          title: t('Set the key and start Codex'),
+          title: t('Create config.toml and save your API key'),
           description: t(
-            'Set the API key in your terminal, open the project directory, and start Codex.'
+            'Configure this station as a custom Responses API provider, then let Codex securely create its credential cache.'
           ),
-          codeBlocks: [
-            ...getShellApiKeyCommands('OPENAI_API_KEY'),
-            { label: t('Start'), code: 'codex' },
+          tabGroups: [
+            {
+              label: t('Configure each file'),
+              ariaLabel: t('Configuration file'),
+              defaultValue: 'config',
+              tabs: [
+                {
+                  value: 'config',
+                  label: 'config.toml',
+                  title: t('Paste this provider configuration'),
+                  description: t(
+                    'Create config.toml in the folder from the previous step. The API address automatically matches the station you are visiting.'
+                  ),
+                  codeBlocks: [
+                    {
+                      label: 'config.toml',
+                      code: `model_provider = "station"
+model = "gpt-5.6"
+model_reasoning_effort = "high"
+
+[model_providers.station]
+name = "Current Station"
+base_url = "${apiBaseUrl}"
+requires_openai_auth = true
+wire_api = "responses"`,
+                    },
+                  ],
+                  note: t(
+                    'Choose another enabled model from Model Pricing if gpt-5.6 is not available to your account.'
+                  ),
+                },
+                {
+                  value: 'login',
+                  label: t('Save API key'),
+                  title: t('Let Codex store the key for all local clients'),
+                  description: t(
+                    'Run the command for your operating system and replace the placeholder with an API key created on this station.'
+                  ),
+                  tabGroups: [
+                    {
+                      ariaLabel: t('Operating system'),
+                      defaultValue: 'macos-linux',
+                      tabs: [
+                        {
+                          value: 'macos-linux',
+                          label: 'macOS / Linux',
+                          codeBlocks: [
+                            {
+                              label: 'Terminal',
+                              code: `printf '%s' 'sk-your-api-key' | codex login --with-api-key`,
+                            },
+                          ],
+                        },
+                        {
+                          value: 'windows',
+                          label: 'Windows',
+                          codeBlocks: [
+                            {
+                              label: 'PowerShell',
+                              code: '"sk-your-api-key" | codex login --with-api-key',
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                  note: t(
+                    'Do not enter your station account password. Codex only needs the API key that starts with sk-.'
+                  ),
+                },
+                {
+                  value: 'auth',
+                  label: 'auth.json',
+                  title: t('Do not manually create or share auth.json'),
+                  description: t(
+                    'Codex creates its login cache automatically. Depending on your settings, credentials are stored in the operating-system keyring or in auth.json.'
+                  ),
+                  codeBlocks: [
+                    {
+                      label: 'macOS / Linux',
+                      code: '~/.codex/auth.json',
+                    },
+                    {
+                      label: 'Windows',
+                      code: '%USERPROFILE%\\.codex\\auth.json',
+                    },
+                  ],
+                  note: t(
+                    'Treat auth.json like a password: never upload it, commit it to Git, paste it into support chats, or include it in screenshots.'
+                  ),
+                },
+              ],
+            },
+          ],
+        },
+        {
+          title: t('Restart your client and verify the connection'),
+          description: t(
+            'Fully restart the client after changing the provider, then confirm that Codex loaded this station and the selected model.'
+          ),
+          tabGroups: [
+            {
+              ariaLabel: t('Codex client'),
+              defaultValue: 'cli',
+              tabs: [
+                {
+                  value: 'cli',
+                  label: 'Codex CLI',
+                  title: t('Start Codex inside a project'),
+                  codeBlocks: [
+                    {
+                      label: 'Terminal / PowerShell',
+                      code: `cd PATH_TO_YOUR_PROJECT
+codex`,
+                    },
+                    { label: t('Inside Codex'), code: '/status' },
+                  ],
+                  note: t(
+                    'The status output should show the station provider and your selected model.'
+                  ),
+                },
+                {
+                  value: 'vscode',
+                  label: t('VS Code extension'),
+                  title: t('Reload the editor window'),
+                  description: t(
+                    'Open the project, run “Developer: Reload Window”, then open the Codex sidebar. The extension uses the same local Codex configuration.'
+                  ),
+                  codeBlocks: [
+                    { label: 'Terminal', code: 'code PATH_TO_YOUR_PROJECT' },
+                  ],
+                },
+                {
+                  value: 'desktop',
+                  label: t('Desktop app'),
+                  title: t('Quit and reopen the desktop app'),
+                  description: t(
+                    'Quit the app completely, reopen it, select a local project folder, and start a new Codex task.'
+                  ),
+                },
+              ],
+            },
           ],
           note: t(
             'Restart Codex after changing providers so the model catalog and connection settings are reloaded.'
+          ),
+        },
+        {
+          title: t('Troubleshoot common connection problems'),
+          description: t(
+            'Check the client version, login state, station API, and model availability before changing the configuration again.'
+          ),
+          codeBlocks: [
+            {
+              label: t('Client checks'),
+              code: `codex --version
+codex login status`,
+            },
+            {
+              label: t('Station API check'),
+              code: `curl ${apiBaseUrl}/models \\
+  -H "Authorization: Bearer sk-your-api-key"`,
+            },
+          ],
+          note: t(
+            '401 usually means the API key is invalid; 404 often means the base URL is wrong; a model error means you should choose another model from Model Pricing. If settings look unchanged, fully quit every Codex client and start it again.'
           ),
         },
       ],

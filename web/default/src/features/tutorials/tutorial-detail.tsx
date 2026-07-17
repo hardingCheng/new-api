@@ -43,6 +43,7 @@ import {
 } from '@/components/ui/card'
 
 import { TutorialCodeBlock } from './components/tutorial-code-block'
+import { TutorialTabs } from './components/tutorial-tabs'
 import { getTutorials } from './tutorial-content'
 
 type TutorialDetailProps = {
@@ -191,7 +192,7 @@ export function TutorialDetail(props: TutorialDetailProps) {
                       </div>
                     </div>
                   </CardHeader>
-                  {step.codeBlocks || step.note ? (
+                  {step.codeBlocks || step.tabGroups || step.note ? (
                     <CardContent className='space-y-3 pl-4 sm:pl-15'>
                       {step.codeBlocks?.map((block) => (
                         <TutorialCodeBlock
@@ -199,6 +200,9 @@ export function TutorialDetail(props: TutorialDetailProps) {
                           label={block.label}
                           code={block.code}
                         />
+                      ))}
+                      {step.tabGroups?.map((group) => (
+                        <TutorialTabs key={group.ariaLabel} group={group} />
                       ))}
                       {step.note ? (
                         <Alert className='bg-muted/35'>
