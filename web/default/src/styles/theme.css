@@ -269,6 +269,8 @@ For commercial licensing, please contact support@quantumnous.com
   --sidebar-accent-foreground: oklch(0.145 0 0);
   --sidebar-border: oklch(0.895 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --tutorial-code: oklch(0.16 0 0);
+  --tutorial-code-foreground: oklch(0.95 0 0);
   --skeleton-base: oklch(0.955 0 0);
   --skeleton-highlight: oklch(0.985 0 0);
   --status-color-mix: 65%;

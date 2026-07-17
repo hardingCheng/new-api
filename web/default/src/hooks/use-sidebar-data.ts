@@ -18,17 +18,23 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import {
   Activity,
+  BookOpen,
   Box,
+  Braces,
   CreditCard,
   FileText,
   FlaskConical,
+  Image,
   Key,
   LayoutDashboard,
   ListTodo,
   MessageSquare,
+  MonitorCog,
   Radio,
   ServerCog,
   Settings,
+  Sparkles,
+  TerminalSquare,
   Ticket,
   User,
   Users,
@@ -36,7 +42,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { type SidebarData } from '@/components/layout/types'
+import type { SidebarData } from '@/components/layout/types'
 import { ROLE } from '@/lib/roles'
 
 /**
@@ -112,6 +118,47 @@ export function useSidebarData(): SidebarData {
             title: t('Profile'),
             url: '/profile',
             icon: User,
+          },
+        ],
+      },
+      {
+        id: 'tutorials',
+        title: t('Install & Tutorials'),
+        items: [
+          {
+            title: t('Tutorial Center'),
+            url: '/tutorials',
+            icon: BookOpen,
+          },
+          {
+            title: t('API Quick Start'),
+            url: '/tutorials/quick-start',
+            icon: Braces,
+          },
+          {
+            title: t('Codex Setup'),
+            url: '/tutorials/codex',
+            icon: TerminalSquare,
+          },
+          {
+            title: t('Claude Code Setup'),
+            url: '/tutorials/claude-code',
+            icon: Sparkles,
+          },
+          {
+            title: t('Gemini CLI Setup'),
+            url: '/tutorials/gemini-cli',
+            icon: MonitorCog,
+          },
+          {
+            title: t('CC Switch Setup'),
+            url: '/tutorials/cc-switch',
+            icon: Settings,
+          },
+          {
+            title: t('Image Generation'),
+            url: '/tutorials/image-generation',
+            icon: Image,
           },
         ],
       },
