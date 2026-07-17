@@ -357,6 +357,22 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 		return types.PriceData{}, fmt.Errorf("model %s is configured as tiered_expr but has no billing expression", info.OriginModelName)
 	}
 
+	// 用户价格覆盖:阶梯/动态计费只应用"整体倍率"(groupRatio)覆盖,且必须在
+	// 算预扣费和建 snapshot 之前,才能让预扣、快照、最终计费一致地用覆盖后的倍率。
+	// model_price/model_ratio 覆盖对表达式计费不适用,此路径不处理(见 ModelPriceHelper)。
+	if info != nil {
+		ovr := ratio_setting.ApplyUserPricingOverrides(
+			info.UserId, info.UserEmail, info.UserGroup, info.UsingGroup,
+			info.OriginModelName, false, 0, 0, groupRatioInfo.GroupRatio,
+		)
+		if len(ovr.Matches) > 0 && ovr.GroupRatio != groupRatioInfo.GroupRatio {
+			groupRatioInfo.GroupRatio = ovr.GroupRatio
+			groupRatioInfo.UserOverrideRatio = ovr.GroupRatio
+			groupRatioInfo.HasUserOverride = true
+			info.UserPricingOverrides = ovr.Matches
+		}
+	}
+
 	estimatedCompletionTokens := meta.MaxTokens
 	if estimatedCompletionTokens == 0 && groupRatioInfo.GroupRatio != 0 {
 		estimatedCompletionTokens = defaultTieredPreConsumeMaxTokens
