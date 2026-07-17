@@ -66,7 +66,7 @@
   "Create the directory first. If your desktop supports xdg-open, the second command opens it in the file manager.": "Create the directory first. If your desktop supports xdg-open, the second command opens it in the file manager.",
   "Create config.toml and save your API key": "Create config.toml and save your API key",
   "Create config.toml in the folder from the previous step. The API address automatically matches the station you are visiting.": "Create config.toml in the folder from the previous step. The API address automatically matches the station you are visiting.",
-  "Choose another enabled model from Model Pricing if gpt-5.6 is not available to your account.": "Choose another enabled model from Model Pricing if gpt-5.6 is not available to your account.",
+  "Choose another enabled model from Model Pricing if gpt-5.6-sol is not available to your account.": "Choose another enabled model from Model Pricing if gpt-5.6-sol is not available to your account.",
   "Let Codex store the key for all local clients": "Let Codex store the key for all local clients",
   "Run the command for your operating system and replace the placeholder with an API key created on this station.": "Run the command for your operating system and replace the placeholder with an API key created on this station.",
   "Do not enter your station account password. Codex only needs the API key that starts with sk-.": "Do not enter your station account password. Codex only needs the API key that starts with sk-.",

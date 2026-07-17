@@ -350,7 +350,7 @@ Start-Process "$env:USERPROFILE\\.codex"`,
                     {
                       label: 'config.toml',
                       code: `model_provider = "station"
-model = "gpt-5.6"
+model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 
 [model_providers.station]
@@ -361,7 +361,7 @@ wire_api = "responses"`,
                     },
                   ],
                   note: t(
-                    'Choose another enabled model from Model Pricing if gpt-5.6 is not available to your account.'
+                    'Choose another enabled model from Model Pricing if gpt-5.6-sol is not available to your account.'
                   ),
                 },
                 {

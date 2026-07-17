@@ -5420,7 +5420,7 @@
     "Configuration file": "配置文件",
     "Paste this provider configuration": "粘贴供应商配置",
     "Create config.toml in the folder from the previous step. The API address automatically matches the station you are visiting.": "在上一步的文件夹中创建 config.toml。API 地址会自动匹配你当前访问的分站。",
-    "Choose another enabled model from Model Pricing if gpt-5.6 is not available to your account.": "如果当前账号不能使用 gpt-5.6，请在模型定价中选择另一个已启用模型。",
+    "Choose another enabled model from Model Pricing if gpt-5.6-sol is not available to your account.": "如果当前账号不能使用 gpt-5.6-sol，请在模型定价中选择另一个已启用模型。",
     "Save API key": "保存 API 密钥",
     "Let Codex store the key for all local clients": "让 Codex 为所有本地客户端保存密钥",
     "Run the command for your operating system and replace the placeholder with an API key created on this station.": "运行与你的操作系统对应的命令，并把占位内容替换为在当前分站创建的 API 密钥。",

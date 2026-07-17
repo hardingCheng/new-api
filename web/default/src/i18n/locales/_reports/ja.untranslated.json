@@ -140,7 +140,7 @@
   "Configuration file": "Configuration file",
   "Paste this provider configuration": "Paste this provider configuration",
   "Create config.toml in the folder from the previous step. The API address automatically matches the station you are visiting.": "Create config.toml in the folder from the previous step. The API address automatically matches the station you are visiting.",
-  "Choose another enabled model from Model Pricing if gpt-5.6 is not available to your account.": "Choose another enabled model from Model Pricing if gpt-5.6 is not available to your account.",
+  "Choose another enabled model from Model Pricing if gpt-5.6-sol is not available to your account.": "Choose another enabled model from Model Pricing if gpt-5.6-sol is not available to your account.",
   "Save API key": "Save API key",
   "Let Codex store the key for all local clients": "Let Codex store the key for all local clients",
   "Run the command for your operating system and replace the placeholder with an API key created on this station.": "Run the command for your operating system and replace the placeholder with an API key created on this station.",
