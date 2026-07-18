@@ -243,13 +243,19 @@ export function getTutorials(t: TFunction, origin: string): Tutorial[] {
                   label: t('Desktop app'),
                   title: t('Use Codex in the desktop app'),
                   description: t(
-                    'Download the current ChatGPT desktop app, which includes Codex workflows for local projects and long-running work.'
+                    'The current ChatGPT desktop app includes Codex. On macOS, the setup helper can configure this station and save your API key without installing the CLI separately.'
                   ),
+                  codeBlocks: [
+                    {
+                      label: t('macOS one-click setup'),
+                      code: `curl -fsSL ${origin}/install/codex-macos.sh | STATION_BASE_URL='${apiBaseUrl}' sh`,
+                    },
+                  ],
                   actionLabel: t('Open official download page'),
                   actionUrl:
                     'https://developers.openai.com/codex/quickstart?setup=app',
                   note: t(
-                    'Install the app under the same operating-system user account so it can use the same Codex configuration and credential store.'
+                    'The helper detects the Codex program bundled inside the desktop app, backs up your existing config.toml, and asks for the API key without displaying it.'
                   ),
                 },
               ],
@@ -381,8 +387,12 @@ wire_api = "responses"`,
                           label: 'macOS / Linux',
                           codeBlocks: [
                             {
-                              label: 'Terminal',
+                              label: 'Codex CLI',
                               code: `printf '%s' 'sk-your-api-key' | codex login --with-api-key`,
+                            },
+                            {
+                              label: t('macOS desktop app'),
+                              code: `printf '%s' 'sk-your-api-key' | "/Applications/ChatGPT.app/Contents/Resources/codex" login --with-api-key`,
                             },
                           ],
                         },

@@ -5441,6 +5441,10 @@
     "Check the client version, login state, station API, and model availability before changing the configuration again.": "再次修改配置前，先检查客户端版本、登录状态、分站 API 和模型可用性。",
     "Client checks": "客户端检查",
     "Station API check": "分站 API 检查",
-    "401 usually means the API key is invalid; 404 often means the base URL is wrong; a model error means you should choose another model from Model Pricing. If settings look unchanged, fully quit every Codex client and start it again.": "401 通常表示 API 密钥无效；404 往往表示基础地址错误；模型错误则需要在模型定价中换一个可用模型。如果配置看起来没有生效，请彻底退出所有 Codex 客户端后重新启动。"
+    "401 usually means the API key is invalid; 404 often means the base URL is wrong; a model error means you should choose another model from Model Pricing. If settings look unchanged, fully quit every Codex client and start it again.": "401 通常表示 API 密钥无效；404 往往表示基础地址错误；模型错误则需要在模型定价中换一个可用模型。如果配置看起来没有生效，请彻底退出所有 Codex 客户端后重新启动。",
+    "The current ChatGPT desktop app includes Codex. On macOS, the setup helper can configure this station and save your API key without installing the CLI separately.": "当前版 ChatGPT 桌面 App 已内置 Codex。在 macOS 上，配置助手无需单独安装 CLI，即可接入当前分站并安全保存 API 密钥。",
+    "macOS one-click setup": "macOS 一键配置",
+    "The helper detects the Codex program bundled inside the desktop app, backs up your existing config.toml, and asks for the API key without displaying it.": "助手会检测桌面 App 内置的 Codex，备份现有 config.toml，并以隐藏输入方式读取 API 密钥。",
+    "macOS desktop app": "macOS 桌面 App"
   }
 }
