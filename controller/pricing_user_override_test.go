@@ -87,3 +87,37 @@ func TestApplyUserPricingToPricingList(t *testing.T) {
 
 	require.Nil(t, result[3].UserPricing, "tiered expression pricing is not overridden in the runtime billing path")
 }
+
+func TestApplyUserGroupRatioOverridesToMap(t *testing.T) {
+	original := ratio_setting.GetUserPricingOverrideCopy()
+	originalJSON, err := common.Marshal(original)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateUserPricingOverrideByJSONString(string(originalJSON)))
+	})
+
+	overrideJSON := `{
+		"rules": [
+			{"user_id": 7, "group_pattern": "discount", "type": "ratio", "value": 0.17},
+			{"user_id": 7, "group_pattern": "vip", "model_pattern": "some-model", "type": "ratio", "value": 0.5},
+			{"user_id": 8, "group_pattern": "default", "type": "ratio", "value": 0.3}
+		]
+	}`
+	require.NoError(t, ratio_setting.UpdateUserPricingOverrideByJSONString(overrideJSON))
+
+	groupRatio := map[string]float64{
+		"default":  1,
+		"discount": 0.4,
+		"vip":      1.2,
+	}
+
+	applyUserGroupRatioOverridesToMap(&model.UserBase{Id: 7, Username: "alice", Group: "member"}, groupRatio)
+
+	require.Equal(t, 0.17, groupRatio["discount"], "full-model ratio rule folds into the displayed group ratio")
+	require.Equal(t, 1.2, groupRatio["vip"], "model-conditioned rule cannot fold into a single group ratio")
+	require.Equal(t, 1.0, groupRatio["default"], "other users' rules do not apply")
+
+	untouched := map[string]float64{"discount": 0.4}
+	applyUserGroupRatioOverridesToMap(nil, untouched)
+	require.Equal(t, 0.4, untouched["discount"], "anonymous visitors keep base group ratios")
+}

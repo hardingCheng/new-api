@@ -299,8 +299,8 @@ func GenerateMjOtherInfo(relayInfo *relaycommon.RelayInfo, priceData types.Price
 	other := make(map[string]interface{})
 	other["model_price"] = priceData.ModelPrice
 	other["group_ratio"] = priceData.GroupRatioInfo.GroupRatio
-	if priceData.GroupRatioInfo.HasSpecialRatio {
-		other["user_group_ratio"] = priceData.GroupRatioInfo.GroupSpecialRatio
+	if ratio := priceData.GroupRatioInfo.EffectiveUserRatio(); ratio >= 0 {
+		other["user_group_ratio"] = ratio
 	}
 	appendRequestPath(nil, relayInfo, other)
 	return other

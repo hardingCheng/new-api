@@ -84,6 +84,14 @@ function getGroupRatioText(
   other: LogOtherData | null,
   configuredGroupRatio?: number
 ): string | null {
+  // group_ratio is the ratio actually billed (user pricing overrides already
+  // applied); user_group_ratio may predate the override, so it is only a
+  // fallback for legacy logs that lack group_ratio.
+  const groupRatio = other?.group_ratio
+  if (groupRatio != null && Number.isFinite(groupRatio)) {
+    return `${formatRatioCompact(groupRatio)}x`
+  }
+
   const userGroupRatio = other?.user_group_ratio
   if (
     userGroupRatio != null &&
@@ -93,9 +101,8 @@ function getGroupRatioText(
     return `${formatRatioCompact(userGroupRatio)}x`
   }
 
-  const groupRatio = other?.group_ratio ?? configuredGroupRatio
-  if (groupRatio != null && Number.isFinite(groupRatio)) {
-    return `${formatRatioCompact(groupRatio)}x`
+  if (configuredGroupRatio != null && Number.isFinite(configuredGroupRatio)) {
+    return `${formatRatioCompact(configuredGroupRatio)}x`
   }
 
   return null
@@ -290,7 +297,12 @@ function buildTypeDetailSegments(
         userGroupRatio != null &&
         Number.isFinite(userGroupRatio) &&
         userGroupRatio !== -1
-      const effectiveRatio = isUserGroup ? userGroupRatio : groupRatio
+      // Show the billed group_ratio; user_group_ratio only picks the label
+      // (and backfills legacy logs missing group_ratio).
+      let effectiveRatio = groupRatio
+      if ((groupRatio == null || !Number.isFinite(groupRatio)) && isUserGroup) {
+        effectiveRatio = userGroupRatio
+      }
       const ratioLabel = isUserGroup
         ? t('User Exclusive Ratio')
         : t('Group Ratio')

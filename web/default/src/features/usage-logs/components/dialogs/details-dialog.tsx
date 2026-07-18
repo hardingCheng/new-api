@@ -211,7 +211,13 @@ function BillingBreakdown(props: {
 
   const userGR = other.user_group_ratio
   const isUserGR = userGR != null && Number.isFinite(userGR) && userGR !== -1
-  const effectiveGR = isUserGR ? userGR : other.group_ratio
+  // Show the billed group_ratio; user_group_ratio only picks the label
+  // (and backfills legacy logs missing group_ratio).
+  const billedGR = other.group_ratio
+  let effectiveGR = billedGR
+  if ((billedGR == null || !Number.isFinite(billedGR)) && isUserGR) {
+    effectiveGR = userGR
+  }
   if (effectiveGR != null && Number.isFinite(effectiveGR)) {
     rows.push({
       label: isUserGR ? t('User Exclusive Ratio') : t('Group Ratio'),

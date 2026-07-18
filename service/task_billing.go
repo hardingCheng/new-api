@@ -45,8 +45,8 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		other["model_ratio"] = info.PriceData.ModelRatio
 	}
 	other["group_ratio"] = info.PriceData.GroupRatioInfo.GroupRatio
-	if info.PriceData.GroupRatioInfo.HasSpecialRatio {
-		other["user_group_ratio"] = info.PriceData.GroupRatioInfo.GroupSpecialRatio
+	if ratio := info.PriceData.GroupRatioInfo.EffectiveUserRatio(); ratio >= 0 {
+		other["user_group_ratio"] = ratio
 	}
 	if info.IsModelMapped {
 		other["is_model_mapped"] = true

@@ -101,6 +101,20 @@ func applyUserPricingToPricingList(pricing []model.Pricing, user *model.UserBase
 	return result
 }
 
+// applyUserGroupRatioOverridesToMap 把用户个性定价的全模型 ratio 规则折进定价页返回的
+// 分组倍率映射,与令牌页分组选择器(GetUserGroups)口径一致;带模型条件的规则无法
+// 折算成单一分组倍率,不参与(计费时仍生效)。
+func applyUserGroupRatioOverridesToMap(user *model.UserBase, groupRatio map[string]float64) {
+	if user == nil {
+		return
+	}
+	for group := range groupRatio {
+		if override, ok := ratio_setting.GetUserGroupRatioOverride(user.Id, user.Username, user.Group, group); ok {
+			groupRatio[group] = override
+		}
+	}
+}
+
 func GetPricing(c *gin.Context) {
 	pricing := model.GetPricing()
 	userId, exists := c.Get("id")
@@ -133,6 +147,7 @@ func GetPricing(c *gin.Context) {
 			delete(groupRatio, group)
 		}
 	}
+	applyUserGroupRatioOverridesToMap(user, groupRatio)
 	pricing = applyUserPricingToPricingList(pricing, user, groupRatio)
 
 	c.JSON(200, gin.H{

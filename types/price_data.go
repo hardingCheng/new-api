@@ -15,6 +15,20 @@ type GroupRatioInfo struct {
 	HasUserOverride   bool
 }
 
+// EffectiveUserRatio 返回展示给用户的"用户专属倍率":个性价格覆盖生效时为覆盖值
+// (即实际计费倍率),否则为用户分组特殊倍率;两者都没有时返回 -1。
+// 日志里的 user_group_ratio 必须用它而不是 GroupSpecialRatio,
+// 否则覆盖生效后客户看到的仍是覆盖前的倍率。
+func (g GroupRatioInfo) EffectiveUserRatio() float64 {
+	if g.HasUserOverride {
+		return g.UserOverrideRatio
+	}
+	if g.HasSpecialRatio {
+		return g.GroupSpecialRatio
+	}
+	return -1
+}
+
 type PriceData struct {
 	FreeModel            bool
 	ModelPrice           float64
