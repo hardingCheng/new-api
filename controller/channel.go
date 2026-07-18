@@ -1487,6 +1487,8 @@ func ManageMultiKeys(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	unlockStatusUpdates := model.LockChannelStatusUpdates()
+	defer unlockStatusUpdates()
 
 	channel, err := model.GetChannelById(request.ChannelId, true)
 	if err != nil {
@@ -1503,6 +1505,9 @@ func ManageMultiKeys(c *gin.Context) {
 			"message": "该渠道不是多密钥模式",
 		})
 		return
+	}
+	if channel.IsMultiKeyChannelManuallyDisabled() {
+		channel.ChannelInfo.ChannelManuallyDisabled = true
 	}
 	if multiKeyActionRequiresSensitiveWrite(request.Action) &&
 		!authz.Can(c.GetInt("id"), c.GetInt("role"), authz.ChannelSensitiveWrite) {

@@ -66,6 +66,32 @@ func TestManageMultiKeysEnableAllClearsTerminalState(t *testing.T) {
 	require.False(t, updated.ChannelInfo.AutoRecoveryDisabled)
 }
 
+func TestManageMultiKeysPreservesChannelLevelManualDisable(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Log{}))
+	channel := &model.Channel{
+		Type:   1,
+		Name:   "manual-channel-key-update",
+		Key:    "key-a\nkey-b",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:   true,
+			MultiKeySize: 2,
+		},
+	}
+	require.NoError(t, db.Create(channel).Error)
+	require.True(t, model.UpdateChannelStatus(channel.Id, "", common.ChannelStatusManuallyDisabled, "manual operation"))
+	keyIndex := 0
+
+	manageMultiKeyForTest(t, channel.Id, "disable_key", &keyIndex)
+
+	var updated model.Channel
+	require.NoError(t, db.First(&updated, channel.Id).Error)
+	require.Equal(t, common.ChannelStatusManuallyDisabled, updated.Status)
+	require.True(t, updated.ChannelInfo.ChannelManuallyDisabled)
+	require.Equal(t, common.ChannelStatusManuallyDisabled, updated.ChannelInfo.MultiKeyStatusList[0])
+}
+
 func TestManageMultiKeysDeleteKeyReindexesTerminalState(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.Log{}))

@@ -1118,6 +1118,78 @@ func TestPendingTaskSubmissionSettlementIsIdempotentAfterReservationApplied(t *t
 	assert.Equal(t, 1500, getTokenUsedQuota(t, tokenID))
 }
 
+func TestPendingTaskSubmissionSettlementChargesActualQuotaAfterReservationRefund(t *testing.T) {
+	truncate(t)
+	const userID, tokenID = 106, 106
+	seedUser(t, userID, 10000)
+	seedToken(t, tokenID, userID, "sk-task-submission-late", 10000)
+	reservation, err := model.ReserveBillingQuota(model.BillingReservationParams{
+		RequestID:           "task-submission-late",
+		UserID:              userID,
+		TokenID:             tokenID,
+		TokenKey:            "sk-task-submission-late",
+		TokenBillingEnabled: true,
+		FundingSource:       BillingSourceWallet,
+		Amount:              2000,
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).
+		Where("id = ?", reservation.Adjustment.ID).Update("next_retry_at", 0).Error)
+	summary := ProcessPendingBillingAdjustments(context.Background(), 10)
+	require.Equal(t, 1, summary.Succeeded)
+	require.Equal(t, 10000, getUserQuota(t, userID))
+
+	task := makeTask(userID, 0, 1500, tokenID, BillingSourceWallet, 0)
+	task.TaskID = "task_submission_late"
+	task.Status = model.TaskStatusNotStart
+	task.BillingStatus = model.TaskBillingStatusSettlementPending
+	task.PrivateData.BillingContext.SubmissionRequestID = "task-submission-late"
+	task.PrivateData.BillingContext.SubmissionPreConsumedQuota = 2000
+	task.PrivateData.BillingContext.SubmissionActualQuota = 1500
+	task.PrivateData.BillingContext.SubmissionSettlementPending = true
+	task.PrivateData.BillingContext.SubmissionTokenBilling = true
+	require.NoError(t, model.DB.Create(task).Error)
+
+	require.NoError(t, ApplyPendingTaskSettlement(context.Background(), task))
+	require.Equal(t, 8500, getUserQuota(t, userID))
+	require.Equal(t, 8500, getTokenRemainQuota(t, tokenID))
+	require.Equal(t, 1500, getTokenUsedQuota(t, tokenID))
+
+	var lateCharge model.BillingAdjustment
+	require.NoError(t, model.DB.Where("adjustment_key = ?", "relay-settle:task-submission-late").First(&lateCharge).Error)
+	require.Equal(t, 1500, lateCharge.FundingDelta)
+	require.Equal(t, model.BillingAdjustmentStatusSucceeded, lateCharge.Status)
+	require.NoError(t, ApplyPendingTaskSettlement(context.Background(), task))
+	require.Equal(t, 8500, getUserQuota(t, userID))
+}
+
+func TestTaskQuotaSettlementRetryDoesNotDuplicateAccounting(t *testing.T) {
+	truncate(t)
+	const userID, tokenID, channelID = 107, 107, 107
+	seedUser(t, userID, 10000)
+	seedToken(t, tokenID, userID, "sk-task-settlement-accounting", 10000)
+	seedChannel(t, channelID)
+	task := makeTask(userID, channelID, 1000, tokenID, BillingSourceWallet, 0)
+	task.TaskID = "task_settlement_accounting"
+	require.NoError(t, model.DB.Create(task).Error)
+	firstAttempt := *task
+	secondAttempt := *task
+
+	require.True(t, RecalculateTaskQuota(context.Background(), &firstAttempt, 1500, "actual usage"))
+	require.True(t, RecalculateTaskQuota(context.Background(), &secondAttempt, 1500, "actual usage"))
+
+	var user model.User
+	require.NoError(t, model.DB.First(&user, userID).Error)
+	assert.Equal(t, 500, user.UsedQuota)
+	var channel model.Channel
+	require.NoError(t, model.DB.First(&channel, channelID).Error)
+	assert.Equal(t, int64(500), channel.UsedQuota)
+	var logCount int64
+	require.NoError(t, model.DB.Model(&model.Log{}).
+		Where("type = ? AND user_id = ?", model.LogTypeConsume, userID).Count(&logCount).Error)
+	assert.Equal(t, int64(1), logCount)
+}
+
 func TestTaskSubmissionPersistsZeroDeltaSettlementMarker(t *testing.T) {
 	truncate(t)
 	const userID, tokenID = 103, 103

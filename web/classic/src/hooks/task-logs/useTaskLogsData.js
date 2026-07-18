@@ -373,12 +373,16 @@ export const useTaskLogsData = () => {
       }
 
       const rows = buildTaskExportRows(allItems, { t, isAdminUser });
-      const XLSX = await import('xlsx');
-      const worksheet = XLSX.utils.json_to_sheet(rows);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, t('任务记录'));
+      const headers = Object.keys(rows[0]);
+      const sheetData = [
+        headers.map((header) => ({ value: header, fontWeight: 'bold' })),
+        ...rows.map((row) => headers.map((header) => row[header] ?? null)),
+      ];
+      const writeXlsxFile = (await import('write-excel-file/browser')).default;
       const stamp = timestamp2string(Date.now() / 1000).replace(/[^\d]/g, '');
-      XLSX.writeFile(workbook, `task-report-${stamp}.xlsx`);
+      await writeXlsxFile(sheetData, { sheet: t('任务记录') }).toFile(
+        `task-report-${stamp}.xlsx`,
+      );
       showSuccess(t('导出成功'));
     } catch (error) {
       console.error('export task report failed', error);

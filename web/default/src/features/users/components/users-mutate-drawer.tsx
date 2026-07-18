@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
 import { Pencil } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -133,24 +133,34 @@ export function UsersMutateDrawer({
     defaultValues: USER_FORM_DEFAULT_VALUES,
   })
 
+  const showUserLoadError = useEffectEvent(() => {
+    toast.error(t(ERROR_MESSAGES.UNEXPECTED))
+  })
+
   // Load existing data when updating
   useEffect(() => {
-    if (open && isUpdate && currentRow) {
-      // For update, fetch fresh data
-      getUser(currentRow.id)
-        .then((result) => {
-          if (result.success && result.data) {
-            form.reset(transformUserToFormDefaults(result.data))
-          }
-        })
-        .catch(() => {
-          toast.error(t(ERROR_MESSAGES.UNEXPECTED))
-        })
-    } else if (open && !isUpdate) {
-      // For create, reset to defaults
+    if (!open) return
+
+    if (!currentRow?.id) {
       form.reset(USER_FORM_DEFAULT_VALUES)
+      return
     }
-  }, [open, isUpdate, currentRow, form, t])
+
+    let ignore = false
+    getUser(currentRow.id)
+      .then((result) => {
+        if (!ignore && result.success && result.data) {
+          form.reset(transformUserToFormDefaults(result.data))
+        }
+      })
+      .catch(() => {
+        if (!ignore) showUserLoadError()
+      })
+
+    return () => {
+      ignore = true
+    }
+  }, [open, currentRow?.id, form])
 
   const { meta: currencyMeta } = getCurrencyDisplay()
   const currencyLabel = getCurrencyLabel()

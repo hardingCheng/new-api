@@ -285,6 +285,11 @@ func RollbackModelQuotaPool(info *relaycommon.RelayInfo) error {
 	matches := info.ModelQuotaPools
 	var firstErr error
 	for index := range matches {
+		// A zero reservation ID means this match was already finalized during a
+		// partially successful settlement. Its durable adjustment must stand.
+		if matches[index].ReservationID == 0 {
+			continue
+		}
 		operationPrefix := fmt.Sprintf("relay:rollback:%s:%d", requestID, index)
 		if err := settleModelQuotaPoolMatch(&matches[index], 0, operationPrefix); err != nil && firstErr == nil {
 			firstErr = err

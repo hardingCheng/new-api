@@ -172,6 +172,28 @@ func TestSettleRelayModelQuotaPoolKeepsTokenEstimateWithoutActualUsage(t *testin
 	assert.Equal(t, int64(1000), info.ModelQuotaPools[0].Amount)
 }
 
+func TestRollbackModelQuotaPoolSkipsAlreadyFinalizedMatches(t *testing.T) {
+	truncate(t)
+	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
+	common.RedisEnabled, common.RDB = false, nil
+	t.Cleanup(func() { common.RedisEnabled, common.RDB = oldRedisEnabled, oldRDB })
+	info := &relaycommon.RelayInfo{
+		RequestId: "partially-settled-pools",
+		ModelQuotaPools: []ratio_setting.ModelQuotaPoolMatch{{
+			ReservationID: 0,
+			RedisKey:      "pool:already-finalized",
+			Amount:        250,
+		}},
+	}
+
+	require.NoError(t, RollbackModelQuotaPool(info))
+	assert.True(t, info.ModelQuotaPoolSettled)
+	assert.Empty(t, info.ModelQuotaPools)
+	var adjustmentCount int64
+	require.NoError(t, model.DB.Model(&model.QuotaPoolAdjustment{}).Count(&adjustmentCount).Error)
+	assert.Zero(t, adjustmentCount)
+}
+
 func TestAppendAdminBillingRulesOmitsRedisKeyWithoutMutatingReservation(t *testing.T) {
 	reservation := ratio_setting.ModelQuotaPoolMatch{
 		RedisKey: "model_quota_pool:global:secret",

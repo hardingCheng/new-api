@@ -107,6 +107,16 @@ func TestTaskDurationBounds(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "huge seconds cannot hide behind valid duration",
+			body:    `{"model":"sora-2","prompt":"a cat","seconds":"999999","duration":5}`,
+			wantErr: true,
+		},
+		{
+			name:    "invalid seconds string is rejected",
+			body:    `{"model":"sora-2","prompt":"a cat","seconds":"not-a-number","duration":5}`,
+			wantErr: true,
+		},
+		{
 			name:    "negative duration is rejected",
 			body:    `{"model":"sora-2","prompt":"a cat","duration":-8}`,
 			wantErr: true,
@@ -139,6 +149,20 @@ func TestTaskDurationBounds(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTaskDurationRejectsIntegerOverflow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	request := httptest.NewRequest(http.MethodPost, "/v1/video/generations",
+		strings.NewReader(`{"model":"sora-2","prompt":"a cat","duration":"999999999999999999999999999999"}`))
+	request.Header.Set("Content-Type", "application/json")
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = request
+
+	taskErr := ValidateMultipartDirect(context, &RelayInfo{TaskRelayInfo: &TaskRelayInfo{}})
+
+	require.NotNil(t, taskErr)
+	require.Equal(t, http.StatusBadRequest, taskErr.StatusCode)
 }
 
 func TestIsSeedanceVideoModelIncludesPrism(t *testing.T) {

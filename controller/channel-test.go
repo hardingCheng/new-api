@@ -1147,6 +1147,7 @@ func recoverableMultiKeyIndexes(channel *model.Channel) []int {
 		return nil
 	}
 	recoverableKeyIndexes := make([]int, 0)
+	enabledKeyIndexes := make([]int, 0)
 	for index := range channel.GetKeys() {
 		status := common.ChannelStatusEnabled
 		if savedStatus, ok := channel.ChannelInfo.MultiKeyStatusList[index]; ok {
@@ -1154,7 +1155,12 @@ func recoverableMultiKeyIndexes(channel *model.Channel) []int {
 		}
 		if status == common.ChannelStatusAutoDisabled && !channel.ChannelInfo.MultiKeyAutoRecoveryDisabled[index] {
 			recoverableKeyIndexes = append(recoverableKeyIndexes, index)
+		} else if status == common.ChannelStatusEnabled {
+			enabledKeyIndexes = append(enabledKeyIndexes, index)
 		}
+	}
+	if len(recoverableKeyIndexes) == 0 {
+		return enabledKeyIndexes
 	}
 	return recoverableKeyIndexes
 }

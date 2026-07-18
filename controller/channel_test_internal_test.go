@@ -132,6 +132,19 @@ func TestRecoverableMultiKeyIndexesSkipsTerminalAndManualKeys(t *testing.T) {
 	require.Equal(t, []int{1}, recoverableMultiKeyIndexes(channel))
 }
 
+func TestRecoverableMultiKeyIndexesFallsBackToEnabledKeys(t *testing.T) {
+	channel := &model.Channel{
+		Key:    "enabled-key\nmanual-key",
+		Status: common.ChannelStatusAutoDisabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:         true,
+			MultiKeyStatusList: map[int]int{1: common.ChannelStatusManuallyDisabled},
+		},
+	}
+
+	require.Equal(t, []int{0}, recoverableMultiKeyIndexes(channel))
+}
+
 func TestUnsupportedChannelIsNotTreatedAsSuccessfulDuringRecovery(t *testing.T) {
 	channel := &model.Channel{
 		Type:   constant.ChannelTypeDoubaoVideo,

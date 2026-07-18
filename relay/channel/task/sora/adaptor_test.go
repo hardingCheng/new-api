@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -26,6 +27,18 @@ func newTaskRequestContext(t *testing.T, body []byte, contentType string) *gin.C
 		common.CleanupBodyStorage(ctx)
 	})
 	return ctx
+}
+
+func TestValidateRemixRequestRejectsOutOfRangeEffectiveDuration(t *testing.T) {
+	ctx := newTaskRequestContext(t, []byte(`{"prompt":"test","seconds":"999999","duration":5}`), "application/json")
+	info := &relaycommon.RelayInfo{TaskRelayInfo: &relaycommon.TaskRelayInfo{}}
+	info.Action = constant.TaskActionRemix
+
+	taskErr := (&TaskAdaptor{}).ValidateRequestAndSetAction(ctx, info)
+
+	require.NotNil(t, taskErr)
+	assert.Equal(t, "invalid_seconds", taskErr.Code)
+	assert.Equal(t, http.StatusBadRequest, taskErr.StatusCode)
 }
 
 func TestBuildRequestBodyJSONDurationCompatibility(t *testing.T) {
