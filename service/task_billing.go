@@ -309,7 +309,7 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) error
 	submissionRefunded := false
 	if bc := task.PrivateData.BillingContext; bc != nil && !bc.SubmissionSettled {
 		var err error
-		submissionRefunded, err = finalizeTaskSubmissionReservation(ctx, task, 0, true)
+		submissionRefunded, _, err = finalizeTaskSubmissionReservation(ctx, task, 0, true)
 		if err != nil {
 			return errors.Join(poolErr, err)
 		}
@@ -444,18 +444,27 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		return false
 	}
 	billingPending := false
-	if err = model.ApplyBillingAdjustment(adjustment.ID); err != nil {
+	appliedNow, applyErr := model.ApplyBillingAdjustmentChecked(adjustment.ID)
+	if applyErr != nil {
 		billingPending = true
-		logger.LogError(ctx, fmt.Sprintf("差额结算等待后台重试 task %s: %s", task.TaskID, err.Error()))
+		logger.LogError(ctx, fmt.Sprintf("差额结算等待后台重试 task %s: %s", task.TaskID, applyErr.Error()))
 	}
 
 	task.Quota = actualQuota
+	poolSettled := true
 	if err := AdjustTaskModelQuotaPoolQuota(task, actualQuota); err != nil {
 		logger.LogError(ctx, fmt.Sprintf("任务 %s 限量池结算入队失败: %s", task.TaskID, err.Error()))
-		return false
+		poolSettled = false
 	}
+	quotaPersisted := true
 	if err := task.UpdateQuota(); err != nil {
 		logger.LogError(ctx, fmt.Sprintf("差额结算回写 quota 失败 task %s: %s", task.TaskID, err.Error()))
+		if task.ID > 0 {
+			quotaPersisted = false
+		}
+	}
+	if !appliedNow {
+		return poolSettled && quotaPersisted
 	}
 
 	var logType int
@@ -496,7 +505,7 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		Other:     other,
 		NodeName:  task.PrivateData.NodeName,
 	})
-	return true
+	return poolSettled && quotaPersisted
 }
 
 // RecalculateTaskQuotaByTokens 根据实际 token 消耗重新计费（异步差额结算）。
@@ -607,12 +616,15 @@ func applyPendingTaskSubmissionSettlement(ctx context.Context, task *model.Task)
 		return nil
 	}
 	actualQuota := bc.SubmissionActualQuota
-	usedReservation, err := finalizeTaskSubmissionReservation(ctx, task, actualQuota, false)
+	usedReservation, reservationRefunded, err := finalizeTaskSubmissionReservation(ctx, task, actualQuota, false)
 	if err != nil {
 		return err
 	}
 	if !usedReservation {
 		delta := actualQuota - bc.SubmissionPreConsumedQuota
+		if reservationRefunded {
+			delta = actualQuota
+		}
 		if delta != 0 {
 			requestID := strings.TrimSpace(bc.SubmissionRequestID)
 			if requestID == "" {
@@ -637,21 +649,21 @@ func applyPendingTaskSubmissionSettlement(ctx context.Context, task *model.Task)
 	return nil
 }
 
-func finalizeTaskSubmissionReservation(ctx context.Context, task *model.Task, actualQuota int, refund bool) (bool, error) {
+func finalizeTaskSubmissionReservation(ctx context.Context, task *model.Task, actualQuota int, refund bool) (bool, bool, error) {
 	if task == nil || task.PrivateData.BillingContext == nil {
-		return false, nil
+		return false, false, nil
 	}
 	bc := task.PrivateData.BillingContext
 	requestID := strings.TrimSpace(bc.SubmissionRequestID)
 	if requestID == "" {
-		return false, nil
+		return false, false, nil
 	}
 	adjustment, found, err := model.GetBillingAdjustmentByKey("relay-billing:" + requestID)
 	if err != nil || !found {
-		return false, err
+		return false, false, err
 	}
 	if adjustment.UserID != task.UserId || (task.PrivateData.TokenId > 0 && adjustment.TokenID != task.PrivateData.TokenId) {
-		return true, errors.New("task submission billing reservation does not match task")
+		return true, false, errors.New("task submission billing reservation does not match task")
 	}
 	reservationOutcome := adjustment.ReservationOutcome
 	if reservationOutcome == "" && bc.SubmissionPreConsumedQuota > 0 && adjustment.FundingDelta == -bc.SubmissionPreConsumedQuota {
@@ -659,15 +671,15 @@ func finalizeTaskSubmissionReservation(ctx context.Context, task *model.Task, ac
 	}
 	if adjustment.Status != model.BillingAdjustmentStatusReserved && refund {
 		if reservationOutcome != model.BillingReservationOutcomeRefund {
-			return false, nil
+			return false, false, nil
 		}
 		if err := model.ApplyBillingAdjustment(adjustment.ID); err != nil {
 			logger.LogWarn(ctx, fmt.Sprintf("任务提交退款等待后台重试 task %s: %s", task.TaskID, err.Error()))
 		}
-		return true, nil
+		return true, true, nil
 	}
 	if adjustment.Status != model.BillingAdjustmentStatusReserved && reservationOutcome == model.BillingReservationOutcomeRefund {
-		return true, errors.New("task submission billing reservation was already refunded")
+		return false, true, nil
 	}
 	tokenBillingEnabled := bc.SubmissionTokenBilling
 	if !tokenBillingEnabled && task.PrivateData.TokenId > 0 && adjustment.TokenDelta != 0 {
@@ -675,12 +687,12 @@ func finalizeTaskSubmissionReservation(ctx context.Context, task *model.Task, ac
 	}
 	adjustment, err = model.FinalizeBillingReservation(adjustment.ID, actualQuota, tokenBillingEnabled, refund)
 	if err != nil {
-		return true, err
+		return true, false, err
 	}
 	if err := model.ApplyBillingAdjustment(adjustment.ID); err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("任务提交计费调整等待后台重试 task %s: %s", task.TaskID, err.Error()))
 	}
-	return true, nil
+	return true, refund, nil
 }
 
 func taskBillingTokenRatios(task *model.Task) (modelRatio float64, groupRatio float64, hasSnapshot bool, canRecalculate bool) {

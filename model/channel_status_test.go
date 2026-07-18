@@ -40,6 +40,22 @@ func TestHandlerMultiKeyUpdateIsIsolatedAndIdempotent(t *testing.T) {
 	require.False(t, disabled)
 }
 
+func TestHandlerMultiKeyUpdateDoesNotOverrideManualKeyDisable(t *testing.T) {
+	channel := &Channel{
+		Id:     1002,
+		Key:    "key-a\nkey-b",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: ChannelInfo{
+			IsMultiKey:         true,
+			MultiKeyStatusList: map[int]int{0: common.ChannelStatusManuallyDisabled},
+		},
+	}
+
+	require.False(t, handlerMultiKeyUpdate(channel, "key-a", common.ChannelStatusAutoDisabled, "in-flight failure", false))
+	require.Equal(t, common.ChannelStatusEnabled, channel.Status)
+	require.Equal(t, common.ChannelStatusManuallyDisabled, channel.ChannelInfo.MultiKeyStatusList[0])
+}
+
 func TestUpdateChannelStatusWithoutAutoRecoveryPersistsUntilManualEnable(t *testing.T) {
 	setupChannelStatusTest(t)
 	channel := &Channel{
@@ -219,6 +235,34 @@ func TestUpdateChannelStatusPersistsMultiKeyIsolation(t *testing.T) {
 	_, keyADisabled := restored.ChannelInfo.MultiKeyStatusList[0]
 	require.False(t, keyADisabled)
 	require.Equal(t, common.ChannelStatusAutoDisabled, restored.ChannelInfo.MultiKeyStatusList[1])
+}
+
+func TestMultiKeyUpdatePreservesChannelLevelManualDisable(t *testing.T) {
+	setupChannelStatusTest(t)
+	channel := &Channel{
+		Type:   1,
+		Name:   "manually-disabled-multi-key",
+		Key:    "key-a\nkey-b",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: ChannelInfo{
+			IsMultiKey:   true,
+			MultiKeySize: 2,
+		},
+	}
+	require.NoError(t, DB.Create(channel).Error)
+	require.True(t, UpdateChannelStatus(channel.Id, "", common.ChannelStatusManuallyDisabled, "manual operation"))
+	require.True(t, UpdateChannelStatus(channel.Id, "key-a", common.ChannelStatusAutoDisabled, "in-flight failure"))
+
+	var disabled Channel
+	require.NoError(t, DB.First(&disabled, channel.Id).Error)
+	require.Equal(t, common.ChannelStatusManuallyDisabled, disabled.Status)
+	require.True(t, disabled.ChannelInfo.ChannelManuallyDisabled)
+	require.Equal(t, common.ChannelStatusAutoDisabled, disabled.ChannelInfo.MultiKeyStatusList[0])
+
+	require.True(t, UpdateChannelStatus(channel.Id, "", common.ChannelStatusEnabled, "manual recovery"))
+	require.NoError(t, DB.First(&disabled, channel.Id).Error)
+	require.Equal(t, common.ChannelStatusEnabled, disabled.Status)
+	require.False(t, disabled.ChannelInfo.ChannelManuallyDisabled)
 }
 
 func TestUpdateChannelStatusRestoresEnabledChannelToMemoryRouting(t *testing.T) {

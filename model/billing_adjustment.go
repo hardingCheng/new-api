@@ -485,10 +485,19 @@ func billingAdjustmentMatches(adjustment BillingAdjustment, params BillingAdjust
 }
 
 func ApplyBillingAdjustment(adjustmentID int64) error {
+	_, err := ApplyBillingAdjustmentChecked(adjustmentID)
+	return err
+}
+
+// ApplyBillingAdjustmentChecked reports whether this call performed the
+// durable financial update. Retries of an already applied adjustment return
+// false so secondary accounting can remain idempotent too.
+func ApplyBillingAdjustmentChecked(adjustmentID int64) (bool, error) {
 	if adjustmentID <= 0 {
-		return errors.New("invalid billing adjustment id")
+		return false, errors.New("invalid billing adjustment id")
 	}
 	var applied *BillingAdjustment
+	appliedNow := false
 	err := runBillingTransaction(func(tx *gorm.DB) error {
 		var adjustment BillingAdjustment
 		if err := lockForUpdate(tx).Where("id = ?", adjustmentID).First(&adjustment).Error; err != nil {
@@ -553,20 +562,21 @@ func ApplyBillingAdjustment(adjustmentID int64) error {
 		}).Error; err != nil {
 			return err
 		}
+		appliedNow = true
 		applied = &adjustment
 		return nil
 	})
 	if err != nil {
 		scheduleBillingAdjustmentRetry(adjustmentID, err)
-		return err
+		return false, err
 	}
 	if applied != nil {
 		if err := refreshBillingAdjustmentCaches(*applied); err != nil {
 			scheduleBillingAdjustmentRetry(adjustmentID, err)
-			return err
+			return appliedNow, err
 		}
 	}
-	return nil
+	return appliedNow, nil
 }
 
 func applySubscriptionRefundAdjustmentTx(tx *gorm.DB, adjustment *BillingAdjustment) error {
