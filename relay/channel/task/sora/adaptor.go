@@ -140,7 +140,7 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		seconds = 4
 	}
 	referenceSeconds := 0
-	if relaycommon.IsSeedanceVideoModel(req.Model) || relaycommon.IsSeedanceVideoModel(info.OriginModelName) {
+	if relaycommon.IsSeedanceRelayModel(info, req.Model) {
 		referenceSeconds = service.SumReferenceVideoDurationSeconds(c, relaycommon.ExtractReferenceVideoURLs(req))
 	}
 	billableSeconds := seconds + referenceSeconds

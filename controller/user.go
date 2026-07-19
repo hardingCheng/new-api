@@ -18,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/QuantumNous/new-api/constant"
@@ -648,6 +649,7 @@ func GetUserModels(c *gin.Context) {
 	}
 	groups := service.GetUserUsableGroups(user.Group)
 	group := c.Query("group")
+	var models []string
 	if group != "" {
 		if _, ok := groups[group]; !ok {
 			c.JSON(http.StatusOK, gin.H{
@@ -657,29 +659,26 @@ func GetUserModels(c *gin.Context) {
 			})
 			return
 		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"message": "",
-			"data":    model.GetGroupEnabledModels(group),
-		})
-		return
-	}
-
-	var models []string
-	for group := range groups {
-		for _, g := range model.GetGroupEnabledModels(group) {
-			if !common.StringsContains(models, g) {
-				models = append(models, g)
+		models = model.GetGroupEnabledModels(group)
+	} else {
+		for group := range groups {
+			for _, enabledModel := range model.GetGroupEnabledModels(group) {
+				if !common.StringsContains(models, enabledModel) {
+					models = append(models, enabledModel)
+				}
 			}
 		}
+	}
+	visibleModels := model_setting.BuildVisibleUserModels(id, models)
+	models = make([]string, 0, len(visibleModels))
+	for _, visibleModel := range visibleModels {
+		models = append(models, visibleModel.Name)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
 		"data":    models,
 	})
-	return
 }
 
 func UpdateUser(c *gin.Context) {

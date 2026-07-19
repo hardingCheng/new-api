@@ -23,7 +23,7 @@ import (
 func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	tokenName := c.GetString("token_name")
 	logContent := fmt.Sprintf("操作 %s", info.Action)
-	videoBillingMode := ratio_setting.GetVideoBillingMode(info.OriginModelName)
+	videoBillingMode := ratio_setting.GetVideoBillingMode(info.EffectiveBillingModelName())
 	// 支持任务仅按次计费
 	if videoBillingMode == ratio_setting.VideoBillingModePerCall {
 		logContent = fmt.Sprintf("%s，按次计费", logContent)
@@ -131,10 +131,10 @@ func taskBillingContextFromRelayInfo(info *relaycommon.RelayInfo) *model.TaskBil
 		ModelRatio:                 info.PriceData.ModelRatio,
 		OtherRatios:                info.PriceData.OtherRatios(),
 		OriginModelName:            info.OriginModelName,
-		VideoBillingMode:           ratio_setting.GetVideoBillingMode(info.OriginModelName),
+		VideoBillingMode:           ratio_setting.GetVideoBillingMode(info.EffectiveBillingModelName()),
 		UserPricingOverrides:       info.UserPricingOverrides,
 		ModelQuotaPools:            info.ModelQuotaPools,
-		PerCallBilling:             ratio_setting.IsVideoBillingPerCall(info.OriginModelName) || (info.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(info.OriginModelName)),
+		PerCallBilling:             ratio_setting.IsVideoBillingPerCall(info.EffectiveBillingModelName()) || (info.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(info.EffectiveBillingModelName())),
 		SubmissionRequestID:        info.RequestId,
 		SubmissionPreConsumedQuota: info.FinalPreConsumedQuota,
 		SubmissionTokenBilling:     !info.IsPlayground,

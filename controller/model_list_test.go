@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
@@ -373,6 +374,95 @@ func TestListModelsTokenLimitIncludesTieredBillingModel(t *testing.T) {
 	require.NotContains(t, ids, "zz-token-tiered-empty-expr-model")
 	require.NotContains(t, ids, "zz-token-tiered-missing-expr-model")
 	require.NotContains(t, ids, "zz-token-unpriced-model")
+}
+
+func TestListModelsReplacesTargetsForConfiguredUser(t *testing.T) {
+	withSelfUseModeEnabled(t)
+	originalConfig, err := common.Marshal(model_setting.GetUserModelViewCopy())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, model_setting.UpdateUserModelViewByJSONString(string(originalConfig)))
+	})
+	require.NoError(t, model_setting.UpdateUserModelViewByJSONString(`{
+		"rules": [{
+			"user_id": 521,
+			"aliases": [
+				{"public_model":"521ai-2.0-sp-720p","target_model":"seedance-2.0-720p","reference_video":"allowed"},
+				{"public_model":"521ai-2.0-720p","target_model":"seedance-2.0-720p","reference_video":"forbidden"}
+			]
+		}]
+	}`))
+
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       521,
+		Username: "special-model-user",
+		Password: "password",
+		Group:    "sd2",
+		Status:   common.UserStatusEnabled,
+		AffCode:  "special-model-user-aff",
+	}).Error)
+	require.NoError(t, db.Create(&model.User{
+		Id:       522,
+		Username: "regular-model-user",
+		Password: "password",
+		Group:    "sd2",
+		Status:   common.UserStatusEnabled,
+		AffCode:  "regular-model-user-aff",
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "sd2", Model: "seedance-2.0-720p", ChannelId: 1, Enabled: true},
+		{Group: "sd2", Model: "unrelated-model", ChannelId: 1, Enabled: true},
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	context.Set("id", 521)
+
+	ListModels(context, constant.ChannelTypeOpenAI)
+
+	modelIDs := decodeListModelsResponse(t, recorder)
+	assert.Contains(t, modelIDs, "521ai-2.0-sp-720p")
+	assert.Contains(t, modelIDs, "521ai-2.0-720p")
+	assert.Contains(t, modelIDs, "unrelated-model")
+	assert.NotContains(t, modelIDs, "seedance-2.0-720p")
+
+	userModelsRecorder := httptest.NewRecorder()
+	userModelsContext, _ := gin.CreateTestContext(userModelsRecorder)
+	userModelsContext.Request = httptest.NewRequest(http.MethodGet, "/api/user/models?group=sd2", nil)
+	userModelsContext.Set("id", 521)
+	GetUserModels(userModelsContext)
+
+	visibleUserModels := decodeUserModelsResponse(t, userModelsRecorder)
+	assert.Contains(t, visibleUserModels, "521ai-2.0-sp-720p")
+	assert.Contains(t, visibleUserModels, "521ai-2.0-720p")
+	assert.Contains(t, visibleUserModels, "unrelated-model")
+	assert.NotContains(t, visibleUserModels, "seedance-2.0-720p")
+
+	regularRecorder := httptest.NewRecorder()
+	regularContext, _ := gin.CreateTestContext(regularRecorder)
+	regularContext.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	regularContext.Set("id", 522)
+	ListModels(regularContext, constant.ChannelTypeOpenAI)
+
+	regularModelIDs := decodeListModelsResponse(t, regularRecorder)
+	assert.Contains(t, regularModelIDs, "seedance-2.0-720p")
+	assert.Contains(t, regularModelIDs, "unrelated-model")
+	assert.NotContains(t, regularModelIDs, "521ai-2.0-sp-720p")
+	assert.NotContains(t, regularModelIDs, "521ai-2.0-720p")
+
+	regularUserModelsRecorder := httptest.NewRecorder()
+	regularUserModelsContext, _ := gin.CreateTestContext(regularUserModelsRecorder)
+	regularUserModelsContext.Request = httptest.NewRequest(http.MethodGet, "/api/user/models?group=sd2", nil)
+	regularUserModelsContext.Set("id", 522)
+	GetUserModels(regularUserModelsContext)
+
+	regularUserModels := decodeUserModelsResponse(t, regularUserModelsRecorder)
+	assert.Contains(t, regularUserModels, "seedance-2.0-720p")
+	assert.Contains(t, regularUserModels, "unrelated-model")
+	assert.NotContains(t, regularUserModels, "521ai-2.0-sp-720p")
+	assert.NotContains(t, regularUserModels, "521ai-2.0-720p")
 }
 
 func TestCheckUpdatePasswordRequiresCurrentPassword(t *testing.T) {

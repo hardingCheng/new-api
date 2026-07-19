@@ -166,13 +166,21 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	if modelName == "" {
 		modelName = service.CoverTaskActionToModelName(platform, info.Action)
 	}
+	routingModelName := info.EffectiveRoutingModelName()
+	if routingModelName == "" {
+		routingModelName = modelName
+	}
 
 	// 2.5 应用渠道的模型映射（与同步任务对齐）
-	info.OriginModelName = modelName
-	info.UpstreamModelName = modelName
+	info.OriginModelName = routingModelName
+	info.UpstreamModelName = routingModelName
 	if err := helper.ModelMappedHelper(c, info, nil); err != nil {
 		return nil, service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
 	}
+	if routingModelName != modelName {
+		info.IsModelMapped = true
+	}
+	info.OriginModelName = modelName
 
 	// 3. 预生成公开 task ID（仅首次）
 	if info.PublicTaskID == "" {
@@ -196,8 +204,9 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		}
 	}
 
-	perCallBilling := ratio_setting.IsVideoBillingPerCall(modelName) ||
-		(info.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(modelName))
+	billingModelName := info.EffectiveBillingModelName()
+	perCallBilling := ratio_setting.IsVideoBillingPerCall(billingModelName) ||
+		(info.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(billingModelName))
 
 	// 6. 将 OtherRatios 应用到基础额度；按次计费的视频任务不受 seconds 等倍率影响。
 	if !perCallBilling {

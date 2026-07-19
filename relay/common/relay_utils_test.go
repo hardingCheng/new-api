@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -183,4 +184,77 @@ func TestIsSeedanceVideoModelIncludesPrism(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReferenceVideoPolicyForUserModelAlias(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := `{
+		"model":"521ai-2.0-720p",
+		"prompt":"animate",
+		"content":[{"type":"video_url","video_url":{"url":"https://example.com/reference.mp4"}}]
+	}`
+
+	tests := []struct {
+		name        string
+		policy      string
+		wantErrCode string
+	}{
+		{
+			name:        "forbidden alias rejects reference video",
+			policy:      model_setting.ReferenceVideoForbidden,
+			wantErrCode: "reference_video_not_supported",
+		},
+		{
+			name:   "allowed alias accepts reference video",
+			policy: model_setting.ReferenceVideoAllowed,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/v1/video/generations", strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			context, _ := gin.CreateTestContext(httptest.NewRecorder())
+			context.Request = request
+			info := &RelayInfo{
+				OriginModelName:      "521ai-2.0-720p",
+				RoutingModelName:     "seedance-2.0-720p",
+				ReferenceVideoPolicy: test.policy,
+				TaskRelayInfo:        &TaskRelayInfo{},
+			}
+
+			taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+			if test.wantErrCode != "" {
+				require.NotNil(t, taskErr)
+				assert.Equal(t, test.wantErrCode, taskErr.Code)
+				assert.Equal(t, http.StatusBadRequest, taskErr.StatusCode)
+				return
+			}
+			require.Nil(t, taskErr)
+		})
+	}
+}
+
+func TestSeedanceDurationBoundsUseRoutingModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/video/generations",
+		strings.NewReader(`{"model":"521ai-2.0-720p","prompt":"animate","duration":1}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = request
+	info := &RelayInfo{
+		OriginModelName:  "521ai-2.0-720p",
+		RoutingModelName: "seedance-2.0-720p",
+		TaskRelayInfo:    &TaskRelayInfo{},
+	}
+
+	taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+	require.Nil(t, taskErr)
+	storedRequest, err := GetTaskRequest(context)
+	require.NoError(t, err)
+	assert.Equal(t, 4, storedRequest.Duration)
+	assert.Equal(t, "4", storedRequest.Seconds)
 }

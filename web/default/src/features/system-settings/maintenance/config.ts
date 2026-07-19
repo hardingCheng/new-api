@@ -43,7 +43,7 @@ export const HEADER_NAV_DEFAULT: HeaderNavModulesConfig = {
   console: true,
   pricing: {
     enabled: true,
-    requireAuth: false,
+    requireAuth: true,
   },
   rankings: {
     enabled: true,

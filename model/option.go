@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -152,6 +153,7 @@ func InitOptionMap() {
 	common.OptionMap["VideoBillingMode"] = ratio_setting.VideoBillingMode2JSONString()
 	common.OptionMap["ModelQuotaPool"] = ratio_setting.ModelQuotaPool2JSONString()
 	common.OptionMap["UserPricingOverride"] = ratio_setting.UserPricingOverride2JSONString()
+	common.OptionMap["UserModelView"] = model_setting.UserModelView2JSONString()
 	common.OptionMap["CacheRatio"] = ratio_setting.CacheRatio2JSONString()
 	common.OptionMap["CreateCacheRatio"] = ratio_setting.CreateCacheRatio2JSONString()
 	common.OptionMap["GroupRatio"] = ratio_setting.GroupRatio2JSONString()
@@ -613,6 +615,8 @@ func updateOptionMap(key string, value string) (err error) {
 		// WaffoPayMethods is read directly from OptionMap via setting.GetWaffoPayMethods().
 		// The value is already stored in OptionMap at the top of this function (line: common.OptionMap[key] = value).
 		// No additional in-memory variable to update.
+	case "UserModelView":
+		err = model_setting.UpdateUserModelViewByJSONString(value)
 	}
 	return err
 }

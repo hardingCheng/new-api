@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -37,6 +38,17 @@ func Distribute() func(c *gin.Context) {
 		if err != nil {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
+		}
+		requestedModelName := modelRequest.Model
+		aliasApplied := false
+		if c.GetInt("relay_mode") == relayconstant.RelayModeVideoSubmit {
+			userID := common.GetContextKeyInt(c, constant.ContextKeyUserId)
+			if alias, matched := model_setting.ResolveUserModelAlias(userID, requestedModelName); matched {
+				aliasApplied = true
+				modelRequest.Model = alias.TargetModel
+				common.SetContextKey(c, constant.ContextKeyRoutingModel, alias.TargetModel)
+				common.SetContextKey(c, constant.ContextKeyReferenceVideoPolicy, alias.ReferenceVideo)
+			}
 		}
 		if ok {
 			id, err := strconv.Atoi(channelId.(string))
@@ -73,9 +85,12 @@ func Distribute() func(c *gin.Context) {
 				if !ok {
 					tokenModelLimit = map[string]bool{}
 				}
-				matchName := ratio_setting.FormatMatchingModelName(modelRequest.Model) // match gpts & thinking-*
-				if _, ok := tokenModelLimit[matchName]; !ok {
-					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model}))
+				matchName := ratio_setting.FormatMatchingModelName(requestedModelName) // match gpts & thinking-*
+				_, requestedAllowed := tokenModelLimit[matchName]
+				routingMatchName := ratio_setting.FormatMatchingModelName(modelRequest.Model)
+				_, routingAllowed := tokenModelLimit[routingMatchName]
+				if !requestedAllowed && !routingAllowed {
+					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": requestedModelName}))
 					return
 				}
 			}
@@ -172,6 +187,9 @@ func Distribute() func(c *gin.Context) {
 			if setupErr := SetupContextForSelectedChannel(c, channel, modelRequest.Model); setupErr != nil {
 				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, setupErr.Error(), setupErr.GetErrorCode())
 				return
+			}
+			if aliasApplied {
+				common.SetContextKey(c, constant.ContextKeyOriginalModel, requestedModelName)
 			}
 		}
 		c.Next()

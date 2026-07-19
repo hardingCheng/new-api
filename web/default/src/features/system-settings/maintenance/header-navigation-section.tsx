@@ -77,10 +77,7 @@ const toFormValues = (config: HeaderNavModulesConfig): HeaderNavFormValues => ({
     config.pricing?.enabled === undefined
       ? HEADER_NAV_DEFAULT.pricing.enabled
       : Boolean(config.pricing.enabled),
-  pricingRequireAuth:
-    config.pricing?.requireAuth === undefined
-      ? HEADER_NAV_DEFAULT.pricing.requireAuth
-      : Boolean(config.pricing.requireAuth),
+  pricingRequireAuth: true,
   rankingsEnabled:
     config.rankings?.enabled === undefined
       ? HEADER_NAV_DEFAULT.rankings.enabled
@@ -124,7 +121,7 @@ export function HeaderNavigationSection({
       pricing: {
         ...(config.pricing ?? HEADER_NAV_DEFAULT.pricing),
         enabled: values.pricingEnabled,
-        requireAuth: values.pricingRequireAuth,
+        requireAuth: true,
       },
       rankings: {
         ...(config.rankings ?? HEADER_NAV_DEFAULT.rankings),
@@ -183,6 +180,7 @@ export function HeaderNavigationSection({
     description: string
     requireAuthTitle: string
     requireAuthDescription: string
+    requireAuthLocked: boolean
   }> = [
     {
       enabledKey: 'pricingEnabled',
@@ -194,6 +192,7 @@ export function HeaderNavigationSection({
       requireAuthDescription: t(
         'Visitors must authenticate before accessing the pricing directory.'
       ),
+      requireAuthLocked: true,
     },
     {
       enabledKey: 'rankingsEnabled',
@@ -205,6 +204,7 @@ export function HeaderNavigationSection({
       requireAuthDescription: t(
         'Visitors must authenticate before accessing the rankings page.'
       ),
+      requireAuthLocked: false,
     },
   ]
 
@@ -283,7 +283,10 @@ export function HeaderNavigationSection({
                           <Switch
                             checked={field.value}
                             onCheckedChange={field.onChange}
-                            disabled={!form.watch(module.requireAuthDependsOn)}
+                            disabled={
+                              module.requireAuthLocked ||
+                              !form.watch(module.requireAuthDependsOn)
+                            }
                           />
                         </FormControl>
                         <FormMessage />

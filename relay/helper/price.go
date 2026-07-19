@@ -74,6 +74,10 @@ func applyUserPricingOverridesToPriceData(info *relaycommon.RelayInfo, priceData
 		return
 	}
 	modelNames := []string{info.OriginModelName}
+	billingModelName := info.EffectiveBillingModelName()
+	if billingModelName != "" && billingModelName != info.OriginModelName {
+		modelNames = append(modelNames, billingModelName)
+	}
 	if info.ChannelMeta != nil {
 		if info.IsModelMapped && info.UpstreamModelName != "" {
 			modelNames = append(modelNames, info.UpstreamModelName)
@@ -256,20 +260,21 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 // ModelPriceHelperPerCall 按次/按量计费的 PriceHelper (MJ、Task)
 func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types.PriceData, error) {
 	groupRatioInfo := HandleGroupRatio(c, info)
+	billingModelName := info.EffectiveBillingModelName()
 
-	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
+	modelPrice, success := ratio_setting.GetModelPrice(billingModelName, true)
 	usePrice := success
 	var modelRatio float64
 
 	if !success {
-		defaultPrice, ok := ratio_setting.GetDefaultModelPriceMap()[info.OriginModelName]
+		defaultPrice, ok := ratio_setting.GetDefaultModelPriceMap()[billingModelName]
 		if ok {
 			modelPrice = defaultPrice
 			usePrice = true
 		} else {
 			var ratioSuccess bool
 			var matchName string
-			modelRatio, ratioSuccess, matchName = ratio_setting.GetModelRatio(info.OriginModelName)
+			modelRatio, ratioSuccess, matchName = ratio_setting.GetModelRatio(billingModelName)
 			acceptUnsetRatio := false
 			if info.UserSetting.AcceptUnsetRatioModel {
 				acceptUnsetRatio = true

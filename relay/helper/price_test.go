@@ -64,6 +64,36 @@ func TestModelPriceHelperTieredUsesPreloadedRequestInput(t *testing.T) {
 	require.Equal(t, common.QuotaPerUnit, info.TieredBillingSnapshot.QuotaPerUnit)
 }
 
+func TestModelPriceHelperPerCallUsesUserAliasTargetBilling(t *testing.T) {
+	givenModelPrices := ratio_setting.ModelPrice2JSONString()
+	givenGroupRatios := ratio_setting.GroupRatio2JSONString()
+	givenVideoModes := ratio_setting.VideoBillingMode2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(givenModelPrices))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(givenGroupRatios))
+		require.NoError(t, ratio_setting.UpdateVideoBillingModeByJSONString(givenVideoModes))
+	})
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"seedance-2.0-720p":0.25}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"sd2":1}`))
+	require.NoError(t, ratio_setting.UpdateVideoBillingModeByJSONString(`{"seedance-2.0-720p":"per_call"}`))
+
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", nil)
+	info := &relaycommon.RelayInfo{
+		OriginModelName:  "521ai-2.0-720p",
+		RoutingModelName: "seedance-2.0-720p",
+		UserGroup:        "sd2",
+		UsingGroup:       "sd2",
+	}
+
+	priceData, err := ModelPriceHelperPerCall(context, info)
+	require.NoError(t, err)
+	require.True(t, priceData.UsePrice)
+	require.Equal(t, 0.25, priceData.ModelPrice)
+	require.Equal(t, int(common.QuotaPerUnit/4), priceData.Quota)
+	require.Equal(t, ratio_setting.VideoBillingModePerCall, ratio_setting.GetVideoBillingMode(info.EffectiveBillingModelName()))
+}
+
 func TestModelPriceHelperTieredPreConsumeMaxTokensFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

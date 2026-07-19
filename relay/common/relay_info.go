@@ -105,6 +105,8 @@ type RelayInfo struct {
 	UsePrice               bool
 	RelayMode              int
 	OriginModelName        string
+	RoutingModelName       string
+	ReferenceVideoPolicy   string
 	RequestURLPath         string
 	RequestHeaders         map[string]string
 	ShouldIncludeUsage     bool
@@ -206,6 +208,7 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 	paramOverride := common.GetContextKeyStringMap(c, constant.ContextKeyChannelParamOverride)
 	headerOverride := common.GetContextKeyStringMap(c, constant.ContextKeyChannelHeaderOverride)
 	apiType, _ := common.ChannelType2APIType(channelType)
+	routingModelName := info.EffectiveRoutingModelName()
 	channelMeta := &ChannelMeta{
 		ChannelType:          channelType,
 		ChannelId:            common.GetContextKeyInt(c, constant.ContextKeyChannelId),
@@ -219,8 +222,8 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 		ChannelCreateTime:    c.GetInt64("channel_create_time"),
 		ParamOverride:        paramOverride,
 		HeadersOverride:      headerOverride,
-		UpstreamModelName:    common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
-		IsModelMapped:        false,
+		UpstreamModelName:    routingModelName,
+		IsModelMapped:        routingModelName != info.OriginModelName,
 		SupportStreamOptions: false,
 	}
 
@@ -250,8 +253,22 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 	// reset some fields based on channel meta
 	// 重置某些字段，例如模型名称等
 	if info.Request != nil {
-		info.Request.SetModelName(info.OriginModelName)
+		info.Request.SetModelName(routingModelName)
 	}
+}
+
+func (info *RelayInfo) EffectiveRoutingModelName() string {
+	if info != nil && strings.TrimSpace(info.RoutingModelName) != "" {
+		return info.RoutingModelName
+	}
+	if info == nil {
+		return ""
+	}
+	return info.OriginModelName
+}
+
+func (info *RelayInfo) EffectiveBillingModelName() string {
+	return info.EffectiveRoutingModelName()
 }
 
 func (info *RelayInfo) ToString() string {
@@ -484,7 +501,9 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		UserQuota:  common.GetContextKeyInt(c, constant.ContextKeyUserQuota),
 		UserEmail:  common.GetContextKeyString(c, constant.ContextKeyUserEmail),
 
-		OriginModelName: common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
+		OriginModelName:      common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
+		RoutingModelName:     common.GetContextKeyString(c, constant.ContextKeyRoutingModel),
+		ReferenceVideoPolicy: common.GetContextKeyString(c, constant.ContextKeyReferenceVideoPolicy),
 
 		TokenId:        common.GetContextKeyInt(c, constant.ContextKeyTokenId),
 		TokenKey:       common.GetContextKeyString(c, constant.ContextKeyTokenKey),

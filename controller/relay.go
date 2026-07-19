@@ -122,7 +122,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
-	if message, blocked := operation_setting.IsSeedanceResourcePoolGuardBlocked(relayInfo.UserId, relayInfo.OriginModelName); blocked {
+	if message, blocked := operation_setting.IsSeedanceResourcePoolGuardBlocked(relayInfo.UserId, relayInfo.EffectiveRoutingModelName()); blocked {
 		recordSeedanceResourcePoolGuardErrorLog(c, relayInfo, message, "get_channel_failed", http.StatusTooManyRequests)
 		newAPIError = types.NewErrorWithStatusCode(
 			errors.New(message),
@@ -208,7 +208,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	retryParam := &service.RetryParam{
 		Ctx:         c,
 		TokenGroup:  relayInfo.TokenGroup,
-		ModelName:   relayInfo.OriginModelName,
+		ModelName:   relayInfo.EffectiveRoutingModelName(),
 		RequestPath: c.Request.URL.Path,
 		Retry:       common.GetPointer(0),
 	}
@@ -343,9 +343,12 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		return nil, types.NewError(fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 
-	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName)
+	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, retryParam.ModelName)
 	if newAPIError != nil {
 		return nil, newAPIError
+	}
+	if retryParam.ModelName != info.OriginModelName {
+		common.SetContextKey(c, constant.ContextKeyOriginalModel, info.OriginModelName)
 	}
 	return channel, nil
 }
@@ -593,7 +596,7 @@ func RelayTask(c *gin.Context) {
 		respondTaskError(c, taskErr)
 		return
 	}
-	if message, blocked := operation_setting.IsSeedanceResourcePoolGuardBlocked(relayInfo.UserId, relayInfo.OriginModelName); blocked {
+	if message, blocked := operation_setting.IsSeedanceResourcePoolGuardBlocked(relayInfo.UserId, relayInfo.EffectiveRoutingModelName()); blocked {
 		recordSeedanceResourcePoolGuardErrorLog(c, relayInfo, message, "model_resource_pool_exhausted", http.StatusTooManyRequests)
 		respondTaskError(c, service.TaskErrorWrapperLocal(errors.New(message), "model_resource_pool_exhausted", http.StatusTooManyRequests))
 		return
@@ -621,7 +624,7 @@ func RelayTask(c *gin.Context) {
 	retryParam := &service.RetryParam{
 		Ctx:         c,
 		TokenGroup:  relayInfo.TokenGroup,
-		ModelName:   relayInfo.OriginModelName,
+		ModelName:   relayInfo.EffectiveRoutingModelName(),
 		RequestPath: c.Request.URL.Path,
 		Retry:       common.GetPointer(0),
 	}
@@ -636,9 +639,12 @@ func RelayTask(c *gin.Context) {
 				break
 			}
 			if retryParam.GetRetry() > 0 {
-				if setupErr := middleware.SetupContextForSelectedChannel(c, channel, relayInfo.OriginModelName); setupErr != nil {
+				if setupErr := middleware.SetupContextForSelectedChannel(c, channel, relayInfo.EffectiveRoutingModelName()); setupErr != nil {
 					taskErr = service.TaskErrorWrapperLocal(setupErr.Err, "setup_locked_channel_failed", http.StatusInternalServerError)
 					break
+				}
+				if relayInfo.EffectiveRoutingModelName() != relayInfo.OriginModelName {
+					common.SetContextKey(c, constant.ContextKeyOriginalModel, relayInfo.OriginModelName)
 				}
 			}
 		} else {

@@ -18,6 +18,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -206,11 +207,11 @@ func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 }
 
 func ListModels(c *gin.Context, modelType int) {
+	userID := c.GetInt("id")
 	acceptUnsetRatioModel := operation_setting.SelfUseModeEnabled
 	if !acceptUnsetRatioModel {
-		userId := c.GetInt("id")
-		if userId > 0 {
-			userSettings, _ := model.GetUserSetting(userId, false)
+		if userID > 0 {
+			userSettings, _ := model.GetUserSetting(userID, false)
 			if userSettings.AcceptUnsetRatioModel {
 				acceptUnsetRatioModel = true
 			}
@@ -237,12 +238,18 @@ func ListModels(c *gin.Context, modelType int) {
 			tokenModelLimit = map[string]bool{}
 		}
 		for allowModel, _ := range tokenModelLimit {
+			billingModel := allowModel
+			if alias, matched := model_setting.ResolveUserModelAlias(userID, allowModel); matched {
+				billingModel = alias.TargetModel
+			}
 			if !acceptUnsetRatioModel {
-				if !helper.HasModelBillingConfig(allowModel) {
+				if !helper.HasModelBillingConfig(billingModel) {
 					continue
 				}
 			}
-			userModelNames = append(userModelNames, allowModel)
+			if !common.StringsContains(userModelNames, billingModel) {
+				userModelNames = append(userModelNames, billingModel)
+			}
 		}
 	} else {
 		var models []string
@@ -268,13 +275,22 @@ func ListModels(c *gin.Context, modelType int) {
 		}
 	}
 
+	visibleModels := model_setting.BuildVisibleUserModels(userID, userModelNames)
+	targetModelNames := make([]string, 0, len(visibleModels))
+	for _, visibleModel := range visibleModels {
+		if !common.StringsContains(targetModelNames, visibleModel.TargetModel) {
+			targetModelNames = append(targetModelNames, visibleModel.TargetModel)
+		}
+	}
 	ownerByModel := map[string]string{}
 	if len(ownerGroups) > 0 {
-		ownerByModel = getPreferredModelOwners(userModelNames, ownerGroups)
+		ownerByModel = getPreferredModelOwners(targetModelNames, ownerGroups)
 	}
-	userOpenAiModels := make([]dto.OpenAIModels, 0, len(userModelNames))
-	for _, modelName := range userModelNames {
-		userOpenAiModels = append(userOpenAiModels, buildOpenAIModel(modelName, ownerByModel))
+	userOpenAiModels := make([]dto.OpenAIModels, 0, len(visibleModels))
+	for _, visibleModel := range visibleModels {
+		openAIModel := buildOpenAIModel(visibleModel.TargetModel, ownerByModel)
+		openAIModel.Id = visibleModel.Name
+		userOpenAiModels = append(userOpenAiModels, openAIModel)
 	}
 
 	switch modelType {

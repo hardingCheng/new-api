@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
@@ -145,6 +146,19 @@ func IsSeedanceVideoModel(model string) bool {
 	return strings.HasPrefix(model, "seedance-") ||
 		strings.HasPrefix(model, "doubao-seedance-") ||
 		strings.HasPrefix(model, "prism-")
+}
+
+func IsSeedanceRelayModel(info *RelayInfo, modelName string) bool {
+	if IsSeedanceVideoModel(modelName) {
+		return true
+	}
+	if info == nil {
+		return false
+	}
+	if IsSeedanceVideoModel(info.OriginModelName) || IsSeedanceVideoModel(info.EffectiveRoutingModelName()) {
+		return true
+	}
+	return info.ChannelMeta != nil && IsSeedanceVideoModel(info.UpstreamModelName)
 }
 
 func IsGrokImagineVideoModel(model string) bool {
@@ -352,14 +366,24 @@ func normalizeTaskDuration(req *TaskSubmitReq) {
 	req.Seconds = strconv.Itoa(seconds)
 }
 
-func applySeedanceDurationBounds(req *TaskSubmitReq) {
-	if req == nil || !IsSeedanceVideoModel(req.Model) {
+func applySeedanceDurationBounds(req *TaskSubmitReq, info *RelayInfo) {
+	if req == nil || !IsSeedanceRelayModel(info, req.Model) {
 		return
 	}
 	seconds := EffectiveTaskDuration(*req)
 	seconds = clampSeedanceDuration(seconds)
 	req.Duration = seconds
 	req.Seconds = strconv.Itoa(seconds)
+}
+
+func validateReferenceVideoPolicy(req TaskSubmitReq, info *RelayInfo) *dto.TaskError {
+	if info == nil || info.ReferenceVideoPolicy != model_setting.ReferenceVideoForbidden {
+		return nil
+	}
+	if len(ExtractReferenceVideoURLs(req)) == 0 {
+		return nil
+	}
+	return createTaskError(fmt.Errorf("reference video is not supported for model %s", req.Model), "reference_video_not_supported", http.StatusBadRequest, true)
 }
 
 func ExtractReferenceVideoURLs(req TaskSubmitReq) []string {
@@ -566,6 +590,9 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 	if taskErr := ValidateTaskDurationBounds(req); taskErr != nil {
 		return taskErr
 	}
+	if taskErr := validateReferenceVideoPolicy(req, info); taskErr != nil {
+		return taskErr
+	}
 
 	action := constant.TaskActionTextGenerate
 	if hasInputReference {
@@ -591,7 +618,7 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 	}
 
 	normalizeTaskDuration(&req)
-	applySeedanceDurationBounds(&req)
+	applySeedanceDurationBounds(&req, info)
 	storeTaskRequest(c, info, action, req)
 
 	return nil
@@ -634,6 +661,9 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 	if taskErr := ValidateTaskDurationBounds(req); taskErr != nil {
 		return taskErr
 	}
+	if taskErr := validateReferenceVideoPolicy(req, info); taskErr != nil {
+		return taskErr
+	}
 
 	if len(req.Images) == 0 && strings.TrimSpace(req.Image) != "" {
 		// 兼容单图上传
@@ -642,7 +672,7 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 	FillMissingGrokImagineInputReference(info, &req)
 
 	normalizeTaskDuration(&req)
-	applySeedanceDurationBounds(&req)
+	applySeedanceDurationBounds(&req, info)
 	storeTaskRequest(c, info, action, req)
 	return nil
 }

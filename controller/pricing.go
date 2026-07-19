@@ -2,8 +2,10 @@ package controller
 
 import (
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -59,6 +61,10 @@ func applyUserPricingToPricingList(pricing []model.Pricing, user *model.UserBase
 		if item.BillingMode == "tiered_expr" {
 			continue
 		}
+		billingModelName := item.ModelName
+		if alias, matched := model_setting.ResolveUserModelAlias(user.Id, item.ModelName); matched {
+			billingModelName = alias.TargetModel
+		}
 		groupOverrides := make(map[string]model.PricingUserPricingGroup)
 		for _, group := range pricingGroupsForOverrides(*item, groupRatio) {
 			baseGroupRatio, ok := groupRatio[group]
@@ -71,7 +77,7 @@ func applyUserPricingToPricingList(pricing []model.Pricing, user *model.UserBase
 				user.Username,
 				user.Group,
 				group,
-				item.ModelName,
+				billingModelName,
 				usePrice,
 				item.ModelPrice,
 				item.ModelRatio,
@@ -90,6 +96,45 @@ func applyUserPricingToPricingList(pricing []model.Pricing, user *model.UserBase
 		if len(groupOverrides) > 0 {
 			item.UserPricing = &model.PricingUserPricing{Groups: groupOverrides}
 		}
+	}
+	return result
+}
+
+func applyUserModelViewToPricing(pricing []model.Pricing, userID int) []model.Pricing {
+	if userID <= 0 || len(pricing) == 0 {
+		return pricing
+	}
+	modelNames := make([]string, 0, len(pricing))
+	pricingByModel := make(map[string]model.Pricing, len(pricing))
+	for _, item := range pricing {
+		modelNames = append(modelNames, item.ModelName)
+		pricingByModel[item.ModelName] = item
+	}
+	visibleModels := model_setting.BuildVisibleUserModels(userID, modelNames)
+	if len(visibleModels) == len(pricing) {
+		unchanged := true
+		for index, visibleModel := range visibleModels {
+			if visibleModel.Name != pricing[index].ModelName {
+				unchanged = false
+				break
+			}
+		}
+		if unchanged {
+			return pricing
+		}
+	}
+
+	result := make([]model.Pricing, 0, len(visibleModels))
+	for _, visibleModel := range visibleModels {
+		item, exists := pricingByModel[visibleModel.TargetModel]
+		if !exists {
+			continue
+		}
+		item.ModelName = visibleModel.Name
+		item.EnableGroup = append([]string(nil), item.EnableGroup...)
+		item.SupportedEndpointTypes = append([]constant.EndpointType(nil), item.SupportedEndpointTypes...)
+		item.UserPricing = nil
+		result = append(result, item)
 	}
 	return result
 }
@@ -120,6 +165,9 @@ func GetPricing(c *gin.Context) {
 
 	usableGroup = service.GetUserUsableGroups(group)
 	pricing = filterPricingByUsableGroups(pricing, usableGroup)
+	if user != nil {
+		pricing = applyUserModelViewToPricing(pricing, user.Id)
+	}
 	// check groupRatio contains usableGroup
 	for group := range ratio_setting.GetGroupRatioCopy() {
 		if _, ok := usableGroup[group]; !ok {
