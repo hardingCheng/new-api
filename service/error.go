@@ -218,6 +218,9 @@ func TaskErrorFromAPIError(apiErr *types.NewAPIError) *dto.TaskError {
 		Code:       string(apiErr.GetErrorCode()),
 		Message:    apiErr.Err.Error(),
 		StatusCode: apiErr.StatusCode,
+		// 我方自身错误（如用户预扣费失败）必须保留本地语义，
+		// 客户才能看到自己的余额提示而不是被当成上游错误脱敏。
+		LocalError: apiErr.GetErrorType() == types.ErrorTypeNewAPIError,
 		Error:      apiErr.Err,
 	}
 }

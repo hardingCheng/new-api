@@ -417,3 +417,57 @@ func IsRecordErrorLog(e *NewAPIError) bool {
 	}
 	return *e.recordErrorLog
 }
+
+// upstreamBillingLeakKeywords 上游"余额/配额/套餐"类错误的特征词（全小写匹配）。
+// 这类错误是供给侧问题，原文会泄露上游计费细节（套餐名/剩余金额/重置时间），
+// 对客户必须脱敏；本站自身的用户额度错误不经过这里（见 MaskUpstreamBillingError）。
+var upstreamBillingLeakKeywords = []string{
+	"insufficient",
+	"quota",
+	"balance",
+	"billing",
+	"usage limit",
+	"payment",
+	"预扣费额度失败",
+	"余额",
+	"欠费",
+	"额度不足",
+	"额度已用",
+	"充值",
+	"无权访问",
+	"套餐",
+}
+
+// MaskedUpstreamBillingMessage 是上游余额/配额类错误脱敏后统一展示给客户的文案，
+// 与 Task 路径既有的 429 改写文案保持一致。
+const MaskedUpstreamBillingMessage = "当前分组上游负载已饱和，请稍后再试"
+
+// MatchesUpstreamBillingLeak 判断错误消息是否属于上游余额/配额类报错。
+func MatchesUpstreamBillingLeak(message string) bool {
+	lower := strings.ToLower(message)
+	for _, keyword := range upstreamBillingLeakKeywords {
+		if strings.Contains(lower, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+// MaskUpstreamBillingError 把上游返回的余额/配额类错误替换为对客户安全的通用 429。
+// 仅处理从上游响应解析而来的错误（errorType 非 new_api_error）；本站自身的用户
+// 额度错误（insufficient_user_quota 等）保持原样，客户需要看到自己的余额提示。
+// 必须在错误日志记录、熔断/自动禁用处理之后、渲染给客户之前调用，
+// 管理端（错误日志/容器日志/Bark）才能保留原始上游错误。
+func MaskUpstreamBillingError(e *NewAPIError) *NewAPIError {
+	if e == nil || e.errorType == ErrorTypeNewAPIError {
+		return e
+	}
+	if e.StatusCode != http.StatusPaymentRequired && !MatchesUpstreamBillingLeak(e.Error()) {
+		return e
+	}
+	return WithOpenAIError(OpenAIError{
+		Message: MaskedUpstreamBillingMessage,
+		Type:    "rate_limit_error",
+		Code:    "rate_limit_exceeded",
+	}, http.StatusTooManyRequests)
+}
