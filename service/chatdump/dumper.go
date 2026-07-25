@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -14,19 +15,22 @@ import (
 )
 
 // chatdump 抓取经过网关的请求/响应。通过环境变量配置：
-//   CHAT_DUMP_ENABLED=false      关闭（默认开启）
-//   CHAT_DUMP_DIR=./chatdump     落盘目录
-//   CHAT_DUMP_MODEL_KEYS=opus    模型关键字（逗号分隔，子串匹配）；设为 * 则全量抓取所有模型
-//   CHAT_DUMP_MIN_FREE_MB=2048   磁盘剩余低于此值(MB)时暂停写入，防止写满磁盘导致宕机；0 关闭保护
+//
+//	CHAT_DUMP_ENABLED=false      关闭（默认开启）
+//	CHAT_DUMP_DIR=./chatdump     落盘目录
+//	CHAT_DUMP_MODEL_KEYS=opus    模型关键字（逗号分隔，子串匹配）；设为 * 则全量抓取所有模型
+//	CHAT_DUMP_EXCLUDE_USER_IDS=16,23 跳过指定用户 ID，不记录其请求/响应
+//	CHAT_DUMP_MIN_FREE_MB=2048   磁盘剩余低于此值(MB)时暂停写入，防止写满磁盘导致宕机；0 关闭保护
 var (
-	dumpDir          string
-	dumpEnabled      bool
-	dumpAll          bool   // CHAT_DUMP_MODEL_KEYS=* 时为 true，抓取所有非空模型
-	dumpModelKeys    []string
-	dumpMinFreeBytes uint64 // 磁盘剩余低于此值则暂停写入（硬保护）
-	once             sync.Once
-	writeMu          sync.Mutex
-	lastDiskWarn     time.Time
+	dumpDir            string
+	dumpEnabled        bool
+	dumpAll            bool // CHAT_DUMP_MODEL_KEYS=* 时为 true，抓取所有非空模型
+	dumpModelKeys      []string
+	dumpExcludeUserIDs = map[int]struct{}{}
+	dumpMinFreeBytes   uint64 // 磁盘剩余低于此值则暂停写入（硬保护）
+	once               sync.Once
+	writeMu            sync.Mutex
+	lastDiskWarn       time.Time
 )
 
 func initConfig() {
@@ -43,6 +47,12 @@ func initConfig() {
 				dumpModelKeys = append(dumpModelKeys, k)
 			}
 		}
+		for _, rawID := range strings.Split(common.GetEnvOrDefaultString("CHAT_DUMP_EXCLUDE_USER_IDS", ""), ",") {
+			userID, err := strconv.Atoi(strings.TrimSpace(rawID))
+			if err == nil && userID > 0 {
+				dumpExcludeUserIDs[userID] = struct{}{}
+			}
+		}
 		// 磁盘保护：剩余低于阈值则暂停写入，防止写满磁盘宕机（默认 2GB，0 关闭）
 		dumpMinFreeBytes = uint64(common.GetEnvOrDefault("CHAT_DUMP_MIN_FREE_MB", 2048)) * 1024 * 1024
 		if dumpEnabled {
@@ -54,7 +64,7 @@ func initConfig() {
 				if dumpAll {
 					scope = "全量(所有模型)"
 				}
-				common.SysLog(fmt.Sprintf("chatdump: 已启用，目录=%s %s 磁盘保护阈值=%dMB", dumpDir, scope, dumpMinFreeBytes/1024/1024))
+				common.SysLog(fmt.Sprintf("chatdump: 已启用，目录=%s %s 排除用户数=%d 磁盘保护阈值=%dMB", dumpDir, scope, len(dumpExcludeUserIDs), dumpMinFreeBytes/1024/1024))
 			}
 		}
 	})
@@ -99,23 +109,23 @@ func ShouldDump(model string) bool {
 
 // Record 单次对话完整记录。
 type Record struct {
-	Timestamp     string          `json:"timestamp"`
-	DumpID        string          `json:"dump_id"`
-	UpstreamModel string          `json:"upstream_model"`
-	OriginModel   string          `json:"origin_model"`
-	UserID        int             `json:"user_id"`
-	UserEmail     string          `json:"user_email,omitempty"`
-	TokenID       int             `json:"token_id"`
-	ChannelID     int             `json:"channel_id"`
-	ChannelType   int             `json:"channel_type"`
-	RelayFormat   string          `json:"relay_format"`
-	Stream        bool            `json:"stream"`
-	IP            string          `json:"ip,omitempty"`
-	UserAgent     string          `json:"user_agent,omitempty"`
-	RequestPath   string          `json:"request_path,omitempty"`
+	Timestamp     string `json:"timestamp"`
+	DumpID        string `json:"dump_id"`
+	UpstreamModel string `json:"upstream_model"`
+	OriginModel   string `json:"origin_model"`
+	UserID        int    `json:"user_id"`
+	UserEmail     string `json:"user_email,omitempty"`
+	TokenID       int    `json:"token_id"`
+	ChannelID     int    `json:"channel_id"`
+	ChannelType   int    `json:"channel_type"`
+	RelayFormat   string `json:"relay_format"`
+	Stream        bool   `json:"stream"`
+	IP            string `json:"ip,omitempty"`
+	UserAgent     string `json:"user_agent,omitempty"`
+	RequestPath   string `json:"request_path,omitempty"`
 	// 客户端识别 header 白名单(SDK语言/版本、anthropic-beta、聚合器标识等),用于识别 harness;不含密钥
 	ClientHeaders map[string]string `json:"client_headers,omitempty"`
-	DurationMs    int64           `json:"duration_ms,omitempty"`
+	DurationMs    int64             `json:"duration_ms,omitempty"`
 
 	// 完整入参（系统提示词、消息、tools、thinking 配置等都在里面）
 	Request json.RawMessage `json:"request,omitempty"`
@@ -193,6 +203,14 @@ func (s *Session) SetMeta(meta map[string]any) {
 	}
 	if v, ok := meta["user_id"].(int); ok {
 		s.rec.UserID = v
+		if _, excluded := dumpExcludeUserIDs[v]; excluded {
+			// SetMeta 在请求正文写入前调用；尽早关闭并清空，确保该用户没有内容落盘。
+			s.enabled = false
+			s.rec = Record{}
+			s.textBuilder.Reset()
+			s.thinkingBuilder.Reset()
+			return
+		}
 	}
 	if v, ok := meta["user_email"].(string); ok {
 		s.rec.UserEmail = v
