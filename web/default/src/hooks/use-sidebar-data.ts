@@ -24,6 +24,7 @@ import {
   CreditCard,
   FileText,
   FlaskConical,
+  Gauge,
   Image,
   Key,
   LayoutDashboard,
@@ -166,6 +167,12 @@ export function useSidebarData(): SidebarData {
         id: 'admin',
         title: t('Admin'),
         items: [
+          {
+            title: t('Ops Workbench'),
+            url: '/workbench',
+            icon: Gauge,
+            requiredRole: ROLE.SUPER_ADMIN,
+          },
           {
             title: t('Channels'),
             url: '/channels',

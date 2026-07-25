@@ -232,6 +232,12 @@ func SetApiRouter(router *gin.Engine) {
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
 		}
+		workbenchRoute := apiRouter.Group("/workbench")
+		workbenchRoute.Use(middleware.RootAuth())
+		{
+			workbenchRoute.GET("/summary", controller.GetWorkbenchSummary)
+			workbenchRoute.GET("/errors", controller.GetWorkbenchErrors)
+		}
 		registerChannelRoutes(apiRouter)
 		registerAuthzRoutes(apiRouter)
 		tokenRoute := apiRouter.Group("/token")
