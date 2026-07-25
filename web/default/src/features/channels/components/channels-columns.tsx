@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 /* eslint-disable react-refresh/only-export-components */
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
   AlertTriangle,
@@ -55,7 +55,7 @@ import {
 import { formatTimestampToDate } from '@/lib/format'
 import { truncateText } from '@/lib/utils'
 
-import { getCodexUsage } from '../api'
+import { getChannelEconomics, getCodexUsage } from '../api'
 import { CHANNEL_STATUS_CONFIG, MODEL_FETCHABLE_TYPES } from '../constants'
 import {
   formatRelativeTime,
@@ -167,6 +167,81 @@ function UpstreamUpdateTags({ channel }: { channel: Channel }) {
         </StatusBadge>
       )}
     </div>
+  )
+}
+
+/**
+ * 经营列:该渠道的进货档位与赚亏结论(来自站外监控服务,只读展示;
+ * 监控不可达时整列显示 —,不影响页面其他功能)
+ */
+const ECONOMICS_BADGE_VARIANT = {
+  loss: 'destructive',
+  thin: 'warning',
+  ok: 'success',
+  unknown: 'neutral',
+} as const
+
+function EconomicsCell({ channel }: { channel: Channel }) {
+  const { data } = useQuery({
+    queryKey: ['channel-economics'],
+    queryFn: getChannelEconomics,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  })
+  if (isTagAggregateRow(channel)) {
+    return <span className='text-muted-foreground'>-</span>
+  }
+  const entry = data?.data?.[String(channel.id)]
+  if (!entry) {
+    return <span className='text-muted-foreground'>—</span>
+  }
+  const worst = entry.details.find((d) => d.profit !== null)
+  let short: string
+  if (entry.status === 'loss') {
+    short = worst?.profit != null ? `亏 ¥${Math.abs(worst.profit)}` : '有亏'
+  } else if (entry.status === 'thin') {
+    short =
+      worst?.profit != null && worst.profit > 0
+        ? `薄 赚¥${worst.profit}`
+        : '有白干'
+  } else if (entry.status === 'ok') {
+    short = worst?.profit != null ? `赚 ¥${worst.profit}` : '赚'
+  } else {
+    short = '待核算'
+  }
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <StatusBadge
+              variant={ECONOMICS_BADGE_VARIANT[entry.status]}
+              size='sm'
+              className='cursor-help'
+            >
+              {entry.cost != null ? `×${entry.cost} ${short}` : short}
+            </StatusBadge>
+          }
+        />
+        <TooltipContent className='max-w-sm space-y-1'>
+          <p>{entry.headline}</p>
+          {entry.suggestions.map((s) => (
+            <p key={s}>💡 {s}</p>
+          ))}
+          {entry.details.slice(0, 4).map(
+            (d) =>
+              d.formula && (
+                <p key={d.grp} className='opacity-80'>
+                  「{d.grp}」{d.formula}
+                </p>
+              )
+          )}
+          <p className='opacity-60'>
+            金额=客户用掉官方价值$1的量时;每小时自动重算
+          </p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 
@@ -1067,6 +1142,20 @@ export function useChannelsColumns(
         },
         cell: ({ row }) => <BalanceCell channel={row.original} />,
         size: 180,
+      },
+
+      // Economics column (经营:进货档位与赚亏,来自站外监控)
+      {
+        id: 'economics',
+        header: '经营',
+        meta: {
+          cardRole: 'secondary',
+          cardOrder: 45,
+          contentMode: 'full',
+        },
+        cell: ({ row }) => <EconomicsCell channel={row.original} />,
+        size: 130,
+        enableSorting: false,
       },
 
       // Response Time column

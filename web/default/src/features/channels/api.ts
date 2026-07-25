@@ -641,3 +641,30 @@ export async function getPrefillGroups(
   const res = await api.get('/api/prefill_group', { params: { type } })
   return res.data
 }
+
+/**
+ * 渠道经营核算(赚/亏/建议),来自站外监控服务的只读代理
+ */
+export interface ChannelEconomicsEntry {
+  status: 'loss' | 'thin' | 'ok' | 'unknown'
+  channel_status: number
+  headline: string
+  upstream_group: string | null
+  cost: number | null
+  suggestions: string[]
+  details: {
+    grp: string
+    who: string
+    formula: string
+    profit: number | null
+  }[]
+}
+
+export async function getChannelEconomics(): Promise<{
+  success: boolean
+  message?: string
+  data?: Record<string, ChannelEconomicsEntry>
+}> {
+  const res = await api.get('/api/channel/economics')
+  return res.data
+}
