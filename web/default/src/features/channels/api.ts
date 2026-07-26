@@ -651,6 +651,7 @@ export interface ChannelEconomicsEntry {
   headline: string
   upstream_group: string | null
   cost: number | null
+  cash_cost: number | null
   suggestions: string[]
   details: {
     grp: string

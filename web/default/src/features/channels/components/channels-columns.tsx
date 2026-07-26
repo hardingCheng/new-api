@@ -209,6 +209,13 @@ function EconomicsCell({ channel }: { channel: Channel }) {
   } else {
     short = '待核算'
   }
+  // 实际成本(档位倍率×进货汇率,每小时自动重算)优先;没配汇率的站退回名义倍率
+  let costLabel = ''
+  if (entry.cash_cost != null) {
+    costLabel = `成本¥${entry.cash_cost}`
+  } else if (entry.cost != null) {
+    costLabel = `×${entry.cost}`
+  }
   return (
     <TooltipProvider>
       <Tooltip>
@@ -219,7 +226,7 @@ function EconomicsCell({ channel }: { channel: Channel }) {
               size='sm'
               className='cursor-help'
             >
-              {entry.cost != null ? `×${entry.cost} ${short}` : short}
+              {costLabel ? `${costLabel} ${short}` : short}
             </StatusBadge>
           }
         />
