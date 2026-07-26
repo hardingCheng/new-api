@@ -78,10 +78,17 @@ func resolveUserSortOptions(sortOptions []UserSortOptions) UserSortOptions {
 	return sortOptions[0]
 }
 
+const (
+	userExternalIDPrefix          = "usr_"
+	userExternalIDBatchSize       = 500
+	userExternalIDUniqueIndexName = "idx_users_external_id"
+)
+
 // User if you add sensitive fields, don't forget to clean them in setupLogin function.
 // Otherwise, the sensitive information will be saved on local storage in plain text!
 type User struct {
 	Id               int                        `json:"id"`
+	ExternalId       string                     `json:"external_id" gorm:"type:varchar(36);column:external_id"`
 	Username         string                     `json:"username" gorm:"unique;index" validate:"max=20"`
 	Password         string                     `json:"password" gorm:"not null;" validate:"min=8,max=20"`
 	OriginalPassword string                     `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
@@ -115,6 +122,68 @@ type User struct {
 	Pinned           int                        `json:"pinned" gorm:"type:int;default:0;index"`
 	AuthVersion      int64                      `json:"-" gorm:"type:bigint;not null;default:1;column:auth_version"`
 	AdminPermissions map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
+}
+
+func newUserExternalID() string {
+	return userExternalIDPrefix + common.GetUUID()
+}
+
+func (user *User) BeforeCreate(_ *gorm.DB) error {
+	user.ExternalId = newUserExternalID()
+	return nil
+}
+
+func backfillUserExternalIDs(db *gorm.DB) error {
+	backfilled := int64(0)
+	for {
+		var userIDs []int
+		if err := db.Unscoped().Model(&User{}).
+			Where("external_id IS NULL OR external_id = ?", "").
+			Order("id ASC").
+			Limit(userExternalIDBatchSize).
+			Pluck("id", &userIDs).Error; err != nil {
+			return fmt.Errorf("find users missing external_id: %w", err)
+		}
+		if len(userIDs) == 0 {
+			break
+		}
+
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			for _, userID := range userIDs {
+				result := tx.Unscoped().Model(&User{}).
+					Where("id = ? AND (external_id IS NULL OR external_id = ?)", userID, "").
+					UpdateColumn("external_id", newUserExternalID())
+				if result.Error != nil {
+					return fmt.Errorf("backfill external_id for user %d: %w", userID, result.Error)
+				}
+				backfilled += result.RowsAffected
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+
+	if backfilled > 0 {
+		common.SysLog(fmt.Sprintf("backfilled external_id for %d users", backfilled))
+	}
+	return nil
+}
+
+func ensureUserExternalIDs(db *gorm.DB) error {
+	if err := backfillUserExternalIDs(db); err != nil {
+		return err
+	}
+	if db.Migrator().HasIndex(&User{}, userExternalIDUniqueIndexName) {
+		return nil
+	}
+	if err := db.Exec("CREATE UNIQUE INDEX " + userExternalIDUniqueIndexName + " ON users (external_id)").Error; err != nil {
+		if db.Migrator().HasIndex(&User{}, userExternalIDUniqueIndexName) {
+			return nil
+		}
+		return fmt.Errorf("create unique index for user external_id: %w", err)
+	}
+	return nil
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -410,8 +479,8 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 
 	// 构建搜索条件
 	if keyword != "" {
-		likeCondition := "username LIKE ? OR email LIKE ? OR display_name LIKE ?"
-		likeArgs := []interface{}{"%" + keyword + "%", "%" + keyword + "%", "%" + keyword + "%"}
+		likeCondition := "username LIKE ? OR email LIKE ? OR display_name LIKE ? OR external_id LIKE ?"
+		likeArgs := []interface{}{"%" + keyword + "%", "%" + keyword + "%", "%" + keyword + "%", "%" + keyword + "%"}
 
 		// 尝试将关键字转换为整数ID
 		keywordInt, err := strconv.Atoi(keyword)
@@ -775,7 +844,8 @@ func (user *User) UpdateWithTx(tx *gorm.DB, updatePassword bool) error {
 			return err
 		}
 	}
-	if err = tx.Model(&current).Omit("quota", "used_quota", "request_count", "auth_version").Updates(newUser).Error; err != nil {
+	// external_id 是对外稳定标识，任何更新都不能覆盖它
+	if err = tx.Model(&current).Omit("external_id", "quota", "used_quota", "request_count", "auth_version").Updates(newUser).Error; err != nil {
 		return err
 	}
 	return tx.First(user, user.Id).Error

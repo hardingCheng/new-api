@@ -564,6 +564,7 @@ func buildSelfUserData(user *model.User) map[string]interface{} {
 	permissions["admin_permissions"] = authz.Capabilities(user.Id, user.Role)
 	return map[string]interface{}{
 		"id":                user.Id,
+		"external_id":       user.ExternalId,
 		"username":          user.Username,
 		"display_name":      user.DisplayName,
 		"role":              user.Role,
