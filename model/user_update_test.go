@@ -2,15 +2,108 @@ package model
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+type legacyUserForExternalIDMigration struct {
+	Id       int `gorm:"primaryKey"`
+	Username string
+	Password string `gorm:"not null"`
+}
+
+func (legacyUserForExternalIDMigration) TableName() string {
+	return "users"
+}
+
+type userExternalIDMigrationTarget struct {
+	Id         int    `gorm:"primaryKey"`
+	ExternalId string `gorm:"type:varchar(36);column:external_id"`
+}
+
+func (userExternalIDMigrationTarget) TableName() string {
+	return "users"
+}
+
+func TestUserExternalIDGeneratedAndImmutable(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	requestedExternalID := userExternalIDPrefix + strings.Repeat("b", 32)
+	first := User{Username: "external-id-first", Password: "password", ExternalId: requestedExternalID, AffCode: "external-id-first"}
+	second := User{Username: "external-id-second", Password: "password", AffCode: "external-id-second"}
+	require.NoError(t, DB.Create(&first).Error)
+	require.NoError(t, DB.Create(&second).Error)
+
+	for _, externalID := range []string{first.ExternalId, second.ExternalId} {
+		assert.True(t, strings.HasPrefix(externalID, userExternalIDPrefix))
+		assert.Len(t, externalID, 36)
+	}
+	assert.NotEqual(t, requestedExternalID, first.ExternalId)
+	assert.NotEqual(t, first.ExternalId, second.ExternalId)
+
+	originalExternalID := first.ExternalId
+	first.ExternalId = userExternalIDPrefix + strings.Repeat("f", 32)
+	first.DisplayName = "updated"
+	require.NoError(t, first.Update(false))
+	assert.Equal(t, originalExternalID, first.ExternalId)
+
+	err := DB.Model(&User{}).Where("id = ?", second.Id).UpdateColumn("external_id", originalExternalID).Error
+	require.Error(t, err)
+}
+
+func TestBackfillUserExternalIDsIncludesSoftDeletedUsers(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	preservedID := userExternalIDPrefix + strings.Repeat("a", 32)
+	preserved := User{Username: "external-id-preserved", Password: "password", ExternalId: preservedID, AffCode: "external-id-preserved"}
+	activeMissing := User{Username: "external-id-active-missing", Password: "password", AffCode: "external-id-active"}
+	deletedMissing := User{Username: "external-id-deleted-missing", Password: "password", AffCode: "external-id-deleted"}
+	require.NoError(t, DB.Create(&preserved).Error)
+	require.NoError(t, DB.Create(&activeMissing).Error)
+	require.NoError(t, DB.Create(&deletedMissing).Error)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", preserved.Id).UpdateColumn("external_id", preservedID).Error)
+	require.NoError(t, DB.Model(&User{}).Where("id IN ?", []int{activeMissing.Id, deletedMissing.Id}).UpdateColumn("external_id", nil).Error)
+	require.NoError(t, DB.Delete(&deletedMissing).Error)
+
+	require.NoError(t, backfillUserExternalIDs(DB))
+
+	var users []User
+	require.NoError(t, DB.Unscoped().Where("id IN ?", []int{preserved.Id, activeMissing.Id, deletedMissing.Id}).Order("id ASC").Find(&users).Error)
+	require.Len(t, users, 3)
+	assert.Equal(t, preservedID, users[0].ExternalId)
+	assert.True(t, strings.HasPrefix(users[1].ExternalId, userExternalIDPrefix))
+	assert.True(t, strings.HasPrefix(users[2].ExternalId, userExternalIDPrefix))
+	assert.NotEqual(t, users[1].ExternalId, users[2].ExternalId)
+}
+
+func TestUserExternalIDMigrationBackfillsLegacyRows(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:user-external-id-migration?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&legacyUserForExternalIDMigration{}))
+	require.NoError(t, db.Create(&legacyUserForExternalIDMigration{Username: "legacy-a", Password: "password"}).Error)
+	require.NoError(t, db.Create(&legacyUserForExternalIDMigration{Username: "legacy-b", Password: "password"}).Error)
+
+	require.NoError(t, db.AutoMigrate(&userExternalIDMigrationTarget{}))
+	require.NoError(t, ensureUserExternalIDs(db))
+	assert.True(t, db.Migrator().HasIndex(&User{}, userExternalIDUniqueIndexName))
+
+	var users []User
+	require.NoError(t, db.Unscoped().Order("id ASC").Find(&users).Error)
+	require.Len(t, users, 2)
+	for _, user := range users {
+		assert.True(t, strings.HasPrefix(user.ExternalId, userExternalIDPrefix))
+		assert.Len(t, user.ExternalId, 36)
+	}
+	assert.NotEqual(t, users[0].ExternalId, users[1].ExternalId)
+}
 
 func setupUserUpdateTestState(t *testing.T) {
 	t.Helper()

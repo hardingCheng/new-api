@@ -57,6 +57,9 @@ func TestMain(m *testing.M) {
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
+	if err := ensureUserExternalIDs(db); err != nil {
+		panic("failed to initialize user external ids: " + err.Error())
+	}
 
 	os.Exit(m.Run())
 }
