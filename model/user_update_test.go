@@ -109,6 +109,7 @@ func setupUserUpdateTestState(t *testing.T) {
 	t.Helper()
 	truncateTables(t)
 	require.NoError(t, DB.Exec("DELETE FROM users").Error)
+	require.NoError(t, ensureUserExternalIDs(DB))
 
 	oldRedisEnabled := common.RedisEnabled
 	oldBatchUpdateEnabled := common.BatchUpdateEnabled
