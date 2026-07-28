@@ -30,7 +30,7 @@ import {
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/design-system/button'
+import { Button } from '@/components/ui/button'
 import { SectionPageLayout } from '@/components/layout'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'

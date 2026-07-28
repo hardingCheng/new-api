@@ -49,6 +49,12 @@ const legacySettingsTabs: Record<string, string> = {
   other: '/system-settings/site/system-info',
 }
 
+const legacyBillingRatioTabs: Record<string, string> = {
+  video_billing_mode: '/system-settings/billing/video-billing-mode',
+  model_quota_pool: '/system-settings/billing/model-quota-pool',
+  user_pricing_override: '/system-settings/billing/user-pricing-override',
+}
+
 function normalizeLegacyPath(pathname: string): string {
   if (pathname === '/') return pathname
   return pathname.replace(/\/+$/, '')
@@ -83,6 +89,12 @@ export function resolveLegacyRoute(rawHref: string): string | null {
   }
   if (pathname === '/console/setting') {
     const tab = source.searchParams.get('tab') ?? ''
+    // 自研的定价子页当年挂在 ratio 标签下的二级标签上，单独接一层
+    if (tab === 'ratio') {
+      const ratioTab = source.searchParams.get('ratio_tab') ?? ''
+      const ratioTarget = legacyBillingRatioTabs[ratioTab]
+      if (ratioTarget) return buildTargetHref(ratioTarget, source)
+    }
     const target = legacySettingsTabs[tab] ?? '/system-settings'
     return buildTargetHref(target, source)
   }

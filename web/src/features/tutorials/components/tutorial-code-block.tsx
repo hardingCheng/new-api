@@ -32,8 +32,8 @@ export function TutorialCodeBlock(props: TutorialCodeBlockProps) {
         </span>
         <CopyButton
           value={props.code}
-          size='icon-xs'
-          className='text-[var(--tutorial-code-foreground)] hover:bg-[color-mix(in_oklch,var(--tutorial-code-foreground)_12%,transparent)] hover:text-[var(--tutorial-code-foreground)]'
+          size='icon'
+          className='text-[var(--tutorial-code-foreground)] hover:bg-[color-mix(in_oklch,var(--tutorial-code-foreground)_12%,transparent)] hover:text-[var(--tutorial-code-foreground)] size-7'
         />
       </div>
       <pre className='overflow-x-auto px-4 py-3 text-xs leading-6 sm:text-[13px]'>

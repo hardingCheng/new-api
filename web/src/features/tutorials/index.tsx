@@ -22,7 +22,7 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
-import { Button } from '@/components/design-system/button'
+import { Button } from '@/components/ui/button'
 import { SectionPageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -93,8 +93,8 @@ export function Tutorials() {
                   </span>
                   <CopyButton
                     value={apiBaseUrl}
-                    size='icon-xs'
-                    className='text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground'
+                    size='icon'
+                    className='text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground size-7'
                   />
                 </div>
                 <code className='block overflow-x-auto font-mono text-sm whitespace-nowrap'>

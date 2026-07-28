@@ -21,7 +21,7 @@ import type { TFunction } from 'i18next'
 import { ExternalLink, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/design-system/button'
+import { Button } from '@/components/ui/button'
 import {
   Table,
   TableBody,
@@ -29,7 +29,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/design-system/table'
+} from '@/components/ui/table'
 import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
 import { StatusBadge } from '@/components/status-badge'
@@ -147,8 +147,7 @@ function AlarmRow({ alarm }: { alarm: WorkbenchAlarm }) {
   return (
     <div className='flex flex-wrap items-baseline gap-2 border-b py-2.5 last:border-b-0'>
       <StatusBadge
-        variant={alarm.level === 'bad' ? 'destructive' : 'warning'}
-        appearance='soft'
+        variant={alarm.level === 'bad' ? 'danger' : 'warning'}
         className='shrink-0'
       >
         {alarm.level === 'bad' ? t('Urgent') : t('Watch')}
@@ -361,7 +360,7 @@ function SitesCard({ sites }: { sites: WorkbenchSite[] }) {
                 </TableCell>
                 <TableCell>
                   {site.needs_topup && (
-                    <StatusBadge variant='warning' appearance='soft'>
+                    <StatusBadge variant='warning'>
                       {t('Top-up needed this month')}
                     </StatusBadge>
                   )}
@@ -438,7 +437,7 @@ export function Workbench() {
       <SectionPageLayout.Title>
         <span className='inline-flex min-w-0 items-center gap-2'>
           <span className='truncate'>{t('Ops Workbench')}</span>
-          <StatusBadge appearance='outline' className='shrink-0'>
+          <StatusBadge variant='neutral' className='shrink-0'>
             Root
           </StatusBadge>
         </span>

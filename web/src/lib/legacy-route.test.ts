@@ -86,6 +86,30 @@ describe('legacy frontend route migration', () => {
     )
   })
 
+  test('maps the former ratio sub-tabs to the billing pages they became', () => {
+    const ratioTabs = {
+      video_billing_mode: '/system-settings/billing/video-billing-mode',
+      model_quota_pool: '/system-settings/billing/model-quota-pool',
+      user_pricing_override: '/system-settings/billing/user-pricing-override',
+    }
+
+    for (const [ratioTab, target] of Object.entries(ratioTabs)) {
+      assert.equal(
+        resolveLegacyRoute(`/console/setting?tab=ratio&ratio_tab=${ratioTab}`),
+        `${target}?tab=ratio&ratio_tab=${ratioTab}`
+      )
+    }
+    // 未知的二级标签退回倍率主页面，而不是掉到 /system-settings
+    assert.equal(
+      resolveLegacyRoute('/console/setting?tab=ratio&ratio_tab=nope'),
+      '/system-settings/billing/model-pricing?tab=ratio&ratio_tab=nope'
+    )
+    assert.equal(
+      resolveLegacyRoute('/console/setting?tab=ratio'),
+      '/system-settings/billing/model-pricing?tab=ratio'
+    )
+  })
+
   test('safely redirects unknown console locations without touching new routes', () => {
     assert.equal(
       resolveLegacyRoute('/console/removed?page=2#old'),

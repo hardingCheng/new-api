@@ -18,13 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { ExternalLink, Info } from 'lucide-react'
 
-import { Button } from '@/components/design-system/button'
+import { Button } from '@/components/ui/button'
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from '@/components/design-system/tabs'
+} from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
 import type { TutorialTabGroup } from '../tutorial-content'
