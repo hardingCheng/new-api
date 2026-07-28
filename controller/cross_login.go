@@ -11,6 +11,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 
 	"github.com/gin-gonic/gin"
@@ -91,36 +92,34 @@ func crossStationLoginURL(user *model.User, c *gin.Context) string {
 	return "https://" + home + "/api/user/cross_login?code=" + code
 }
 
-func themeConsolePath() string {
-	if common.GetTheme() == "default" {
-		return "/dashboard"
-	}
-	return "/console"
-}
+const (
+	crossLoginSignInPath  = "/sign-in"
+	crossLoginConsolePath = "/dashboard"
+)
 
-func themeLoginPath() string {
-	if common.GetTheme() == "default" {
-		return "/sign-in"
-	}
-	return "/login"
-}
-
-// CrossLogin 归属分站侧入口:验一次性令牌 → 建会话 → 跳控制台;
+// CrossLogin 归属站点侧入口:验一次性令牌 → 建登录会话 → 跳控制台。
+// 只写 refresh cookie,访问令牌由前端启动时用该 cookie 换取;
 // 令牌无效一律回登录页,不提示原因。
 func CrossLogin(c *gin.Context) {
 	userId, ok := consumeCrossLoginCode(c.Query("code"), c.Request.Host)
 	if !ok {
-		c.Redirect(http.StatusFound, themeLoginPath())
+		c.Redirect(http.StatusFound, crossLoginSignInPath)
 		return
 	}
 	user, err := model.GetUserById(userId, false)
 	if err != nil || user.Status != common.UserStatusEnabled {
-		c.Redirect(http.StatusFound, themeLoginPath())
+		c.Redirect(http.StatusFound, crossLoginSignInPath)
 		return
 	}
-	if err := establishSession(user, c); err != nil {
-		c.Redirect(http.StatusFound, themeLoginPath())
+	bundle, err := service.CreateLoginSession(user.Id, "cross_station", c.ClientIP(), c.Request.UserAgent())
+	if err != nil {
+		common.SysLog("cross login session creation failed: " + err.Error())
+		c.Redirect(http.StatusFound, crossLoginSignInPath)
 		return
 	}
-	c.Redirect(http.StatusFound, themeConsolePath())
+	model.UpdateUserLastLoginAt(user.Id)
+	service.WriteRefreshCookie(c, bundle.RefreshToken)
+	setAuthNoStore(c)
+	recordLoginAudit(user, c)
+	c.Redirect(http.StatusFound, crossLoginConsolePath)
 }

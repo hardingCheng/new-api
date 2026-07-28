@@ -8,18 +8,48 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service/chatdump"
 
-	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 )
 
+// 查看页的浏览器凭据。
+//
+// 后台的访问令牌只存在于前端内存里，服务端直出的 /_dump/ 页面拿不到它，
+// 浏览器的 refresh cookie 又只作用于 /api/user/auth，因此这里用两步：
+// 已登录的 root 先在后台换一张一次性入场票（ChatDumpViewerTicket），
+// 带票访问 /_dump/ 时换成一个只作用于 /_dump 的浏览期 cookie。
+// 票和浏览期都存在进程内存里，与跨站登录令牌一样是单实例语义：
+// 换机器或重启后需要重新换票。
+const (
+	chatDumpTicketTTL  = time.Minute
+	chatDumpViewerTTL  = 8 * time.Hour
+	chatDumpCookieName = "chat_dump_viewer"
+	chatDumpCookiePath = "/_dump"
+)
+
+type chatDumpGrant struct {
+	userId    int
+	expiresAt time.Time
+}
+
+var chatDumpGrants = struct {
+	sync.Mutex
+	tickets  map[string]chatDumpGrant
+	sessions map[string]chatDumpGrant
+}{
+	tickets:  make(map[string]chatDumpGrant),
+	sessions: make(map[string]chatDumpGrant),
+}
+
 // SetChatDumpRouter 注册抓取查看路由 /_dump/。
-// 鉴权：必须是 root 角色登录会话（cookie session 中 role >= RoleRootUser）。
-// 不满足 -> GET 页面跳转到 /login 让你登录，API 调用直接 404，不暴露路由存在。
+// 鉴权：入场票或浏览期 cookie，两者都只发给 root。
+// 不满足 -> GET 页面跳登录页，API 调用直接 404，不暴露路由存在。
 func SetChatDumpRouter(router *gin.Engine) {
 	g := router.Group("/_dump")
 	g.Use(chatDumpAuth)
@@ -35,31 +65,115 @@ func SetChatDumpRouter(router *gin.Engine) {
 		g.GET("/dataset/stats", chatDumpDatasetStats)
 		g.GET("/dataset.zip", chatDumpDatasetZip)
 	}
-	common.SysLog("chatdump: 已注册查看路由 /_dump/（需 root 登录）")
+	common.SysLog("chatdump: 已注册查看路由 /_dump/（需 root 换票进入）")
 }
 
-// chatDumpAuth 仅放行 root 登录会话。
-func chatDumpAuth(c *gin.Context) {
-	session := sessions.Default(c)
-	idVal := session.Get("id")
-	roleVal := session.Get("role")
-	statusVal := session.Get("status")
+// ChatDumpViewerTicket 给已登录的 root 发一张一次性入场票。
+// 由后台页面调用后把浏览器导到 /_dump/?ticket=<票>。
+func ChatDumpViewerTicket(c *gin.Context) {
+	userId := c.GetInt("id")
+	if userId <= 0 {
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+	ticket, err := common.GenerateRandomCharsKey(48)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	now := time.Now()
+	chatDumpGrants.Lock()
+	pruneChatDumpGrants(now)
+	chatDumpGrants.tickets[ticket] = chatDumpGrant{userId: userId, expiresAt: now.Add(chatDumpTicketTTL)}
+	chatDumpGrants.Unlock()
 
-	authed := false
-	if idVal != nil && roleVal != nil {
-		if role, ok := roleVal.(int); ok && role >= common.RoleRootUser {
-			if status, ok := statusVal.(int); !ok || status != common.UserStatusDisabled {
-				authed = true
-			}
+	common.ApiSuccess(c, gin.H{
+		"url":        chatDumpCookiePath + "/?ticket=" + ticket,
+		"expires_in": int(chatDumpTicketTTL.Seconds()),
+	})
+}
+
+// pruneChatDumpGrants 清掉过期的票和浏览期；调用方必须已持锁。
+func pruneChatDumpGrants(now time.Time) {
+	for key, grant := range chatDumpGrants.tickets {
+		if !grant.expiresAt.After(now) {
+			delete(chatDumpGrants.tickets, key)
 		}
 	}
-	if authed {
+	for key, grant := range chatDumpGrants.sessions {
+		if !grant.expiresAt.After(now) {
+			delete(chatDumpGrants.sessions, key)
+		}
+	}
+}
+
+// consumeChatDumpTicket 校验并消费一次性入场票，换出浏览期令牌。
+func consumeChatDumpTicket(ticket string) (string, bool) {
+	if ticket == "" {
+		return "", false
+	}
+	now := time.Now()
+	chatDumpGrants.Lock()
+	defer chatDumpGrants.Unlock()
+	pruneChatDumpGrants(now)
+	grant, ok := chatDumpGrants.tickets[ticket]
+	if !ok {
+		return "", false
+	}
+	delete(chatDumpGrants.tickets, ticket)
+	viewer, err := common.GenerateRandomCharsKey(48)
+	if err != nil {
+		common.SysError("chatdump: 浏览期令牌生成失败: " + err.Error())
+		return "", false
+	}
+	chatDumpGrants.sessions[viewer] = chatDumpGrant{userId: grant.userId, expiresAt: now.Add(chatDumpViewerTTL)}
+	return viewer, true
+}
+
+// chatDumpViewerAuthorized 校验浏览期 cookie，并确认账号仍是启用中的 root。
+func chatDumpViewerAuthorized(viewer string) bool {
+	if viewer == "" {
+		return false
+	}
+	now := time.Now()
+	chatDumpGrants.Lock()
+	pruneChatDumpGrants(now)
+	grant, ok := chatDumpGrants.sessions[viewer]
+	chatDumpGrants.Unlock()
+	if !ok {
+		return false
+	}
+	user, err := model.GetUserCache(grant.userId)
+	if err != nil {
+		return false
+	}
+	return user.Role >= common.RoleRootUser && user.Status == common.UserStatusEnabled
+}
+
+// chatDumpAuth 只放行 root：先认浏览期 cookie，其次认一次性入场票。
+func chatDumpAuth(c *gin.Context) {
+	if viewer, err := c.Cookie(chatDumpCookieName); err == nil && chatDumpViewerAuthorized(viewer) {
 		c.Next()
 		return
 	}
-	// 浏览器直接打开页面：跳到登录后回到这里
-	if c.Request.Method == http.MethodGet && strings.HasSuffix(c.Request.URL.Path, "/_dump/") {
-		c.Redirect(http.StatusFound, "/login?expired=true")
+	isIndexPage := c.Request.Method == http.MethodGet && strings.HasSuffix(c.Request.URL.Path, "/_dump/")
+	if isIndexPage {
+		if viewer, ok := consumeChatDumpTicket(c.Query("ticket")); ok {
+			http.SetCookie(c.Writer, &http.Cookie{
+				Name:     chatDumpCookieName,
+				Value:    viewer,
+				Path:     chatDumpCookiePath,
+				MaxAge:   int(chatDumpViewerTTL.Seconds()),
+				Expires:  time.Now().Add(chatDumpViewerTTL),
+				HttpOnly: true,
+				Secure:   common.SessionCookieSecure,
+				SameSite: http.SameSiteStrictMode,
+			})
+			// 把票从地址栏里洗掉，避免被复制/留在历史记录里
+			c.Redirect(http.StatusFound, chatDumpCookiePath+"/")
+			return
+		}
+		c.Redirect(http.StatusFound, "/sign-in")
 		return
 	}
 	c.AbortWithStatus(http.StatusNotFound)
