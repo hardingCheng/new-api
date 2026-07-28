@@ -2,7 +2,11 @@ package dto
 
 import (
 	"encoding/json"
+
+	relaydto "github.com/QuantumNous/new-api/relaykit/dto"
 )
+
+type OpenAIVideoError = relaydto.OpenAIVideoError
 
 type TaskError struct {
 	Code       string `json:"code"`

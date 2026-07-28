@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel"
 	taskcommon "github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relaydto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
@@ -443,14 +444,14 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	// 但不会回写 task.Data；若纯透传，下游会一直看到 "processing" 而永远轮询。
 	switch task.Status {
 	case model.TaskStatusSuccess:
-		if data, err = sjson.SetBytes(data, "status", dto.VideoStatusCompleted); err != nil {
+		if data, err = sjson.SetBytes(data, "status", relaydto.VideoStatusCompleted); err != nil {
 			return nil, errors.Wrap(err, "set status failed")
 		}
 		if data, err = sjson.SetBytes(data, "progress", 100); err != nil {
 			return nil, errors.Wrap(err, "set progress failed")
 		}
 	case model.TaskStatusFailure:
-		if data, err = sjson.SetBytes(data, "status", dto.VideoStatusFailed); err != nil {
+		if data, err = sjson.SetBytes(data, "status", relaydto.VideoStatusFailed); err != nil {
 			return nil, errors.Wrap(err, "set status failed")
 		}
 		if data, err = sjson.SetBytes(data, "progress", 100); err != nil {
