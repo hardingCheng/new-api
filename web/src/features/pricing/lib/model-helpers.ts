@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { EXCLUDED_GROUPS, FILTER_ALL, QUOTA_TYPE_VALUES } from '../constants'
-import type { PricingModel } from '../types'
+import type { PricingModel, PricingUserPricing } from '../types'
 
 // ----------------------------------------------------------------------------
 // Model Helper Utilities
@@ -48,6 +48,24 @@ export function getConfiguredGroupRatio(
 ): number {
   const ratio = groupRatio[group]
   return typeof ratio === 'number' && Number.isFinite(ratio) ? ratio : 1
+}
+
+/**
+ * Apply per-user group ratio overrides without mutating the shared API data.
+ */
+export function mergeUserPricingGroupRatios(
+  baseRatios: Record<string, number>,
+  userPricing?: PricingUserPricing
+): Record<string, number> {
+  const mergedRatios = { ...baseRatios }
+
+  for (const [group, pricing] of Object.entries(userPricing?.groups ?? {})) {
+    if (Number.isFinite(pricing.group_ratio) && pricing.group_ratio >= 0) {
+      mergedRatios[group] = pricing.group_ratio
+    }
+  }
+
+  return mergedRatios
 }
 
 /**

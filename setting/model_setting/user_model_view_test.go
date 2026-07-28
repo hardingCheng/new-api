@@ -106,3 +106,30 @@ func TestParseUserModelViewRejectsAmbiguousRules(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateUserModelViewModelConflicts(t *testing.T) {
+	config, err := ParseUserModelViewJSONString(`{"rules":[{"user_id":42,"aliases":[
+		{"public_model":"video-a","target_model":"video-b","reference_video":"allowed"}
+	]}]}`)
+	require.NoError(t, err)
+
+	err = ValidateUserModelViewModelConflicts(config, []string{"video-a", "video-b"})
+	require.EqualError(t, err, `user_id 42 public model "video-a" conflicts with an existing model`)
+	require.NoError(t, ValidateUserModelViewModelConflicts(config, []string{"video-b", "video-c"}))
+}
+
+func TestBuildVisibleUserModelsAliasWinsRealModelConflictRegardlessOfInputOrder(t *testing.T) {
+	preserveUserModelView(t)
+	require.NoError(t, UpdateUserModelViewByJSONString(`{"rules":[{"user_id":42,"aliases":[
+		{"public_model":"video-a","target_model":"video-b","reference_video":"allowed"}
+	]}]}`))
+
+	expected := []VisibleUserModel{{Name: "video-a", TargetModel: "video-b"}}
+	orders := [][]string{
+		{"video-a", "video-b"},
+		{"video-b", "video-a"},
+	}
+	for _, availableModels := range orders {
+		assert.Equal(t, expected, BuildVisibleUserModels(42, availableModels))
+	}
+}

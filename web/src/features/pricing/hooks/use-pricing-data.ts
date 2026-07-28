@@ -23,6 +23,7 @@ import { useStatus } from '@/hooks/use-status'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { getPricing } from '../api'
+import { mergeUserPricingGroupRatios } from '../lib/model-helpers'
 
 export function usePricingData() {
   const { status } = useStatus()
@@ -60,7 +61,10 @@ export function usePricingData() {
         vendor_name: vendor?.name,
         vendor_icon: vendor?.icon,
         vendor_description: vendor?.description,
-        group_ratio: data.group_ratio,
+        group_ratio: mergeUserPricingGroupRatios(
+          data.group_ratio,
+          model.user_pricing
+        ),
       }
     })
   }, [data])

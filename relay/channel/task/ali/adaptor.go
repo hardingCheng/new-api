@@ -199,25 +199,46 @@ func sizeToResolution(size string) (string, error) {
 }
 
 func ProcessAliOtherRatios(aliReq *AliVideoRequest) (map[string]float64, error) {
-	otherRatios := make(map[string]float64)
+	if aliReq == nil || aliReq.Parameters == nil {
+		return nil, errors.New("parameters are required")
+	}
+	if aliReq.Parameters.Duration <= 0 || aliReq.Parameters.Duration > relaycommon.MaxTaskDurationSeconds {
+		return nil, fmt.Errorf("duration must be between 1 and %d seconds", relaycommon.MaxTaskDurationSeconds)
+	}
+
+	otherRatios := map[string]float64{
+		"seconds": float64(aliReq.Parameters.Duration),
+	}
 	var resolution string
 
-	// size match
-	if aliReq.Parameters.Size != "" {
-		toResolution, err := sizeToResolution(aliReq.Parameters.Size)
+	if size := strings.TrimSpace(aliReq.Parameters.Size); size != "" {
+		toResolution, err := sizeToResolution(size)
 		if err != nil {
 			return nil, err
 		}
+		aliReq.Parameters.Size = size
 		resolution = toResolution
-	} else {
-		resolution = strings.ToUpper(aliReq.Parameters.Resolution)
-		if !strings.HasSuffix(resolution, "P") {
-			resolution = resolution + "P"
+	}
+	if requestedResolution := strings.TrimSpace(aliReq.Parameters.Resolution); requestedResolution != "" {
+		requestedResolution = strings.ToUpper(requestedResolution)
+		if !strings.HasSuffix(requestedResolution, "P") {
+			requestedResolution += "P"
 		}
+		switch requestedResolution {
+		case "480P", "720P", "1080P":
+		default:
+			return nil, fmt.Errorf("invalid resolution: %s", aliReq.Parameters.Resolution)
+		}
+		if resolution != "" && resolution != requestedResolution {
+			return nil, fmt.Errorf("size and resolution conflict: %s != %s", resolution, requestedResolution)
+		}
+		aliReq.Parameters.Resolution = requestedResolution
+		resolution = requestedResolution
 	}
-	if resolution != "" {
-		otherRatios[fmt.Sprintf("resolution-%s", resolution)] = 1
+	if resolution == "" {
+		return nil, errors.New("size or resolution is required")
 	}
+	otherRatios[fmt.Sprintf("resolution-%s", resolution)] = 1
 	return otherRatios, nil
 }
 
@@ -393,36 +414,27 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 	if err := normalizeWan27I2VInput(aliReq, req); err != nil {
 		return nil, err
 	}
+	if _, err := ProcessAliOtherRatios(aliReq); err != nil {
+		return nil, err
+	}
 
 	return aliReq, nil
 }
 
 // EstimateBilling 根据用户请求参数计算 OtherRatios（时长、分辨率等）。
 // 在 ValidateRequestAndSetAction 之后、价格计算之前调用。
-func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
+func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) (map[string]float64, error) {
 	taskReq, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	aliReq, err := a.convertToAliRequest(info, taskReq)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
-	// metadata can override Duration past standard request validation;
-	// cap it because it is used as a billing multiplier.
-	otherRatios := map[string]float64{
-		"seconds": float64(min(aliReq.Parameters.Duration, relaycommon.MaxTaskDurationSeconds)),
-	}
-	ratios, err := ProcessAliOtherRatios(aliReq)
-	if err != nil {
-		return otherRatios
-	}
-	for k, v := range ratios {
-		otherRatios[k] = v
-	}
-	return otherRatios
+	return ProcessAliOtherRatios(aliReq)
 }
 
 // DoRequest delegates to common helper

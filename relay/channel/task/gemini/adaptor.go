@@ -87,23 +87,10 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		}
 	}
 
-	params := &VeoParameters{}
-	if err := taskcommon.UnmarshalMetadata(req.Metadata, params); err != nil {
-		return nil, errors.Wrap(err, "unmarshal metadata failed")
+	params, err := ResolveVeoRequestParameters(req)
+	if err != nil {
+		return nil, errors.Wrap(err, "invalid Veo parameters")
 	}
-	if params.DurationSeconds == 0 {
-		if duration := ResolveVeoDuration(nil, req.Duration, req.Seconds); duration > 0 {
-			params.DurationSeconds = duration
-		}
-	}
-	if params.Resolution == "" && req.Size != "" {
-		params.Resolution = SizeToVeoResolution(req.Size)
-	}
-	if params.AspectRatio == "" && req.Size != "" {
-		params.AspectRatio = SizeToVeoAspectRatio(req.Size)
-	}
-	params.Resolution = strings.ToLower(params.Resolution)
-	params.SampleCount = 1
 
 	body := VeoRequestPayload{
 		Instances:  []VeoInstance{instance},
@@ -161,24 +148,26 @@ func (a *TaskAdaptor) GetChannelName() string {
 }
 
 // EstimateBilling returns OtherRatios based on durationSeconds and resolution.
-func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
+func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) (map[string]float64, error) {
 	v, ok := c.Get("task_request")
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	req, ok := v.(relaycommon.TaskSubmitReq)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 
-	seconds := ResolveVeoDuration(req.Metadata, req.Duration, req.Seconds)
-	resolution := ResolveVeoResolution(req.Metadata, req.Size)
-	resRatio := VeoResolutionRatio(info.UpstreamModelName, resolution)
+	params, err := ResolveVeoRequestParameters(req)
+	if err != nil {
+		return nil, err
+	}
+	resRatio := VeoResolutionRatio(info.UpstreamModelName, params.Resolution)
 
 	return map[string]float64{
-		"seconds":    float64(seconds),
+		"seconds":    float64(params.DurationSeconds),
 		"resolution": resRatio,
-	}
+	}, nil
 }
 
 // FetchTask polls task status via the Gemini operations GET endpoint.

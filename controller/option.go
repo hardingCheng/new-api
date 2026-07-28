@@ -399,7 +399,11 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	case "UserModelView":
-		_, err = model_setting.ParseUserModelViewJSONString(option.Value.(string))
+		var config model_setting.UserModelViewConfig
+		config, err = model_setting.ParseUserModelViewJSONString(option.Value.(string))
+		if err == nil {
+			err = model_setting.ValidateUserModelViewModelConflicts(config, model.GetEnabledModels())
+		}
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,

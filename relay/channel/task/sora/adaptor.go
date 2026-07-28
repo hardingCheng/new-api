@@ -125,15 +125,15 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 }
 
 // EstimateBilling 根据用户请求的 seconds 和 size 计算 OtherRatios。
-func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
+func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) (map[string]float64, error) {
 	// remix 路径的 OtherRatios 已在 ResolveOriginTask 中设置
 	if info.Action == constant.TaskActionRemix {
-		return nil
+		return nil, nil
 	}
 
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	seconds := relaycommon.EffectiveTaskDuration(req)
@@ -142,7 +142,10 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	}
 	referenceSeconds := 0
 	if relaycommon.IsSeedanceRelayModel(info, req.Model) {
-		referenceSeconds = service.SumReferenceVideoDurationSeconds(c, relaycommon.ExtractReferenceVideoURLs(req))
+		referenceSeconds, err = service.SumReferenceVideoDurationSeconds(c, relaycommon.ExtractReferenceVideoURLs(req))
+		if err != nil {
+			return nil, err
+		}
 	}
 	billableSeconds := seconds + referenceSeconds
 	c.Set("generated_video_seconds", seconds)
@@ -160,7 +163,7 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		"seconds": float64(billableSeconds),
 		"size":    1,
 	}
-	return ratios
+	return ratios, nil
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {

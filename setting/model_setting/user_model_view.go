@@ -116,6 +116,25 @@ func ParseUserModelViewJSONString(jsonStr string) (UserModelViewConfig, error) {
 	return config, nil
 }
 
+func ValidateUserModelViewModelConflicts(config UserModelViewConfig, availableModels []string) error {
+	modelNames := make(map[string]struct{}, len(availableModels))
+	for _, modelName := range availableModels {
+		modelName = strings.TrimSpace(modelName)
+		if modelName != "" {
+			modelNames[modelName] = struct{}{}
+		}
+	}
+
+	for _, rule := range config.Rules {
+		for _, alias := range rule.Aliases {
+			if _, conflicts := modelNames[alias.PublicModel]; conflicts {
+				return fmt.Errorf("user_id %d public model %q conflicts with an existing model", rule.UserID, alias.PublicModel)
+			}
+		}
+	}
+	return nil
+}
+
 func GetUserModelViewCopy() UserModelViewConfig {
 	config, ok := userModelViewConfig.Load().(UserModelViewConfig)
 	if !ok {
@@ -168,14 +187,19 @@ func BuildVisibleUserModels(userID int, availableModels []string) []VisibleUserM
 	}
 
 	aliasesByTarget := make(map[string][]UserModelAlias)
+	publicAliasNames := make(map[string]struct{}, len(rule.Aliases))
 	for _, alias := range rule.Aliases {
 		aliasesByTarget[alias.TargetModel] = append(aliasesByTarget[alias.TargetModel], alias)
+		publicAliasNames[alias.PublicModel] = struct{}{}
 	}
 	visible := make([]VisibleUserModel, 0, len(availableModels)+len(rule.Aliases))
 	seen := make(map[string]struct{}, len(availableModels)+len(rule.Aliases))
 	for _, modelName := range availableModels {
 		aliases := aliasesByTarget[modelName]
 		if len(aliases) == 0 {
+			if _, isPublicAlias := publicAliasNames[modelName]; isPublicAlias {
+				continue
+			}
 			if _, exists := seen[modelName]; !exists {
 				visible = append(visible, VisibleUserModel{Name: modelName, TargetModel: modelName})
 				seen[modelName] = struct{}{}

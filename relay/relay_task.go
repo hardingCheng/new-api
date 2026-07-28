@@ -198,7 +198,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	// 5. 计费估算：让适配器根据用户请求提供 OtherRatios（时长、分辨率等）
 	//    必须在 ModelPriceHelperPerCall 之后调用（它会重建 PriceData）。
 	//    ResolveOriginTask 可能已在 remix 路径中预设了 OtherRatios，此处合并。
-	if estimatedRatios := adaptor.EstimateBilling(c, info); len(estimatedRatios) > 0 {
+	estimatedRatios, err := adaptor.EstimateBilling(c, info)
+	if err != nil {
+		return nil, service.TaskErrorWrapperLocal(err, "invalid_billing_input", http.StatusBadRequest)
+	}
+	if len(estimatedRatios) > 0 {
 		for k, v := range estimatedRatios {
 			info.PriceData.AddOtherRatio(k, v)
 		}
@@ -676,6 +680,9 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 // 不暴露 platform / user_id / group / channel_id / quota 等内部信息。
 func TaskModel2PublicVideoDto(task *model.Task) *dto.VideoTaskPublicDto {
 	full := TaskModel2Dto(task)
+	publicModelName := strings.TrimSpace(task.Properties.OriginModelName)
+	publicProperties := task.Properties
+	publicProperties.UpstreamModelName = ""
 	seconds, size := extractVideoSecondsSize(task.Data)
 	if seconds == "" && full.VideoDuration > 0 {
 		seconds = strconv.Itoa(full.VideoDuration)
@@ -683,7 +690,7 @@ func TaskModel2PublicVideoDto(task *model.Task) *dto.VideoTaskPublicDto {
 	out := &dto.VideoTaskPublicDto{
 		ID:     full.TaskID,
 		Object: "video",
-		Model:  full.ModelName,
+		Model:  publicModelName,
 		// status 映射为 OpenAI 小写（queued/in_progress/completed/failed），
 		// 让 OpenAI SDK 与下游 new-api 的 sora 解析器都能正确识别任务完成/失败。
 		Status:           task.Status.ToVideoStatus(),
@@ -701,10 +708,10 @@ func TaskModel2PublicVideoDto(task *model.Task) *dto.VideoTaskPublicDto {
 		StartTime:        full.StartTime,
 		FinishTime:       full.FinishTime,
 		Progress:         publicVideoProgress(task, full.Progress),
-		Properties:       full.Properties,
-		ModelName:        full.ModelName,
+		Properties:       publicProperties,
+		ModelName:        publicModelName,
 		VideoDuration:    full.VideoDuration,
-		Data:             stripTaskDataSensitiveFields(full.Data),
+		Data:             stripTaskDataSensitiveFields(full.Data, publicModelName, full.TaskID),
 		Timestamp2String: full.Timestamp2String,
 	}
 	if task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure {
@@ -741,25 +748,83 @@ func extractVideoSecondsSize(data json.RawMessage) (string, string) {
 	return seconds, size
 }
 
-// stripTaskDataSensitiveFields 从对外返回的 data 中移除上游内部字段（如 usage 计费信息），
-// 避免把上游成本（xAI 的 usage.cost_in_usd_ticks 等）透传给调用方。
-func stripTaskDataSensitiveFields(data json.RawMessage) json.RawMessage {
+// stripTaskDataSensitiveFields removes upstream billing/model/task identifiers
+// while preserving provider-specific status and result fields used by clients.
+func stripTaskDataSensitiveFields(data json.RawMessage, publicModel, publicTaskID string) json.RawMessage {
 	if len(data) == 0 {
 		return data
 	}
 	var m map[string]any
 	if err := common.Unmarshal(data, &m); err != nil {
-		return data
+		return nil
 	}
-	if _, ok := m["usage"]; !ok {
-		return data
-	}
-	delete(m, "usage")
+	redactPublicTaskDataMap(m, publicModel, publicTaskID, true)
 	b, err := common.Marshal(m)
 	if err != nil {
-		return data
+		return nil
 	}
 	return json.RawMessage(b)
+}
+
+func redactPublicTaskDataMap(data map[string]any, publicModel, publicTaskID string, root bool) {
+	_, hasTaskID := data["task_id"]
+	_, hasStatus := data["status"]
+	_, hasModel := data["model"]
+	taskObject := root || hasTaskID || (hasStatus && hasModel)
+
+	for key, value := range data {
+		switch key {
+		case "usage", "upstream_model_name", "upstream_task_id":
+			delete(data, key)
+		case "operationName", "operation_name":
+			if publicTaskID == "" {
+				delete(data, key)
+			} else {
+				data[key] = publicTaskID
+			}
+		case "name":
+			name, isString := value.(string)
+			if !isString || !strings.Contains(name, "operations/") {
+				continue
+			}
+			if publicTaskID == "" {
+				delete(data, key)
+			} else {
+				data[key] = publicTaskID
+			}
+		case "model":
+			if publicModel == "" {
+				delete(data, key)
+			} else {
+				data[key] = publicModel
+			}
+		case "task_id":
+			if publicTaskID == "" {
+				delete(data, key)
+			} else {
+				data[key] = publicTaskID
+			}
+		case "id":
+			if taskObject {
+				if publicTaskID == "" {
+					delete(data, key)
+				} else {
+					data[key] = publicTaskID
+				}
+			}
+		default:
+			switch nested := value.(type) {
+			case map[string]any:
+				redactPublicTaskDataMap(nested, publicModel, publicTaskID, false)
+			case []any:
+				for _, item := range nested {
+					if nestedMap, ok := item.(map[string]any); ok {
+						redactPublicTaskDataMap(nestedMap, publicModel, publicTaskID, false)
+					}
+				}
+			}
+		}
+	}
 }
 
 // publicVideoProgress 计算对外进度：终态（成功/失败）固定 100，

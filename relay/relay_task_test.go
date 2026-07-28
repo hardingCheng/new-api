@@ -4,8 +4,77 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestTaskModel2PublicVideoDtoRedactsUpstreamIdentifiers(t *testing.T) {
+	task := &model.Task{
+		TaskID: "task_public",
+		Status: model.TaskStatusInProgress,
+		Properties: model.Properties{
+			OriginModelName:   "public-video-model",
+			UpstreamModelName: "provider-secret-model",
+		},
+		Data: []byte(`{
+			"id":"upstream-id",
+			"task_id":"upstream-task-id",
+			"name":"projects/provider-project/locations/us-central1/publishers/google/models/provider-secret-model/operations/upstream-operation",
+			"operationName":"projects/provider-project/locations/us-central1/publishers/google/models/provider-secret-model/operations/upstream-operation",
+			"model":"provider-secret-model",
+			"usage":{"cost":123},
+			"response":{
+				"id":"nested-upstream-id",
+				"task_id":"nested-upstream-task-id",
+				"model":"nested-provider-model",
+				"status":"processing",
+				"usage":{"tokens":99},
+				"operation":{
+					"name":"projects/provider-project/locations/us-central1/publishers/google/models/nested-provider-model/operations/nested-upstream-operation"
+				}
+			},
+			"result":{"id":"asset-id","name":"final-video.mp4"}
+		}`),
+	}
+
+	out := TaskModel2PublicVideoDto(task)
+
+	assert.Equal(t, "public-video-model", out.Model)
+	assert.Equal(t, "public-video-model", out.ModelName)
+	properties, ok := out.Properties.(model.Properties)
+	require.True(t, ok)
+	assert.Empty(t, properties.UpstreamModelName)
+	assert.Equal(t, "public-video-model", properties.OriginModelName)
+
+	var data map[string]any
+	require.NoError(t, common.Unmarshal(out.Data, &data))
+	assert.Equal(t, "task_public", data["id"])
+	assert.Equal(t, "task_public", data["task_id"])
+	assert.Equal(t, "task_public", data["name"])
+	assert.Equal(t, "task_public", data["operationName"])
+	assert.Equal(t, "public-video-model", data["model"])
+	assert.NotContains(t, data, "usage")
+
+	response, ok := data["response"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "task_public", response["id"])
+	assert.Equal(t, "task_public", response["task_id"])
+	assert.Equal(t, "public-video-model", response["model"])
+	assert.NotContains(t, response, "usage")
+	operation, ok := response["operation"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "task_public", operation["name"])
+	assert.NotContains(t, string(out.Data), "provider-project")
+	assert.NotContains(t, string(out.Data), "provider-secret-model")
+	assert.NotContains(t, string(out.Data), "upstream-operation")
+
+	result, ok := data["result"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "asset-id", result["id"])
+	assert.Equal(t, "final-video.mp4", result["name"])
+}
 
 // 对齐设计示例：原价每秒 0.1 美元，生成 3 秒，参考 15 秒。
 // basePerSec = 0.1 × QuotaPerUnit × groupRatio(1) = 0.1 × 500000 = 50000。
@@ -23,14 +92,14 @@ func TestReferenceVideoCost(t *testing.T) {
 		apply bool
 		want  float64 // 参考部分额度
 	}{
-		{"无规则全额", ratio_setting.VideoRefModeNone, 0, false, basePerSec * refSec},          // 750000
-		{"倍率半价", ratio_setting.VideoRefModeFactor, 0.5, false, basePerSec * refSec * 0.5},   // 375000
-		{"倍率免费", ratio_setting.VideoRefModeFactor, 0, false, 0},                            // 0
-		{"固定单价0.02-不折扣", ratio_setting.VideoRefModePrice, 0.02, false, 0.02 * common.QuotaPerUnit * refSec}, // 150000
+		{"无规则全额", ratio_setting.VideoRefModeNone, 0, false, basePerSec * refSec},                                        // 750000
+		{"倍率半价", ratio_setting.VideoRefModeFactor, 0.5, false, basePerSec * refSec * 0.5},                               // 375000
+		{"倍率免费", ratio_setting.VideoRefModeFactor, 0, false, 0},                                                         // 0
+		{"固定单价0.02-不折扣", ratio_setting.VideoRefModePrice, 0.02, false, 0.02 * common.QuotaPerUnit * refSec},             // 150000
 		{"固定单价0.02-跟折扣", ratio_setting.VideoRefModePrice, 0.02, true, 0.02 * common.QuotaPerUnit * refSec * groupRatio}, // 120000
-		{"整段固定1元-不折扣", ratio_setting.VideoRefModeFlat, 1, false, 1 * common.QuotaPerUnit},       // 500000
-		{"整段固定1元-跟折扣", ratio_setting.VideoRefModeFlat, 1, true, 1 * common.QuotaPerUnit * groupRatio}, // 400000
-		{"封顶5秒", ratio_setting.VideoRefModeCap, 5, false, basePerSec * 5},                   // 250000
+		{"整段固定1元-不折扣", ratio_setting.VideoRefModeFlat, 1, false, 1 * common.QuotaPerUnit},                               // 500000
+		{"整段固定1元-跟折扣", ratio_setting.VideoRefModeFlat, 1, true, 1 * common.QuotaPerUnit * groupRatio},                   // 400000
+		{"封顶5秒", ratio_setting.VideoRefModeCap, 5, false, basePerSec * 5},                                               // 250000
 	}
 	for _, tc := range cases {
 		got := referenceVideoCost(tc.mode, tc.value, refSec, basePerSec, size, groupRatio, tc.apply)
@@ -68,12 +137,12 @@ func TestReferenceVideoTotalQuota(t *testing.T) {
 		value float64
 		want  int // 总额度（QuotaPerUnit=500000 => $1=500000）
 	}{
-		{"无规则=旧逻辑", ratio_setting.VideoRefModeNone, 0, 900000},   // $1.8，等于 base×(3+15)
-		{"倍率半价", ratio_setting.VideoRefModeFactor, 0.5, 525000},  // $1.05
-		{"倍率免费", ratio_setting.VideoRefModeFactor, 0, 150000},    // $0.3（只收生成3秒）
+		{"无规则=旧逻辑", ratio_setting.VideoRefModeNone, 0, 900000},      // $1.8，等于 base×(3+15)
+		{"倍率半价", ratio_setting.VideoRefModeFactor, 0.5, 525000},     // $1.05
+		{"倍率免费", ratio_setting.VideoRefModeFactor, 0, 150000},       // $0.3（只收生成3秒）
 		{"固定单价0.02", ratio_setting.VideoRefModePrice, 0.02, 300000}, // $0.6
-		{"整段固定1元", ratio_setting.VideoRefModeFlat, 1, 650000},    // $1.3
-		{"封顶5秒", ratio_setting.VideoRefModeCap, 5, 400000},       // $0.8
+		{"整段固定1元", ratio_setting.VideoRefModeFlat, 1, 650000},       // $1.3
+		{"封顶5秒", ratio_setting.VideoRefModeCap, 5, 400000},          // $0.8
 	}
 	for _, tc := range cases {
 		if got := total(tc.mode, tc.value); got != tc.want {

@@ -371,6 +371,21 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 		return hosttypes.PriceData{}, fmt.Errorf("model %s is configured as tiered_expr but has no billing expression", info.OriginModelName)
 	}
 
+	// A tiered expression remains the source of model pricing truth, but the
+	// user-level ratio rule still replaces the external group multiplier.
+	overridePriceData := hosttypes.PriceData{GroupRatioInfo: groupRatioInfo}
+	applyUserPricingOverridesToPriceData(info, &overridePriceData)
+	ratioMatches := make([]ratio_setting.UserPricingOverrideMatch, 0, len(info.UserPricingOverrides))
+	for _, match := range info.UserPricingOverrides {
+		if match.Rule.Type == ratio_setting.UserPricingRuleRatio {
+			ratioMatches = append(ratioMatches, match)
+		}
+	}
+	if len(ratioMatches) > 0 {
+		groupRatioInfo = overridePriceData.GroupRatioInfo
+	}
+	info.UserPricingOverrides = ratioMatches
+
 	estimatedCompletionTokens := meta.MaxTokens
 	if estimatedCompletionTokens == 0 && groupRatioInfo.GroupRatio != 0 {
 		estimatedCompletionTokens = defaultTieredPreConsumeMaxTokens

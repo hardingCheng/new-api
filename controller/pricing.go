@@ -58,9 +58,6 @@ func applyUserPricingToPricingList(pricing []model.Pricing, user *model.UserBase
 	copy(result, pricing)
 	for i := range result {
 		item := &result[i]
-		if item.BillingMode == "tiered_expr" {
-			continue
-		}
 		billingModelName := item.ModelName
 		if alias, matched := model_setting.ResolveUserModelAlias(user.Id, item.ModelName); matched {
 			billingModelName = alias.TargetModel
@@ -84,6 +81,25 @@ func applyUserPricingToPricingList(pricing []model.Pricing, user *model.UserBase
 				baseGroupRatio,
 			)
 			if len(override.Matches) == 0 {
+				continue
+			}
+			if item.BillingMode == "tiered_expr" {
+				hasRatioOverride := false
+				for _, match := range override.Matches {
+					if match.Rule.Type == ratio_setting.UserPricingRuleRatio {
+						hasRatioOverride = true
+						break
+					}
+				}
+				if !hasRatioOverride {
+					continue
+				}
+				groupOverrides[group] = model.PricingUserPricingGroup{
+					UsePrice:   item.QuotaType == 1,
+					ModelPrice: item.ModelPrice,
+					ModelRatio: item.ModelRatio,
+					GroupRatio: override.GroupRatio,
+				}
 				continue
 			}
 			groupOverrides[group] = model.PricingUserPricingGroup{

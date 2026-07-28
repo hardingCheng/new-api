@@ -43,8 +43,9 @@ type TaskAdaptor interface {
 	// Called after ValidateRequestAndSetAction, before price calculation.
 	// Adaptors should extract duration, resolution, etc. from the parsed request
 	// and return them as ratio multipliers (e.g. {"seconds": 5, "size": 1.666}).
-	// Return nil to use the base model price without extra ratios.
-	EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64
+	// Return nil ratios to use the base model price without extra ratios.
+	// Return an error when a user-controlled multiplier cannot be validated.
+	EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) (map[string]float64, error)
 
 	// AdjustBillingOnSubmit returns adjusted OtherRatios from the upstream
 	// submit response. Called after a successful DoResponse.

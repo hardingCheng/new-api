@@ -1,11 +1,16 @@
 package ali
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -13,6 +18,14 @@ func testRelayInfo() *relaycommon.RelayInfo {
 	return &relaycommon.RelayInfo{
 		ChannelMeta: &relaycommon.ChannelMeta{},
 	}
+}
+
+func newAliTaskContext(req relaycommon.TaskSubmitReq) *gin.Context {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", strings.NewReader("{}"))
+	ctx.Set("task_request", req)
+	return ctx
 }
 
 func TestConvertToAliRequestWan27I2VBuildsMediaFromImage(t *testing.T) {
@@ -169,4 +182,88 @@ func TestConvertToAliRequestWan25I2VKeepsLegacyImgURL(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(body), `"img_url"`)
 	require.NotContains(t, string(body), `"media"`)
+}
+
+func TestAliMetadataBillingParametersRejectBillingAndUpstreamRequest(t *testing.T) {
+	tests := []struct {
+		name       string
+		parameters map[string]interface{}
+		errorText  string
+	}{
+		{
+			name:       "zero duration",
+			parameters: map[string]interface{}{"duration": 0},
+			errorText:  "duration must be between",
+		},
+		{
+			name:       "negative duration",
+			parameters: map[string]interface{}{"duration": -1},
+			errorText:  "duration must be between",
+		},
+		{
+			name:       "duration above billing bound",
+			parameters: map[string]interface{}{"duration": relaycommon.MaxTaskDurationSeconds + 1},
+			errorText:  "duration must be between",
+		},
+		{
+			name:       "unknown size",
+			parameters: map[string]interface{}{"duration": 5, "size": "999*999"},
+			errorText:  "invalid size",
+		},
+		{
+			name:       "unknown resolution",
+			parameters: map[string]interface{}{"duration": 5, "resolution": "999p"},
+			errorText:  "invalid resolution",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := relaycommon.TaskSubmitReq{
+				Model:  "wan2.6-i2v",
+				Prompt: "animate",
+				Metadata: map[string]interface{}{
+					"parameters": test.parameters,
+				},
+			}
+			adaptor := &TaskAdaptor{}
+			ctx := newAliTaskContext(req)
+
+			_, err := adaptor.EstimateBilling(ctx, testRelayInfo())
+			require.ErrorContains(t, err, test.errorText)
+
+			_, err = adaptor.BuildRequestBody(ctx, testRelayInfo())
+			require.ErrorContains(t, err, test.errorText)
+		})
+	}
+}
+
+func TestAliMetadataBillingParametersMatchUpstreamRequest(t *testing.T) {
+	req := relaycommon.TaskSubmitReq{
+		Model:  "wan2.6-i2v",
+		Prompt: "animate",
+		Metadata: map[string]interface{}{
+			"parameters": map[string]interface{}{
+				"duration":   10,
+				"resolution": "1080p",
+			},
+		},
+	}
+	adaptor := &TaskAdaptor{}
+	ctx := newAliTaskContext(req)
+
+	ratios, err := adaptor.EstimateBilling(ctx, testRelayInfo())
+	require.NoError(t, err)
+	assert.Equal(t, 10.0, ratios["seconds"])
+	assert.Equal(t, 1.0, ratios["resolution-1080P"])
+
+	requestBody, err := adaptor.BuildRequestBody(ctx, testRelayInfo())
+	require.NoError(t, err)
+	body, err := io.ReadAll(requestBody)
+	require.NoError(t, err)
+	var payload AliVideoRequest
+	require.NoError(t, common.Unmarshal(body, &payload))
+	require.NotNil(t, payload.Parameters)
+	assert.Equal(t, 10, payload.Parameters.Duration)
+	assert.Equal(t, "1080P", payload.Parameters.Resolution)
 }

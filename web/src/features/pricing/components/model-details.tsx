@@ -67,7 +67,11 @@ import {
   isDynamicPricingModel,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
-import { getAvailableGroups, isTokenBasedModel } from '../lib/model-helpers'
+import {
+  getAvailableGroups,
+  getConfiguredGroupRatio,
+  isTokenBasedModel,
+} from '../lib/model-helpers'
 import { formatFixedPrice, formatGroupPrice } from '../lib/price'
 import type {
   ModelCapability,
@@ -949,7 +953,7 @@ function GroupPricingSection(props: {
     })
     const formattedPricesByGroup = new Map(
       availableGroups.map((group) => {
-        const ratio = props.groupRatio[group] || 1
+        const ratio = getConfiguredGroupRatio(props.groupRatio, group)
         return [
           group,
           getDynamicFormattedPricesByTier(dynamicTiers, {
@@ -969,7 +973,7 @@ function GroupPricingSection(props: {
         <AutoGroupChain model={props.model} autoGroups={props.autoGroups} />
         <div className='space-y-3'>
           {availableGroups.map((group) => {
-            const ratio = props.groupRatio[group] || 1
+            const ratio = getConfiguredGroupRatio(props.groupRatio, group)
             const formattedPricesByTier =
               formattedPricesByGroup.get(group) ??
               new Map<DynamicPricingTier, Map<string, string>>()
@@ -1065,7 +1069,8 @@ function GroupPricingSection(props: {
             header: t('Ratio'),
             className: thClass,
             cellClassName: 'text-muted-foreground py-2.5 font-mono',
-            cell: (group) => `${props.groupRatio[group] || 1}x`,
+            cell: (group) =>
+              `${getConfiguredGroupRatio(props.groupRatio, group)}x`,
           },
           ...(isTokenBased
             ? [
@@ -1140,6 +1145,7 @@ export interface ModelDetailsContentProps {
 export function ModelDetailsContent(props: ModelDetailsContentProps) {
   const { t } = useTranslation()
   const showRechargePrice = props.showRechargePrice ?? false
+  const groupRatio = props.model.group_ratio ?? props.groupRatio
 
   const isDynamic =
     props.model.billing_mode === 'tiered_expr' &&
@@ -1183,7 +1189,7 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
             )}
             <GroupPricingSection
               model={props.model}
-              groupRatio={props.groupRatio}
+              groupRatio={groupRatio}
               usableGroup={props.usableGroup}
               autoGroups={props.autoGroups}
               priceRate={props.priceRate}

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"strconv"
@@ -50,7 +51,7 @@ func GetAudioDuration(ctx context.Context, f io.ReadSeeker, ext string) (duratio
 	default:
 		err = fmt.Errorf("unsupported audio format: %s", ext)
 	}
-	if err != nil || duration <= 0 {
+	if err != nil || duration <= 0 || math.IsNaN(duration) || math.IsInf(duration, 0) {
 		pureGoErr := err
 		if _, seekErr := f.Seek(0, io.SeekStart); seekErr != nil {
 			if pureGoErr != nil {
@@ -59,7 +60,7 @@ func GetAudioDuration(ctx context.Context, f io.ReadSeeker, ext string) (duratio
 			return 0, errors.Wrap(seekErr, "ffprobe fallback unavailable: failed to seek input")
 		}
 		ffprobeDuration, ffprobeErr := getFFProbeDuration(ctx, f, ext)
-		if ffprobeErr == nil && ffprobeDuration > 0 {
+		if ffprobeErr == nil && ffprobeDuration > 0 && !math.IsNaN(ffprobeDuration) && !math.IsInf(ffprobeDuration, 0) {
 			duration = ffprobeDuration
 			err = nil
 		} else if pureGoErr != nil {
@@ -114,7 +115,7 @@ func getFFProbeDuration(ctx context.Context, r io.Reader, ext string) (float64, 
 	if err != nil {
 		return 0, err
 	}
-	if duration <= 0 {
+	if duration <= 0 || math.IsNaN(duration) || math.IsInf(duration, 0) {
 		return 0, fmt.Errorf("ffprobe returned non-positive duration: %f", duration)
 	}
 	return duration, nil
@@ -224,6 +225,9 @@ func getM4ADuration(r io.ReadSeeker) (float64, error) {
 	info, err := mp4.Probe(r)
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to probe m4a/mp4 file")
+	}
+	if info.Timescale == 0 {
+		return 0, errors.New("invalid m4a/mp4 timescale: 0")
 	}
 	// 时长 = Duration / Timescale
 	return float64(info.Duration) / float64(info.Timescale), nil

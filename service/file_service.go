@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
 
 	"github.com/gin-gonic/gin"
@@ -441,7 +442,7 @@ func GetVideoDurationSeconds(c *gin.Context, data string) (int, error) {
 	if duration <= 0 {
 		return 0, nil
 	}
-	return int(math.Ceil(duration)), nil
+	return videoDurationSecondsForBilling(duration)
 }
 
 func getVideoDuration(c *gin.Context, data string) (float64, error) {
@@ -486,23 +487,40 @@ func getVideoDuration(c *gin.Context, data string) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
+	if duration <= 0 || math.IsNaN(duration) || math.IsInf(duration, 0) {
+		return 0, fmt.Errorf("invalid video duration: %v", duration)
+	}
 	return duration, nil
 }
 
-func SumReferenceVideoDurationSeconds(c *gin.Context, urls []string) int {
+func SumReferenceVideoDurationSeconds(c *gin.Context, urls []string) (int, error) {
 	total := 0.0
 	for _, videoURL := range urls {
 		duration, err := getVideoDuration(c, videoURL)
 		if err != nil {
-			logger.LogWarn(c, fmt.Sprintf("failed to get reference video duration: %v", err))
-			continue
+			return 0, fmt.Errorf("failed to get reference video duration: %w", err)
 		}
 		total += duration
 	}
 	if total <= 0 {
-		return 0
+		return 0, nil
 	}
-	return int(math.Ceil(total))
+	seconds, err := videoDurationSecondsForBilling(total)
+	if err != nil {
+		logger.LogWarn(c, fmt.Sprintf("invalid total reference video duration: %v", err))
+		return 0, err
+	}
+	return seconds, nil
+}
+
+func videoDurationSecondsForBilling(duration float64) (int, error) {
+	if duration <= 0 || math.IsNaN(duration) || math.IsInf(duration, 0) {
+		return 0, fmt.Errorf("invalid video duration: %v", duration)
+	}
+	if duration > relaycommon.MaxTaskDurationSeconds {
+		return 0, fmt.Errorf("video duration must not exceed %d seconds", relaycommon.MaxTaskDurationSeconds)
+	}
+	return int(math.Ceil(duration)), nil
 }
 
 func videoDurationExt(raw string, mimeType string) string {

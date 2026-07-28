@@ -64,6 +64,57 @@ func TestModelPriceHelperTieredUsesPreloadedRequestInput(t *testing.T) {
 	require.Equal(t, common.QuotaPerUnit, info.TieredBillingSnapshot.QuotaPerUnit)
 }
 
+func TestModelPriceHelperTieredAppliesUserRatioOverride(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	savedConfig := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		savedConfig[key] = value
+		return nil
+	}))
+	savedOverrides := ratio_setting.UserPricingOverride2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(savedConfig))
+		require.NoError(t, ratio_setting.UpdateUserPricingOverrideByJSONString(savedOverrides))
+	})
+
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode":    `{"tiered-user-model":"tiered_expr"}`,
+		"billing_setting.billing_expr":    `{"tiered-user-model":"tier(\"base\", p * 2)"}`,
+		"group_ratio_setting.group_ratio": `{"default":1}`,
+	}))
+	require.NoError(t, ratio_setting.UpdateUserPricingOverrideByJSONString(`{
+		"rules": [
+			{"user_id":7,"model_pattern":"tiered-user-model","type":"ratio","value":0.25},
+			{"user_id":7,"model_pattern":"tiered-user-model","type":"model_price","value":0}
+		]
+	}`))
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	ctx.Set("group", "default")
+	info := &relaycommon.RelayInfo{
+		UserId:          7,
+		OriginModelName: "tiered-user-model",
+		UserGroup:       "default",
+		UsingGroup:      "default",
+		BillingRequestInput: &billingexpr.RequestInput{
+			Body: []byte(`{}`),
+		},
+	}
+
+	priceData, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+
+	require.NoError(t, err)
+	require.Equal(t, 250, priceData.QuotaToPreConsume)
+	require.Equal(t, 0.25, priceData.GroupRatioInfo.GroupRatio)
+	require.True(t, priceData.GroupRatioInfo.HasUserOverride)
+	require.NotNil(t, info.TieredBillingSnapshot)
+	require.Equal(t, 0.25, info.TieredBillingSnapshot.GroupRatio)
+	require.Len(t, info.UserPricingOverrides, 1)
+	require.Equal(t, ratio_setting.UserPricingRuleRatio, info.UserPricingOverrides[0].Rule.Type)
+}
+
 func TestModelPriceHelperPerCallUsesUserAliasTargetBilling(t *testing.T) {
 	givenModelPrices := ratio_setting.ModelPrice2JSONString()
 	givenGroupRatios := ratio_setting.GroupRatio2JSONString()

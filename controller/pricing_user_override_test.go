@@ -25,7 +25,9 @@ func TestApplyUserPricingToPricingList(t *testing.T) {
 			{"user_id": 7, "group_pattern": "vip", "model_pattern": "per-call-model", "type": "model_price", "value": 0},
 			{"user_id": 7, "group_pattern": "default", "model_pattern": "ratio-model", "type": "model_ratio", "value": 0},
 			{"user_id": 7, "group_pattern": "discount", "model_pattern": "ratio-model", "type": "ratio", "value": 0.25},
-			{"user_id": 7, "group_pattern": "vip", "model_pattern": "per-call-to-ratio", "type": "model_ratio", "value": 3}
+			{"user_id": 7, "group_pattern": "vip", "model_pattern": "per-call-to-ratio", "type": "model_ratio", "value": 3},
+			{"user_id": 7, "group_pattern": "vip", "model_pattern": "tiered-model", "type": "ratio", "value": 0.5},
+			{"user_id": 7, "group_pattern": "vip", "model_pattern": "tiered-model", "type": "model_price", "value": 0}
 		]
 	}`
 	require.NoError(t, ratio_setting.UpdateUserPricingOverrideByJSONString(overrideJSON))
@@ -88,7 +90,11 @@ func TestApplyUserPricingToPricingList(t *testing.T) {
 	require.Equal(t, 3.0, switched.ModelRatio)
 	require.Equal(t, -1.0, switched.ModelPrice)
 
-	require.Nil(t, result[3].UserPricing, "tiered expression pricing is not overridden in the runtime billing path")
+	require.NotNil(t, result[3].UserPricing)
+	tiered := result[3].UserPricing.Groups["vip"]
+	require.False(t, tiered.UsePrice)
+	require.Equal(t, 1.0, tiered.ModelRatio)
+	require.Equal(t, 0.5, tiered.GroupRatio)
 }
 
 func TestUserModelViewPricingInheritsTargetModelOverride(t *testing.T) {
