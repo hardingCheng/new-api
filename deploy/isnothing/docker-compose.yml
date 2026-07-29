@@ -35,6 +35,8 @@ services:
       SQL_DSN: root:${ISNOTHING_MYSQL_ROOT_PW}@tcp(isnothing-mysql:3306)/new-api
       REDIS_CONN_STRING: redis://isnothing-redis
       SESSION_SECRET: ${ISNOTHING_SESSION_SECRET}
+      SESSION_COOKIE_SECURE: "true"
+      SESSION_COOKIE_TRUSTED_URL: https://isnothing.net
       USAGE_TOKEN_MULTIPLIER: "2"
       TZ: Asia/Shanghai
       ERROR_LOG_ENABLED: "true"
