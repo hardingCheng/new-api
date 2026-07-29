@@ -21,7 +21,12 @@ import { describe, test } from 'node:test'
 
 import type { PricingModel, PricingUserPricing } from '../../types'
 import { getDynamicDisplayGroupRatio } from '../dynamic-price'
-import { mergeUserPricingGroupRatios } from '../model-helpers'
+import {
+  getEffectiveModelPrice,
+  getEffectiveModelRatio,
+  mergeUserPricingGroupRatios,
+} from '../model-helpers'
+import { formatFixedPrice } from '../price'
 
 function userPricing(groupRatios: Record<string, number>): PricingUserPricing {
   return {
@@ -39,7 +44,60 @@ function userPricing(groupRatios: Record<string, number>): PricingUserPricing {
   }
 }
 
-describe('pricing user group ratio overrides', () => {
+describe('pricing user overrides', () => {
+  test('uses a user model price override for the selected group', () => {
+    const model: PricingModel = {
+      id: 1,
+      model_name: 'video-model',
+      quota_type: 1,
+      model_ratio: 0,
+      completion_ratio: 0,
+      model_price: 1,
+      enable_groups: ['sd2'],
+      group_ratio: { sd2: 1 },
+      user_pricing: {
+        groups: {
+          sd2: {
+            use_price: true,
+            model_price: 0.75,
+            model_ratio: 0,
+            group_ratio: 1,
+          },
+        },
+      },
+    }
+
+    assert.equal(getEffectiveModelPrice(model, 'sd2'), 0.75)
+    assert.equal(
+      formatFixedPrice(model, 'sd2', false, 1, 1, { sd2: 1 }),
+      '$0.75'
+    )
+  })
+
+  test('uses a user model ratio override for token pricing', () => {
+    const model: PricingModel = {
+      id: 1,
+      model_name: 'token-model',
+      quota_type: 0,
+      model_ratio: 2,
+      completion_ratio: 1,
+      enable_groups: ['vip'],
+      group_ratio: { vip: 1 },
+      user_pricing: {
+        groups: {
+          vip: {
+            use_price: false,
+            model_price: -1,
+            model_ratio: 0.5,
+            group_ratio: 1,
+          },
+        },
+      },
+    }
+
+    assert.equal(getEffectiveModelRatio(model, 'vip'), 0.5)
+  })
+
   test('shows a tiered model with the viewer-specific group discount', () => {
     const model: PricingModel = {
       id: 1,

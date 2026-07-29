@@ -17,7 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { EXCLUDED_GROUPS, FILTER_ALL, QUOTA_TYPE_VALUES } from '../constants'
-import type { PricingModel, PricingUserPricing } from '../types'
+import type {
+  PricingModel,
+  PricingUserPricing,
+  PricingUserPricingGroup,
+} from '../types'
 
 // ----------------------------------------------------------------------------
 // Model Helper Utilities
@@ -69,6 +73,78 @@ export function mergeUserPricingGroupRatios(
 }
 
 /**
+ * Resolve the group used for summary pricing. The same group selection is
+ * shared by the model card and the request/token price formatters.
+ */
+export function getDisplayGroup(
+  model: PricingModel,
+  selectedGroup?: string
+): string | undefined {
+  const modelEnableGroups = Array.isArray(model.enable_groups)
+    ? model.enable_groups
+    : []
+
+  if (
+    selectedGroup &&
+    selectedGroup !== FILTER_ALL &&
+    modelEnableGroups.includes(selectedGroup)
+  ) {
+    return selectedGroup
+  }
+
+  let bestGroup: string | undefined
+  let minRatio = Number.POSITIVE_INFINITY
+  for (const group of modelEnableGroups) {
+    const ratio = model.group_ratio?.[group]
+    if (typeof ratio !== 'number' || !Number.isFinite(ratio)) continue
+    if (ratio < minRatio) {
+      minRatio = ratio
+      bestGroup = group
+    }
+  }
+  return bestGroup
+}
+
+export function getUserPricingGroup(
+  model: PricingModel,
+  group?: string
+): PricingUserPricingGroup | undefined {
+  if (!group) return undefined
+  return model.user_pricing?.groups?.[group]
+}
+
+export function getEffectiveModelRatio(
+  model: PricingModel,
+  group?: string
+): number {
+  const override = getUserPricingGroup(model, group)
+  if (
+    override &&
+    !override.use_price &&
+    Number.isFinite(override.model_ratio) &&
+    override.model_ratio >= 0
+  ) {
+    return override.model_ratio
+  }
+  return model.model_ratio
+}
+
+export function getEffectiveModelPrice(
+  model: PricingModel,
+  group?: string
+): number {
+  const override = getUserPricingGroup(model, group)
+  if (
+    override?.use_price &&
+    Number.isFinite(override.model_price) &&
+    override.model_price >= 0
+  ) {
+    return override.model_price
+  }
+  return model.model_price || 0
+}
+
+/**
  * Resolve the group ratio used by model square summary prices.
  *
  * When no specific group is selected, the model square shows the best price
@@ -79,37 +155,8 @@ export function getDisplayGroupRatio(
   model: PricingModel,
   selectedGroup?: string
 ): number {
-  const modelEnableGroups = Array.isArray(model.enable_groups)
-    ? model.enable_groups
-    : []
-  const groupRatio = model.group_ratio || {}
-
-  if (
-    selectedGroup &&
-    selectedGroup !== FILTER_ALL &&
-    modelEnableGroups.includes(selectedGroup)
-  ) {
-    return getConfiguredGroupRatio(groupRatio, selectedGroup)
-  }
-
-  if (modelEnableGroups.length === 0) {
-    return 1
-  }
-
-  let minRatio = Number.POSITIVE_INFINITY
-
-  for (const group of modelEnableGroups) {
-    const ratio = groupRatio[group]
-    if (
-      typeof ratio === 'number' &&
-      Number.isFinite(ratio) &&
-      ratio < minRatio
-    ) {
-      minRatio = ratio
-    }
-  }
-
-  return minRatio === Number.POSITIVE_INFINITY ? 1 : minRatio
+  const group = getDisplayGroup(model, selectedGroup)
+  return group ? getConfiguredGroupRatio(model.group_ratio || {}, group) : 1
 }
 
 /**
