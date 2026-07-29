@@ -247,10 +247,11 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.IsClaudeUsageSemantic = summary.UsageSemantic == "anthropic"
 
 	if usage == nil {
+		estimatedPromptTokens := common.ScaleTokenCount(relayInfo.GetEstimatePromptTokens(), common.UsageTokenMultiplier)
 		usage = &dto.Usage{
-			PromptTokens:     relayInfo.GetEstimatePromptTokens(),
+			PromptTokens:     estimatedPromptTokens,
 			CompletionTokens: 0,
-			TotalTokens:      relayInfo.GetEstimatePromptTokens(),
+			TotalTokens:      estimatedPromptTokens,
 		}
 	}
 
@@ -396,12 +397,13 @@ func usageSemanticFromUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) 
 
 func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent []string) {
 	originUsage := usage
-	billingUsage := effectiveBillingUsage(usage)
+	effectiveUsage := effectiveBillingUsage(usage)
+	billingUsage := contractualBillingUsage(usage, common.UsageTokenMultiplier)
 	if usage == nil {
 		extraContent = append(extraContent, "上游无计费信息")
 	}
 	if originUsage != nil {
-		ObserveChannelAffinityUsageCacheByRelayFormat(ctx, billingUsage, relayInfo.GetFinalRequestRelayFormat())
+		ObserveChannelAffinityUsageCacheByRelayFormat(ctx, effectiveUsage, relayInfo.GetFinalRequestRelayFormat())
 	}
 
 	adminRejectReason := common.GetContextKeyString(ctx, constant.ContextKeyAdminRejectReason)
@@ -483,6 +485,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		other = GenerateTextOtherInfo(ctx, relayInfo, summary.ModelRatio, summary.GroupRatio, summary.CompletionRatio, summary.CacheTokens, summary.CacheRatio, summary.ModelPrice, relayInfo.PriceData.GroupRatioInfo.EffectiveUserRatio())
 	}
 	appendUsageBillingPathForLog(other, common.GetContextKeyBool(ctx, constant.ContextKeyLocalCountTokens), originUsage)
+	attachUsageTokenMultiplier(other)
 	if adminRejectReason != "" {
 		other["reject_reason"] = adminRejectReason
 	}

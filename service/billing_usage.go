@@ -3,6 +3,7 @@ package service
 import (
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 )
 
@@ -22,6 +23,22 @@ func effectiveBillingUsage(usage *dto.Usage) *dto.Usage {
 		return billingUsage
 	}
 	return usage
+}
+
+func contractualBillingUsage(usage *dto.Usage, multiplier int) *dto.Usage {
+	return dto.ScaleUsageCopy(effectiveBillingUsage(usage), multiplier)
+}
+
+func attachUsageTokenMultiplier(other map[string]interface{}) {
+	if other == nil || common.UsageTokenMultiplier <= 1 {
+		return
+	}
+	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	if !ok || adminInfo == nil {
+		adminInfo = make(map[string]interface{})
+		other["admin_info"] = adminInfo
+	}
+	adminInfo["usage_token_multiplier"] = common.UsageTokenMultiplier
 }
 
 func hasActualTokenUsage(isLocalCountTokens bool, usage *dto.Usage) bool {

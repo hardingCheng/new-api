@@ -346,6 +346,8 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 		},
 	}
 
-	c.JSON(http.StatusOK, response)
+	if err := helper.JSONData(c, http.StatusOK, response); err != nil {
+		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
+	}
 	return nil, &response.Usage
 }

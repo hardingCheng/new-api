@@ -142,6 +142,50 @@ func TestModelPriceHelperTieredPreConsumeMaxTokensFallback(t *testing.T) {
 	}
 }
 
+func TestModelPriceHelperTieredPreConsumeUsesContractualTokenMultiplier(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		saved[key] = value
+		return nil
+	}))
+	oldMultiplier := common.UsageTokenMultiplier
+	t.Cleanup(func() {
+		common.UsageTokenMultiplier = oldMultiplier
+		require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
+	})
+
+	common.UsageTokenMultiplier = 2
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode":    `{"tiered-multiplier-model":"tiered_expr"}`,
+		"billing_setting.billing_expr":    `{"tiered-multiplier-model":"tier(\"base\", p + c)"}`,
+		"group_ratio_setting.group_ratio": `{"default":1}`,
+	}))
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	ctx.Set("group", "default")
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "tiered-multiplier-model",
+		UserGroup:       "default",
+		UsingGroup:      "default",
+		BillingRequestInput: &billingexpr.RequestInput{
+			Body: []byte(`{}`),
+		},
+	}
+	meta := &types.TokenCountMeta{MaxTokens: 100}
+
+	priceData, err := ModelPriceHelper(ctx, info, 1000, meta)
+	require.NoError(t, err)
+	// (2000 prompt + 200 completion) / 1M * 500000 quota/$ = 1100.
+	require.Equal(t, 1100, priceData.QuotaToPreConsume)
+	require.NotNil(t, info.TieredBillingSnapshot)
+	require.Equal(t, 2000, info.TieredBillingSnapshot.EstimatedPromptTokens)
+	require.Equal(t, 200, info.TieredBillingSnapshot.EstimatedCompletionTokens)
+	require.Equal(t, 100, meta.MaxTokens, "request metadata must not be mutated")
+}
+
 func TestModelPriceHelperTieredRejectsPreConsumeOverflow(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

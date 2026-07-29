@@ -115,6 +115,15 @@ func applyUserPricingOverridesToPriceData(info *relaycommon.RelayInfo, priceData
 }
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
+	promptTokens = common.ScaleTokenCount(promptTokens, common.UsageTokenMultiplier)
+	if meta == nil {
+		meta = &types.TokenCountMeta{}
+	} else if common.UsageTokenMultiplier > 1 {
+		scaledMeta := *meta
+		scaledMeta.MaxTokens = common.ScaleTokenCount(meta.MaxTokens, common.UsageTokenMultiplier)
+		meta = &scaledMeta
+	}
+
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
 
 	groupRatioInfo := HandleGroupRatio(c, info)
@@ -135,7 +144,8 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	var audioRatio float64
 	var audioCompletionRatio float64
 	var freeModel bool
-	preConsumedTokens := common.Max(promptTokens, common.PreConsumedQuota)
+	minimumPreConsumedTokens := common.ScaleTokenCount(common.PreConsumedQuota, common.UsageTokenMultiplier)
+	preConsumedTokens := common.Max(promptTokens, minimumPreConsumedTokens)
 	if meta.MaxTokens != 0 {
 		preConsumedTokens += meta.MaxTokens
 	}
@@ -375,7 +385,7 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 
 	estimatedCompletionTokens := meta.MaxTokens
 	if estimatedCompletionTokens == 0 && groupRatioInfo.GroupRatio != 0 {
-		estimatedCompletionTokens = defaultTieredPreConsumeMaxTokens
+		estimatedCompletionTokens = common.ScaleTokenCount(defaultTieredPreConsumeMaxTokens, common.UsageTokenMultiplier)
 	}
 
 	requestInput, err := ResolveIncomingBillingExprRequestInput(c, info)

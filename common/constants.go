@@ -89,6 +89,7 @@ var EmailLoginAuthServerList = []string{
 
 var DebugEnabled bool
 var MemoryCacheEnabled bool
+var UsageTokenMultiplier = 1
 
 var LogConsumeEnabled = true
 

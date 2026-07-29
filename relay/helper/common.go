@@ -67,6 +67,7 @@ func ClaudeData(c *gin.Context, resp dto.ClaudeResponse) error {
 	if err != nil {
 		common.SysError("error marshalling stream response: " + err.Error())
 	} else {
+		jsonData = common.ScaleTokenUsageJSON(jsonData, common.UsageTokenMultiplier)
 		c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
 		c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonData)})
 	}
@@ -79,6 +80,7 @@ func ClaudeChunkData(c *gin.Context, resp dto.ClaudeResponse, data string) {
 		return
 	}
 
+	data = string(common.ScaleTokenUsageJSON(common.StringToByteSlice(data), common.UsageTokenMultiplier))
 	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
 	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s\n", data)})
 	_ = FlushWriter(c)
@@ -89,6 +91,7 @@ func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data st
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
+	data = string(common.ScaleTokenUsageJSON(common.StringToByteSlice(data), common.UsageTokenMultiplier))
 	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
 	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s", data)})
 	return FlushWriter(c)
@@ -103,6 +106,7 @@ func StringData(c *gin.Context, str string) error {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
+	str = string(common.ScaleTokenUsageJSON(common.StringToByteSlice(str), common.UsageTokenMultiplier))
 	c.Render(-1, common.CustomEvent{Data: "data: " + str})
 	return FlushWriter(c)
 }
@@ -133,6 +137,19 @@ func ObjectData(c *gin.Context, object interface{}) error {
 	return StringData(c, string(jsonData))
 }
 
+func JSONData(c *gin.Context, statusCode int, object interface{}) error {
+	if c == nil || c.Writer == nil {
+		return errors.New("context or writer is nil")
+	}
+	jsonData, err := common.Marshal(object)
+	if err != nil {
+		return fmt.Errorf("error marshalling object: %w", err)
+	}
+	jsonData = common.ScaleTokenUsageJSON(jsonData, common.UsageTokenMultiplier)
+	c.Data(statusCode, "application/json; charset=utf-8", jsonData)
+	return nil
+}
+
 func Done(c *gin.Context) {
 	_ = StringData(c, "[DONE]")
 }
@@ -143,6 +160,7 @@ func WssString(c *gin.Context, ws *websocket.Conn, str string) error {
 		return errors.New("websocket connection is nil")
 	}
 	//common.LogInfo(c, fmt.Sprintf("sending message: %s", str))
+	str = string(common.ScaleTokenUsageJSON(common.StringToByteSlice(str), common.UsageTokenMultiplier))
 	return ws.WriteMessage(1, []byte(str))
 }
 
@@ -156,7 +174,7 @@ func WssObject(c *gin.Context, ws *websocket.Conn, object interface{}) error {
 		return errors.New("websocket connection is nil")
 	}
 	//common.LogInfo(c, fmt.Sprintf("sending message: %s", jsonData))
-	return ws.WriteMessage(1, jsonData)
+	return WssString(c, ws, string(jsonData))
 }
 
 func WssError(c *gin.Context, ws *websocket.Conn, openaiError types.OpenAIError) {

@@ -86,6 +86,10 @@ func InitEnv() {
 	// Initialize variables from constants.go that were using environment variables
 	DebugEnabled = os.Getenv("DEBUG") == "true"
 	MemoryCacheEnabled = os.Getenv("MEMORY_CACHE_ENABLED") == "true"
+	UsageTokenMultiplier = GetEnvOrDefault("USAGE_TOKEN_MULTIPLIER", 1)
+	if UsageTokenMultiplier < 1 || UsageTokenMultiplier > MaxUsageTokenMultiplier {
+		log.Fatalf("USAGE_TOKEN_MULTIPLIER must be between 1 and %d", MaxUsageTokenMultiplier)
+	}
 	IsMasterNode = os.Getenv("NODE_TYPE") != "slave"
 	initNodeNameIdentity()
 	TLSInsecureSkipVerify = GetEnvOrDefaultBool("TLS_INSECURE_SKIP_VERIFY", false)
