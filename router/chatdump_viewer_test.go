@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -23,14 +24,17 @@ func useChatDumpViewerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	previousDB := model.DB
 	previousRedis := common.RedisEnabled
+	previousSecret := common.SessionSecret
+	common.SessionSecret = "chatdump-viewer-test-secret"
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.User{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}))
 	model.DB = db
 	common.RedisEnabled = false
 	t.Cleanup(func() {
 		model.DB = previousDB
 		common.RedisEnabled = previousRedis
+		common.SessionSecret = previousSecret
 		chatDumpGrants.Lock()
 		chatDumpGrants.tickets = make(map[string]chatDumpGrant)
 		chatDumpGrants.sessions = make(map[string]chatDumpGrant)
@@ -50,14 +54,18 @@ func createChatDumpUser(t *testing.T, db *gorm.DB, username string, role, status
 	return user
 }
 
-// issueChatDumpTicket 走真实 handler 换票，返回票面值。
-func issueChatDumpTicket(t *testing.T, userId int) string {
+// issueChatDumpTicket 走真实 handler 换票，返回票面值与它绑定的登录会话。
+func issueChatDumpTicket(t *testing.T, userId int) (string, string) {
 	t.Helper()
+	bundle, err := service.CreateLoginSession(userId, "password", "127.0.0.1", "test-agent")
+	require.NoError(t, err)
+
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/chatdump/viewer_ticket", nil)
 	c.Set("id", userId)
+	c.Set("session_id", bundle.Session.SID)
 
 	ChatDumpViewerTicket(c)
 
@@ -78,7 +86,16 @@ func issueChatDumpTicket(t *testing.T, userId int) string {
 	assert.Equal(t, chatDumpCookiePath+"/", parsed.Path)
 	ticket := parsed.Query().Get("ticket")
 	require.NotEmpty(t, ticket)
-	return ticket
+	return ticket, bundle.Session.SID
+}
+
+func firstTicket(ticket string, _ string) string { return ticket }
+
+// consumeChatDumpTicketFor 换票并立刻兑成浏览期令牌。
+func consumeChatDumpTicketFor(t *testing.T, userId int) (string, bool) {
+	t.Helper()
+	ticket, _ := issueChatDumpTicket(t, userId)
+	return consumeChatDumpTicket(ticket)
 }
 
 func TestChatDumpTicketRequiresLoggedInUser(t *testing.T) {
@@ -98,7 +115,7 @@ func TestChatDumpTicketIsSingleUse(t *testing.T) {
 	db := useChatDumpViewerTestDB(t)
 	root := createChatDumpUser(t, db, "dump-root", common.RoleRootUser, common.UserStatusEnabled)
 
-	ticket := issueChatDumpTicket(t, root.Id)
+	ticket, _ := issueChatDumpTicket(t, root.Id)
 
 	viewer, ok := consumeChatDumpTicket(ticket)
 	require.True(t, ok)
@@ -130,24 +147,22 @@ func TestChatDumpTicketExpires(t *testing.T) {
 	assert.False(t, ok, "过期的票不能换浏览期")
 }
 
-func TestChatDumpViewerCookieOnlyAdmitsEnabledRoot(t *testing.T) {
+func TestChatDumpViewerCookieOnlyAdmitsRoot(t *testing.T) {
 	db := useChatDumpViewerTestDB(t)
 
 	cases := []struct {
 		name     string
 		role     int
-		status   int
 		admitted bool
 	}{
-		{"启用中的 root", common.RoleRootUser, common.UserStatusEnabled, true},
-		{"普通用户", common.RoleCommonUser, common.UserStatusEnabled, false},
-		{"管理员但不是 root", common.RoleAdminUser, common.UserStatusEnabled, false},
-		{"被禁用的 root", common.RoleRootUser, common.UserStatusDisabled, false},
+		{"root", common.RoleRootUser, true},
+		{"普通用户", common.RoleCommonUser, false},
+		{"管理员但不是 root", common.RoleAdminUser, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			user := createChatDumpUser(t, db, "dump-"+tc.name, tc.role, tc.status)
-			viewer, ok := consumeChatDumpTicket(issueChatDumpTicket(t, user.Id))
+			user := createChatDumpUser(t, db, "dump-"+tc.name, tc.role, common.UserStatusEnabled)
+			viewer, ok := consumeChatDumpTicketFor(t, user.Id)
 			require.True(t, ok)
 			assert.Equal(t, tc.admitted, chatDumpViewerAuthorized(viewer))
 		})
@@ -155,6 +170,22 @@ func TestChatDumpViewerCookieOnlyAdmitsEnabledRoot(t *testing.T) {
 
 	assert.False(t, chatDumpViewerAuthorized("not-a-viewer-token"))
 	assert.False(t, chatDumpViewerAuthorized(""))
+}
+
+// 拿到浏览期之后账号才被禁用：cookie 必须立刻失效。
+// （禁用中的账号压根建不出登录会话，所以只能先拿票再禁用）
+func TestChatDumpViewerCookieDiesWhenRootGetsDisabled(t *testing.T) {
+	db := useChatDumpViewerTestDB(t)
+	root := createChatDumpUser(t, db, "dump-root-disable", common.RoleRootUser, common.UserStatusEnabled)
+
+	viewer, ok := consumeChatDumpTicketFor(t, root.Id)
+	require.True(t, ok)
+	require.True(t, chatDumpViewerAuthorized(viewer))
+
+	require.NoError(t, db.Model(&model.User{}).Where("id = ?", root.Id).
+		Update("status", common.UserStatusDisabled).Error)
+
+	assert.False(t, chatDumpViewerAuthorized(viewer), "账号被禁用后浏览期必须失效")
 }
 
 func TestChatDumpAuthExchangesTicketForViewerCookie(t *testing.T) {
@@ -171,7 +202,7 @@ func TestChatDumpAuthExchangesTicketForViewerCookie(t *testing.T) {
 	// 带票打开查看页：换成浏览期 cookie，并把票从地址栏洗掉
 	recorder := httptest.NewRecorder()
 	engine.ServeHTTP(recorder, httptest.NewRequest(
-		http.MethodGet, "/_dump/?ticket="+issueChatDumpTicket(t, root.Id), nil))
+		http.MethodGet, "/_dump/?ticket="+firstTicket(issueChatDumpTicket(t, root.Id)), nil))
 	require.Equal(t, http.StatusFound, recorder.Code)
 	assert.Equal(t, chatDumpCookiePath+"/", recorder.Header().Get("Location"))
 	setCookie := recorder.Header().Get("Set-Cookie")
@@ -223,4 +254,22 @@ func TestChatDumpAuthRejectsRequestsWithoutCredentials(t *testing.T) {
 	require.Equal(t, http.StatusFound, recorder.Code)
 	assert.Equal(t, "/sign-in", recorder.Header().Get("Location"))
 	assert.False(t, strings.Contains(recorder.Header().Get("Set-Cookie"), chatDumpCookieName))
+}
+
+// codex 审查指出的问题：浏览期 cookie 原本只看"账号还是不是启用中的 root"，
+// root 登出/被踢下线后这张 cookie 还能再用 8 小时。这里钉住修复后的行为。
+func TestChatDumpViewerCookieDiesWithItsLoginSession(t *testing.T) {
+	db := useChatDumpViewerTestDB(t)
+	root := createChatDumpUser(t, db, "dump-root-revoke", common.RoleRootUser, common.UserStatusEnabled)
+
+	ticket, sid := issueChatDumpTicket(t, root.Id)
+	viewer, ok := consumeChatDumpTicket(ticket)
+	require.True(t, ok)
+	require.True(t, chatDumpViewerAuthorized(viewer), "刚换出来应该能用")
+
+	// root 登出（会话作废）
+	_, err := model.RevokeUserSession(root.Id, sid, "user_logout")
+	require.NoError(t, err)
+
+	assert.False(t, chatDumpViewerAuthorized(viewer), "原会话作废后浏览期必须立刻失效")
 }

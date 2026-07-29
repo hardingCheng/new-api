@@ -22,7 +22,7 @@ import { useEffect } from 'react'
 import { toast } from 'sonner'
 
 import { wechatLoginByCode } from '@/features/auth/api'
-import { sanitizeAuthRedirect } from '@/features/auth/lib/auth-redirect'
+import { handOffToOwningStation, sanitizeAuthRedirect } from '@/features/auth/lib/auth-redirect'
 import { applyAuthBundle, isAuthBundle } from '@/lib/api'
 import { getServerErrorMessageKey } from '@/lib/server-error-message'
 
@@ -40,6 +40,7 @@ function OAuthComponent() {
       try {
         if (search?.provider === 'wechat' && search.code) {
           const res = await wechatLoginByCode(search.code)
+          if (handOffToOwningStation(res?.data)) return
           if (res?.success && isAuthBundle(res.data)) {
             applyAuthBundle(res.data)
             const target =

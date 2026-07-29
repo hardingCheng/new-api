@@ -20,6 +20,15 @@ import { api } from '@/lib/api'
 
 import type { WorkbenchSummaryResponse } from './types'
 
+// 对话采集查看页是服务端直出的，拿不到前端内存里的访问令牌，
+// 所以先换一张一分钟有效的一次性入场票，再带票跳过去。
+export async function getChatDumpViewerUrl() {
+  const res = await api.get<{ success: boolean; data?: { url?: string } }>(
+    '/api/chatdump/viewer_ticket'
+  )
+  return res.data?.data?.url ?? ''
+}
+
 export async function getWorkbenchSummary() {
   const res = await api.get<WorkbenchSummaryResponse>('/api/workbench/summary')
   return res.data

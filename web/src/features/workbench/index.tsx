@@ -20,6 +20,7 @@ import { useQuery, type UseQueryResult } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
 import { ExternalLink, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -38,7 +39,7 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
-import { getWorkbenchSummary } from './api'
+import { getChatDumpViewerUrl, getWorkbenchSummary } from './api'
 import type {
   WorkbenchAlarm,
   WorkbenchDailyPoint,
@@ -443,6 +444,21 @@ export function Workbench() {
         </span>
       </SectionPageLayout.Title>
       <SectionPageLayout.Actions>
+        <Button
+          variant='outline'
+          size='sm'
+          onClick={async () => {
+            const url = await getChatDumpViewerUrl()
+            if (url) {
+              window.open(url, '_blank', 'noreferrer')
+            } else {
+              toast.error(t('Failed to open, please try again'))
+            }
+          }}
+        >
+          <ExternalLink />
+          {t('Conversation captures')}
+        </Button>
         <Button
           variant='outline'
           size='sm'

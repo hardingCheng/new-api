@@ -23,44 +23,48 @@ import (
 const crossLoginTicketTTL = 60 * time.Second
 
 type crossLoginTicket struct {
-	userId   int
-	host     string
-	expireAt time.Time
+	userId int
+	host   string
+	// authVersion 是签发这张票时用户的安全版本。归属站点建会话时必须带上它，
+	// 否则在这 60 秒窗口里用户改密码/管理员变更安全状态后，旧票仍能建出会话。
+	authVersion int64
+	expireAt    time.Time
 }
 
 var crossLoginTickets sync.Map // code -> crossLoginTicket
 
-func issueCrossLoginCode(userId int, host string) (string, error) {
+func issueCrossLoginCode(userId int, authVersion int64, host string) (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
 	code := hex.EncodeToString(buf)
 	crossLoginTickets.Store(code, crossLoginTicket{
-		userId:   userId,
-		host:     host,
-		expireAt: time.Now().Add(crossLoginTicketTTL),
+		userId:      userId,
+		host:        host,
+		authVersion: authVersion,
+		expireAt:    time.Now().Add(crossLoginTicketTTL),
 	})
 	return code, nil
 }
 
 // consumeCrossLoginCode 校验并消费令牌;不存在、过期或域名不符均失败,失败也不可重试。
-func consumeCrossLoginCode(code string, host string) (int, bool) {
+func consumeCrossLoginCode(code string, host string) (int, int64, bool) {
 	if code == "" {
-		return 0, false
+		return 0, 0, false
 	}
 	value, ok := crossLoginTickets.LoadAndDelete(code)
 	if !ok {
-		return 0, false
+		return 0, 0, false
 	}
 	ticket := value.(crossLoginTicket)
 	if time.Now().After(ticket.expireAt) {
-		return 0, false
+		return 0, 0, false
 	}
 	if normalizeRequestHost(host) != ticket.host {
-		return 0, false
+		return 0, 0, false
 	}
-	return ticket.userId, true
+	return ticket.userId, ticket.authVersion, true
 }
 
 func normalizeRequestHost(host string) string {
@@ -84,7 +88,7 @@ func crossStationLoginURL(user *model.User, c *gin.Context) string {
 	if home == "" || home == normalizeRequestHost(host) {
 		return ""
 	}
-	code, err := issueCrossLoginCode(user.Id, home)
+	code, err := issueCrossLoginCode(user.Id, user.AuthVersion, home)
 	if err != nil {
 		common.SysLog("cross login code generation failed: " + err.Error())
 		return ""
@@ -101,7 +105,7 @@ const (
 // 只写 refresh cookie,访问令牌由前端启动时用该 cookie 换取;
 // 令牌无效一律回登录页,不提示原因。
 func CrossLogin(c *gin.Context) {
-	userId, ok := consumeCrossLoginCode(c.Query("code"), c.Request.Host)
+	userId, authVersion, ok := consumeCrossLoginCode(c.Query("code"), c.Request.Host)
 	if !ok {
 		c.Redirect(http.StatusFound, crossLoginSignInPath)
 		return
@@ -111,7 +115,9 @@ func CrossLogin(c *gin.Context) {
 		c.Redirect(http.StatusFound, crossLoginSignInPath)
 		return
 	}
-	bundle, err := service.CreateLoginSession(user.Id, "cross_station", c.ClientIP(), c.Request.UserAgent())
+	// 带上签票时的安全版本：这 60 秒里用户改了密码/管理员动了安全状态，
+	// 这里就会被 ErrLoginSessionRevoked 挡下，票作废
+	bundle, err := service.CreateLoginSessionAtAuthVersion(user.Id, authVersion, "cross_station", c.ClientIP(), c.Request.UserAgent())
 	if err != nil {
 		common.SysLog("cross login session creation failed: " + err.Error())
 		c.Redirect(http.StatusFound, crossLoginSignInPath)

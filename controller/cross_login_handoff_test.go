@@ -88,10 +88,10 @@ func TestSetupLoginHandsOffAccountOwnedByAnotherStation(t *testing.T) {
 	// (绑定域名/过期的行为见 cross_login_test.go；注意失败的尝试也会烧掉令牌)
 	code := handoff.Query().Get("code")
 	require.NotEmpty(t, code)
-	userId, ok := consumeCrossLoginCode(code, "z.example.com")
+	userId, _, ok := consumeCrossLoginCode(code, "z.example.com")
 	require.True(t, ok)
 	assert.Equal(t, user.Id, userId)
-	_, ok = consumeCrossLoginCode(code, "z.example.com")
+	_, _, ok = consumeCrossLoginCode(code, "z.example.com")
 	assert.False(t, ok, "令牌单次有效")
 }
 

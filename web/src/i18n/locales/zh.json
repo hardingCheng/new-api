@@ -5619,6 +5619,8 @@
     "{{count}} days": "{{count}} 天",
     "Top-up needed this month": "本月需充值",
     "Upstream monitor": "上游监控",
-    "Workbench data service unavailable": "工作台数据服务暂不可用"
+    "Workbench data service unavailable": "工作台数据服务暂不可用",
+    "Conversation captures": "对话采集",
+    "Failed to open, please try again": "打开失败，请重试"
   }
 }

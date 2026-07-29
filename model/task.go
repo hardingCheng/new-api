@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -454,6 +455,9 @@ func GetPendingTaskRefunds(limit int) []*Task {
 	var tasks []*Task
 	if err := DB.Where("billing_status = ?", TaskBillingStatusRefundPending).
 		Order("id").Limit(limit).Find(&tasks).Error; err != nil {
+		// 查询失败会让补偿这一轮整个跳过，静默返回会让"补偿没跑"看起来
+		// 和"没有待补偿的单子"一模一样，钱的事不能这么糊过去。
+		common.SysError(fmt.Sprintf("查询待退款任务失败，本轮补偿跳过: %s", err.Error()))
 		return nil
 	}
 	return tasks
@@ -473,6 +477,9 @@ func GetPendingTaskSettlements(limit int) []*Task {
 	var tasks []*Task
 	if err := DB.Where("billing_status = ?", TaskBillingStatusSettlementPending).
 		Order("id").Limit(limit).Find(&tasks).Error; err != nil {
+		// 查询失败会让补偿这一轮整个跳过，静默返回会让"补偿没跑"看起来
+		// 和"没有待补偿的单子"一模一样，钱的事不能这么糊过去。
+		common.SysError(fmt.Sprintf("查询待结算任务失败，本轮补偿跳过: %s", err.Error()))
 		return nil
 	}
 	return tasks

@@ -13,6 +13,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/chatdump"
 
 	"github.com/gin-gonic/gin"
@@ -34,7 +35,11 @@ const (
 )
 
 type chatDumpGrant struct {
-	userId    int
+	userId int
+	// sessionId 是换票时那个后台登录会话。每次校验都回查它是否仍然有效，
+	// 这样 root 一登出 / 改密码 / 被管理员踢下线，浏览期 cookie 立刻失效——
+	// 否则这张 cookie 会在原会话作废后还能再用 8 小时。
+	sessionId string
 	expiresAt time.Time
 }
 
@@ -72,7 +77,8 @@ func SetChatDumpRouter(router *gin.Engine) {
 // 由后台页面调用后把浏览器导到 /_dump/?ticket=<票>。
 func ChatDumpViewerTicket(c *gin.Context) {
 	userId := c.GetInt("id")
-	if userId <= 0 {
+	sessionId := c.GetString("session_id")
+	if userId <= 0 || sessionId == "" {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
@@ -84,7 +90,11 @@ func ChatDumpViewerTicket(c *gin.Context) {
 	now := time.Now()
 	chatDumpGrants.Lock()
 	pruneChatDumpGrants(now)
-	chatDumpGrants.tickets[ticket] = chatDumpGrant{userId: userId, expiresAt: now.Add(chatDumpTicketTTL)}
+	chatDumpGrants.tickets[ticket] = chatDumpGrant{
+		userId:    userId,
+		sessionId: sessionId,
+		expiresAt: now.Add(chatDumpTicketTTL),
+	}
 	chatDumpGrants.Unlock()
 
 	common.ApiSuccess(c, gin.H{
@@ -126,7 +136,11 @@ func consumeChatDumpTicket(ticket string) (string, bool) {
 		common.SysError("chatdump: 浏览期令牌生成失败: " + err.Error())
 		return "", false
 	}
-	chatDumpGrants.sessions[viewer] = chatDumpGrant{userId: grant.userId, expiresAt: now.Add(chatDumpViewerTTL)}
+	chatDumpGrants.sessions[viewer] = chatDumpGrant{
+		userId:    grant.userId,
+		sessionId: grant.sessionId,
+		expiresAt: now.Add(chatDumpViewerTTL),
+	}
 	return viewer, true
 }
 
@@ -141,6 +155,13 @@ func chatDumpViewerAuthorized(viewer string) bool {
 	grant, ok := chatDumpGrants.sessions[viewer]
 	chatDumpGrants.Unlock()
 	if !ok {
+		return false
+	}
+	// 原登录会话还在不在：登出、改密码、被踢下线都会让它失效
+	if _, err := service.ValidateSessionReference(grant.userId, grant.sessionId); err != nil {
+		chatDumpGrants.Lock()
+		delete(chatDumpGrants.sessions, viewer)
+		chatDumpGrants.Unlock()
 		return false
 	}
 	user, err := model.GetUserCache(grant.userId)
