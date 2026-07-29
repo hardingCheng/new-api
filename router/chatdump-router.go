@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/service/chatdump"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // 查看页的浏览器凭据。
@@ -157,11 +159,18 @@ func chatDumpViewerAuthorized(viewer string) bool {
 	if !ok {
 		return false
 	}
-	// 原登录会话还在不在：登出、改密码、被踢下线都会让它失效
+	// 原登录会话还在不在：登出、改密码、被踢下线都会让它失效。
+	// 只有"确定作废"才删浏览期；数据库抖动这类临时错误仅拒绝本次请求，
+	// 否则一次抖动就让 root 必须重新换票。
 	if _, err := service.ValidateSessionReference(grant.userId, grant.sessionId); err != nil {
-		chatDumpGrants.Lock()
-		delete(chatDumpGrants.sessions, viewer)
-		chatDumpGrants.Unlock()
+		if errors.Is(err, service.ErrLoginSessionRevoked) ||
+			errors.Is(err, service.ErrLoginSessionInvalid) ||
+			errors.Is(err, model.ErrUserSessionInactive) ||
+			errors.Is(err, gorm.ErrRecordNotFound) {
+			chatDumpGrants.Lock()
+			delete(chatDumpGrants.sessions, viewer)
+			chatDumpGrants.Unlock()
+		}
 		return false
 	}
 	user, err := model.GetUserCache(grant.userId)

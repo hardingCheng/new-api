@@ -5619,6 +5619,8 @@
     "{{count}} days": "{{count}} days",
     "Top-up needed this month": "Top-up needed this month",
     "Upstream monitor": "Upstream monitor",
-    "Workbench data service unavailable": "Workbench data service unavailable"
+    "Workbench data service unavailable": "Workbench data service unavailable",
+    "Conversation captures": "Conversation captures",
+    "Failed to open, please try again": "Failed to open, please try again"
   }
 }

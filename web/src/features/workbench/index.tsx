@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
 import { ExternalLink, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -427,6 +428,8 @@ function renderWorkbenchContent(
 
 export function Workbench() {
   const { t } = useTranslation()
+  // 换票是一次性的，按钮加锁避免双击时两个窗口抢同一张票
+  const [openingCaptures, setOpeningCaptures] = useState(false)
   const query = useQuery({
     queryKey: ['workbench-summary'],
     queryFn: getWorkbenchSummary,
@@ -447,12 +450,26 @@ export function Workbench() {
         <Button
           variant='outline'
           size='sm'
+          disabled={openingCaptures}
           onClick={async () => {
-            const url = await getChatDumpViewerUrl()
-            if (url) {
-              window.open(url, '_blank', 'noreferrer')
-            } else {
+            if (openingCaptures) return
+            setOpeningCaptures(true)
+            // 先同步开窗再去换票：window.open 放在 await 之后会被弹窗拦截
+            const opened = window.open('', '_blank')
+            try {
+              const url = await getChatDumpViewerUrl()
+              if (!url) throw new Error('empty viewer url')
+              if (opened) {
+                opened.location.href = url
+              } else {
+                // 弹窗被拦就在当前标签打开，票只有一分钟有效，不能浪费
+                window.location.href = url
+              }
+            } catch {
+              opened?.close()
               toast.error(t('Failed to open, please try again'))
+            } finally {
+              setOpeningCaptures(false)
             }
           }}
         >

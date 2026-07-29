@@ -273,3 +273,20 @@ func TestChatDumpViewerCookieDiesWithItsLoginSession(t *testing.T) {
 
 	assert.False(t, chatDumpViewerAuthorized(viewer), "原会话作废后浏览期必须立刻失效")
 }
+
+// codex 复查怀疑：改密码只升级用户的 AuthVersion、不动 SID，浏览期是否还有效？
+// 结论用测试定：会话上盖着签发时的 AuthVersion，与用户当前版本不一致即作废。
+func TestChatDumpViewerCookieDiesWhenAuthVersionAdvances(t *testing.T) {
+	db := useChatDumpViewerTestDB(t)
+	root := createChatDumpUser(t, db, "dump-root-authver", common.RoleRootUser, common.UserStatusEnabled)
+
+	viewer, ok := consumeChatDumpTicketFor(t, root.Id)
+	require.True(t, ok)
+	require.True(t, chatDumpViewerAuthorized(viewer))
+
+	// 模拟改密码：只把用户的安全版本 +1，会话行原样不动
+	require.NoError(t, db.Model(&model.User{}).Where("id = ?", root.Id).
+		Update("auth_version", root.AuthVersion+1).Error)
+
+	assert.False(t, chatDumpViewerAuthorized(viewer), "安全版本前进后浏览期必须失效")
+}
