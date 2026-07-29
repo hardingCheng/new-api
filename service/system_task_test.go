@@ -37,6 +37,15 @@ type stubScheduledHandler struct {
 	onRun    func(ctx context.Context, task *model.SystemTask, runnerID string)
 }
 
+type stubDynamicScheduledHandler struct {
+	*stubScheduledHandler
+	intervalAfterLatest time.Duration
+}
+
+func (h *stubDynamicScheduledHandler) IntervalAfterLatest(*model.SystemTask) time.Duration {
+	return h.intervalAfterLatest
+}
+
 type stubSystemTaskRunResult struct {
 	taskID   string
 	taskType string
@@ -95,6 +104,33 @@ func TestSystemTaskSchedulerCreatesWhenDueAndDedups(t *testing.T) {
 
 	runSystemTaskScheduler()
 	require.Equal(t, int64(2), countSystemTasks(t, handler.taskType))
+}
+
+func TestSystemTaskSchedulerUsesStableIntervalAfterLatestRun(t *testing.T) {
+	truncate(t)
+
+	base := &stubScheduledHandler{taskType: "test_dynamic_scheduled", enabled: true, interval: time.Second}
+	handler := &stubDynamicScheduledHandler{stubScheduledHandler: base, intervalAfterLatest: 3 * time.Second}
+	withSystemTaskRegistry(t, handler)
+
+	latest, err := model.CreateSystemTask(handler.Type(), nil, nil)
+	require.NoError(t, err)
+	_, claimed, err := model.ClaimSystemTask(latest.ID, handler.Type(), "runner-dynamic", common.GetTimestamp()+60)
+	require.NoError(t, err)
+	require.True(t, claimed)
+	require.NoError(t, model.FinishSystemTask(latest.TaskID, "runner-dynamic", model.SystemTaskStatusSucceeded, nil, ""))
+
+	require.NoError(t, model.DB.Model(&model.SystemTask{}).
+		Where("task_id = ?", latest.TaskID).
+		Update("updated_at", common.GetTimestamp()-2).Error)
+	runSystemTaskScheduler()
+	assert.Equal(t, int64(1), countSystemTasks(t, handler.Type()))
+
+	require.NoError(t, model.DB.Model(&model.SystemTask{}).
+		Where("task_id = ?", latest.TaskID).
+		Update("updated_at", common.GetTimestamp()-3).Error)
+	runSystemTaskScheduler()
+	assert.Equal(t, int64(2), countSystemTasks(t, handler.Type()))
 }
 
 func TestSystemTaskSchedulerSkipsDisabled(t *testing.T) {

@@ -17,13 +17,13 @@ import (
 const (
 	// systemTaskRunnerIdleInterval is the fallback poll interval used to pick up
 	// tasks created on other nodes and mark expired leases failed.
-	systemTaskRunnerIdleInterval = 5 * time.Second
+	systemTaskRunnerIdleInterval = time.Second
 	systemTaskLockTTL            = 60 * time.Second
 	logCleanupBatchSize          = 100
 
 	// systemTaskSchedulerInterval throttles how often the scheduler/stale-lock
 	// pass runs, independent of how often the runner wakes to claim tasks.
-	systemTaskSchedulerInterval = 5 * time.Second
+	systemTaskSchedulerInterval = time.Second
 	systemTaskStaleLockInterval = 30 * time.Second
 )
 
@@ -44,6 +44,13 @@ type ScheduledSystemTaskHandler interface {
 	Enabled() bool
 	Interval() time.Duration
 	NewPayload() any
+}
+
+// ScheduledSystemTaskIntervalResolver provides a stable interval for the
+// latest completed run. Stability matters because the scheduler may inspect
+// the same row multiple times before it becomes due.
+type ScheduledSystemTaskIntervalResolver interface {
+	IntervalAfterLatest(latest *model.SystemTask) time.Duration
 }
 
 var (
@@ -284,7 +291,11 @@ func runSystemTaskScheduler() {
 			if latest.Status == model.SystemTaskStatusPending || latest.Status == model.SystemTaskStatusRunning {
 				continue // an active row already exists
 			}
-			if now-latest.UpdatedAt < int64(scheduled.Interval().Seconds()) {
+			interval := scheduled.Interval()
+			if resolver, ok := scheduled.(ScheduledSystemTaskIntervalResolver); ok {
+				interval = resolver.IntervalAfterLatest(latest)
+			}
+			if now-latest.UpdatedAt < int64(interval.Seconds()) {
 				continue // not due yet
 			}
 		}

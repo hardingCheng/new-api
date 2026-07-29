@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -180,7 +181,18 @@ func (asyncTaskPollHandler) Enabled() bool {
 	return constant.UpdateTask && model.HasUnfinishedSyncTasks()
 }
 
-func (asyncTaskPollHandler) Interval() time.Duration { return 5 * time.Second }
+func (asyncTaskPollHandler) Interval() time.Duration { return time.Second }
+
+func (asyncTaskPollHandler) IntervalAfterLatest(latest *model.SystemTask) time.Duration {
+	if latest == nil {
+		return time.Second
+	}
+	// System task IDs are randomly generated. Hashing the latest ID selects a
+	// 1-3 second jitter that stays fixed while the scheduler waits for it.
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(latest.TaskID))
+	return time.Duration(hasher.Sum32()%3+1) * time.Second
+}
 
 func (asyncTaskPollHandler) NewPayload() any { return nil }
 
