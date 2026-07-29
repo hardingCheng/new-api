@@ -208,47 +208,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		}
 	}
 
-	billingModelName := info.EffectiveBillingModelName()
-	perCallBilling := ratio_setting.IsVideoBillingPerCall(billingModelName) ||
-		(info.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(billingModelName))
+	perCallBilling := info.VideoBillingMode() == ratio_setting.VideoBillingModePerCall
 
 	// 6. 将 OtherRatios 应用到基础额度；按次计费的视频任务不受 seconds 等倍率影响。
 	if !perCallBilling {
-		genSec := c.GetInt("generated_video_seconds")
-		refSec := c.GetInt("reference_video_seconds")
-		if genSec > 0 || refSec > 0 {
-			// 视频按秒计费：把「生成秒」与「参考秒」拆开分别计价。
-			// basePerSec 是每秒基础额度（已含 group ratio）；参考秒按用户级规则计价。
-			basePerSec := float64(info.PriceData.Quota)
-			relativeRatio := 1.0
-			for key, ratio := range info.PriceData.OtherRatios() {
-				if key != "seconds" && ratio != 1.0 {
-					relativeRatio *= ratio
-				}
-			}
-			genCost := basePerSec * float64(genSec) * relativeRatio
-			refCost := referenceVideoCost(info.PriceData.VideoRefMode, info.PriceData.VideoRefValue, float64(refSec), basePerSec, relativeRatio, info.PriceData.GroupRatioInfo.GroupRatio, info.PriceData.VideoRefApplyGroupRatio)
-			quota, clamp := common.QuotaFromFloatChecked(genCost + refCost)
-			info.PriceData.Quota = quota
-			noteTaskQuotaClamp(info, clamp)
-			// 参考固定单价/总价可能在「免费基础模型」上产生正额度，
-			// 必须清掉 FreeModel，否则预扣会被跳过导致漏扣。
-			if info.PriceData.Quota > 0 {
-				info.PriceData.FreeModel = false
-			}
-			// 用「等效秒数」回写 seconds 倍率，便于日志透明与潜在的 token 重算保持一致。
-			if basePerSec > 0 && relativeRatio > 0 {
-				effSec := (genCost + refCost) / basePerSec / relativeRatio
-				info.PriceData.AddOtherRatio("seconds", effSec)
-				c.Set("billable_video_seconds", int(effSec))
-			}
-		} else {
-			// 回退：没有 generated/reference 秒数上下文（如 remix），按 OtherRatios 连乘。
-			quotaWithRatios := info.PriceData.ApplyOtherRatiosToFloat(float64(info.PriceData.Quota))
-			quota, clamp := common.QuotaFromFloatChecked(quotaWithRatios)
-			info.PriceData.Quota = quota
-			noteTaskQuotaClamp(info, clamp)
-		}
+		applyTaskVideoBillingRatios(c, info)
 	}
 
 	// 7. 限量池检查 + 预扣费（仅首次 — 重试时 info.Billing 已存在，跳过）
@@ -318,6 +282,45 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		Platform:       platform,
 		Quota:          finalQuota,
 	}, nil
+}
+
+func applyTaskVideoBillingRatios(c *gin.Context, info *relaycommon.RelayInfo) {
+	genSec := c.GetInt("generated_video_seconds")
+	refSec := c.GetInt("reference_video_seconds")
+	if genSec <= 0 && refSec <= 0 {
+		// 回退：没有 generated/reference 秒数上下文（如 remix），按 OtherRatios 连乘。
+		quotaWithRatios := info.PriceData.ApplyOtherRatiosToFloat(float64(info.PriceData.Quota))
+		quota, clamp := common.QuotaFromFloatChecked(quotaWithRatios)
+		info.PriceData.Quota = quota
+		noteTaskQuotaClamp(info, clamp)
+		return
+	}
+
+	// 视频按秒计费：把「生成秒」与「参考秒」拆开分别计价。
+	// basePerSec 是每秒基础额度（已含 group ratio）；参考秒按用户级规则计价。
+	basePerSec := float64(info.PriceData.Quota)
+	relativeRatio := 1.0
+	for key, ratio := range info.PriceData.OtherRatios() {
+		if key != "seconds" && ratio != 1.0 {
+			relativeRatio *= ratio
+		}
+	}
+	genCost := basePerSec * float64(genSec) * relativeRatio
+	refCost := referenceVideoCost(info.PriceData.VideoRefMode, info.PriceData.VideoRefValue, float64(refSec), basePerSec, relativeRatio, info.PriceData.GroupRatioInfo.GroupRatio, info.PriceData.VideoRefApplyGroupRatio)
+	quota, clamp := common.QuotaFromFloatChecked(genCost + refCost)
+	info.PriceData.Quota = quota
+	noteTaskQuotaClamp(info, clamp)
+	// 参考固定单价/总价可能在「免费基础模型」上产生正额度，
+	// 必须清掉 FreeModel，否则预扣会被跳过导致漏扣。
+	if info.PriceData.Quota > 0 {
+		info.PriceData.FreeModel = false
+	}
+	// 用「等效秒数」回写 seconds 倍率，便于日志透明与潜在的 token 重算保持一致。
+	if basePerSec > 0 && relativeRatio > 0 {
+		effSec := (genCost + refCost) / basePerSec / relativeRatio
+		info.PriceData.AddOtherRatio("seconds", effSec)
+		c.Set("billable_video_seconds", int(effSec))
+	}
 }
 
 // referenceVideoCost 计算「参考视频秒数」那部分的额度（不含生成秒）。

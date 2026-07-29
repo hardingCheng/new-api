@@ -273,6 +273,10 @@ func (info *RelayInfo) EffectiveBillingModelName() string {
 	return info.EffectiveRoutingModelName()
 }
 
+func (info *RelayInfo) VideoBillingMode() string {
+	return ratio_setting.GetVideoBillingMode(info.EffectiveBillingModelName())
+}
+
 func (info *RelayInfo) ToString() string {
 	if info == nil {
 		return "RelayInfo<nil>"

@@ -1,14 +1,48 @@
 package relay
 
 import (
+	"net/http/httptest"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/types"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestFixedVideoModelPriceDefaultsToPerSecondBilling(t *testing.T) {
+	givenVideoModes := ratio_setting.VideoBillingMode2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateVideoBillingModeByJSONString(givenVideoModes))
+	})
+	require.NoError(t, ratio_setting.UpdateVideoBillingModeByJSONString(`{}`))
+
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Set("generated_video_seconds", 15)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "seedance-2.0-720p",
+		PriceData: types.PriceData{
+			UsePrice:   true,
+			ModelPrice: 0.8,
+			Quota:      400000,
+			GroupRatioInfo: types.GroupRatioInfo{
+				GroupRatio: 1,
+			},
+		},
+	}
+	info.PriceData.AddOtherRatio("seconds", 15)
+
+	require.Equal(t, ratio_setting.VideoBillingModePerSecond, info.VideoBillingMode())
+	applyTaskVideoBillingRatios(context, info)
+
+	assert.Equal(t, 6000000, info.PriceData.Quota)
+	assert.Equal(t, 15.0, info.PriceData.OtherRatios()["seconds"])
+	assert.Equal(t, 15, context.GetInt("billable_video_seconds"))
+}
 
 func TestTaskModel2PublicVideoDtoRedactsUpstreamIdentifiers(t *testing.T) {
 	task := &model.Task{

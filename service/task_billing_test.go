@@ -292,6 +292,31 @@ func TestTaskBillingContextPriceDataFiltersMultiplier(t *testing.T) {
 	}, priceData.OtherRatios())
 }
 
+func TestTaskBillingContextUsesConfiguredVideoBillingMode(t *testing.T) {
+	givenVideoModes := ratio_setting.VideoBillingMode2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateVideoBillingModeByJSONString(givenVideoModes))
+	})
+
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "fixed-price-video",
+		PriceData: types.PriceData{
+			UsePrice:   true,
+			ModelPrice: 0.8,
+		},
+	}
+
+	require.NoError(t, ratio_setting.UpdateVideoBillingModeByJSONString(`{}`))
+	perSecondContext := taskBillingContextFromRelayInfo(info)
+	assert.Equal(t, ratio_setting.VideoBillingModePerSecond, perSecondContext.VideoBillingMode)
+	assert.False(t, perSecondContext.PerCallBilling)
+
+	require.NoError(t, ratio_setting.UpdateVideoBillingModeByJSONString(`{"fixed-price-video":"per_call"}`))
+	perCallContext := taskBillingContextFromRelayInfo(info)
+	assert.Equal(t, ratio_setting.VideoBillingModePerCall, perCallContext.VideoBillingMode)
+	assert.True(t, perCallContext.PerCallBilling)
+}
+
 // ---------------------------------------------------------------------------
 // Read-back helpers
 // ---------------------------------------------------------------------------
