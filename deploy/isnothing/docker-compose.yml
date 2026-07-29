@@ -1,0 +1,51 @@
+name: isnothing
+
+services:
+  mysql:
+    image: mysql:8
+    container_name: isnothing-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${ISNOTHING_MYSQL_ROOT_PW}
+      MYSQL_DATABASE: new-api
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    container_name: isnothing-redis
+    restart: unless-stopped
+
+  newapi:
+    image: cheng:isnothing-20260729
+    container_name: isnothing-newapi
+    restart: unless-stopped
+    command: --log-dir /app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:13012:3000"
+    environment:
+      SQL_DSN: root:${ISNOTHING_MYSQL_ROOT_PW}@tcp(isnothing-mysql:3306)/new-api
+      REDIS_CONN_STRING: redis://isnothing-redis
+      SESSION_SECRET: ${ISNOTHING_SESSION_SECRET}
+      USAGE_TOKEN_MULTIPLIER: "2"
+      TZ: Asia/Shanghai
+      ERROR_LOG_ENABLED: "true"
+      CHAT_DUMP_ENABLED: "false"
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  mysql_data:
