@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -200,42 +199,12 @@ func redactTaskDtoForUser(d *dto.TaskDto) {
 	d.Group = ""
 	d.ChannelId = 0
 	d.ChannelName = ""
+	publicModel := ""
 	if props, ok := d.Properties.(model.Properties); ok {
+		publicModel = strings.TrimSpace(props.OriginModelName)
 		props.UpstreamModelName = ""
 		d.Properties = props
 	}
-	d.Data = redactTaskDataForUser(d.Data, d.ModelName, d.TaskID)
-}
-
-// redactTaskDataForUser 脱敏原始上游响应体中的 model（替换为对外模型名）和
-// task_id（替换为对外公开 ID）。
-func redactTaskDataForUser(data json.RawMessage, originModel, publicTaskID string) json.RawMessage {
-	if len(data) == 0 {
-		return data
-	}
-	var m map[string]any
-	if err := common.Unmarshal(data, &m); err != nil {
-		return data
-	}
-	changed := false
-	if _, ok := m["model"]; ok {
-		if originModel != "" {
-			m["model"] = originModel
-		} else {
-			delete(m, "model")
-		}
-		changed = true
-	}
-	if _, ok := m["task_id"]; ok {
-		m["task_id"] = publicTaskID
-		changed = true
-	}
-	if !changed {
-		return data
-	}
-	b, err := common.Marshal(m)
-	if err != nil {
-		return data
-	}
-	return json.RawMessage(b)
+	d.ModelName = publicModel
+	d.Data = relay.RedactTaskDataForPublic(d.Data, publicModel, d.TaskID)
 }

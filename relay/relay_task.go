@@ -714,7 +714,7 @@ func TaskModel2PublicVideoDto(task *model.Task) *dto.VideoTaskPublicDto {
 		Properties:       publicProperties,
 		ModelName:        publicModelName,
 		VideoDuration:    full.VideoDuration,
-		Data:             stripTaskDataSensitiveFields(full.Data, publicModelName, full.TaskID),
+		Data:             RedactTaskDataForPublic(full.Data, publicModelName, full.TaskID),
 		Timestamp2String: full.Timestamp2String,
 	}
 	if task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure {
@@ -751,9 +751,9 @@ func extractVideoSecondsSize(data json.RawMessage) (string, string) {
 	return seconds, size
 }
 
-// stripTaskDataSensitiveFields removes upstream billing/model/task identifiers
-// while preserving provider-specific status and result fields used by clients.
-func stripTaskDataSensitiveFields(data json.RawMessage, publicModel, publicTaskID string) json.RawMessage {
+// RedactTaskDataForPublic removes upstream billing/model/task identifiers while
+// preserving provider-specific status and result fields used by clients.
+func RedactTaskDataForPublic(data json.RawMessage, publicModel, publicTaskID string) json.RawMessage {
 	if len(data) == 0 {
 		return data
 	}
@@ -770,14 +770,28 @@ func stripTaskDataSensitiveFields(data json.RawMessage, publicModel, publicTaskI
 }
 
 func redactPublicTaskDataMap(data map[string]any, publicModel, publicTaskID string, root bool) {
-	_, hasTaskID := data["task_id"]
+	hasTaskID := false
+	for _, key := range []string{"task_id", "taskId", "taskID", "external_task_id", "externalTaskId", "externalTaskID"} {
+		if _, ok := data[key]; ok {
+			hasTaskID = true
+			break
+		}
+	}
 	_, hasStatus := data["status"]
-	_, hasModel := data["model"]
+	hasModel := false
+	for _, key := range []string{"model", "model_name", "modelName"} {
+		if _, ok := data[key]; ok {
+			hasModel = true
+			break
+		}
+	}
 	taskObject := root || hasTaskID || (hasStatus && hasModel)
 
 	for key, value := range data {
 		switch key {
-		case "usage", "upstream_model_name", "upstream_task_id":
+		case "usage", "usage_metadata", "usageMetadata",
+			"upstream_model_name", "upstreamModelName",
+			"upstream_task_id", "upstreamTaskId", "upstreamTaskID":
 			delete(data, key)
 		case "operationName", "operation_name":
 			if publicTaskID == "" {
@@ -795,13 +809,13 @@ func redactPublicTaskDataMap(data map[string]any, publicModel, publicTaskID stri
 			} else {
 				data[key] = publicTaskID
 			}
-		case "model":
+		case "model", "model_name", "modelName":
 			if publicModel == "" {
 				delete(data, key)
 			} else {
 				data[key] = publicModel
 			}
-		case "task_id":
+		case "task_id", "taskId", "taskID", "external_task_id", "externalTaskId", "externalTaskID":
 			if publicTaskID == "" {
 				delete(data, key)
 			} else {
@@ -816,16 +830,18 @@ func redactPublicTaskDataMap(data map[string]any, publicModel, publicTaskID stri
 				}
 			}
 		default:
-			switch nested := value.(type) {
-			case map[string]any:
-				redactPublicTaskDataMap(nested, publicModel, publicTaskID, false)
-			case []any:
-				for _, item := range nested {
-					if nestedMap, ok := item.(map[string]any); ok {
-						redactPublicTaskDataMap(nestedMap, publicModel, publicTaskID, false)
-					}
-				}
-			}
+			redactPublicTaskDataValue(value, publicModel, publicTaskID)
+		}
+	}
+}
+
+func redactPublicTaskDataValue(value any, publicModel, publicTaskID string) {
+	switch nested := value.(type) {
+	case map[string]any:
+		redactPublicTaskDataMap(nested, publicModel, publicTaskID, false)
+	case []any:
+		for _, item := range nested {
+			redactPublicTaskDataValue(item, publicModel, publicTaskID)
 		}
 	}
 }

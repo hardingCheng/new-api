@@ -389,7 +389,13 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
 
         const videoUrl = resolveTaskVideoPreviewUrl(log)
         if (videoUrl) {
-          return <TaskVideoPreview taskId={log.task_id} sourceUrl={videoUrl} />
+          return (
+            <TaskVideoPreview
+              taskId={log.task_id}
+              sourceUrl={videoUrl}
+              ownerUserId={isAdmin ? log.user_id : undefined}
+            />
+          )
         }
 
         if (!failReason) {

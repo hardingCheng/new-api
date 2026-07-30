@@ -117,6 +117,7 @@ describe('task video preview', () => {
           <TaskVideoPreview
             taskId='task_public_1'
             sourceUrl='/v1/videos/task_public_1/content'
+            ownerUserId={42}
           />
         </I18nextProvider>
       )
@@ -135,6 +136,7 @@ describe('task video preview', () => {
     assert.equal(dialog.textContent?.includes('Video Preview'), true)
     assert.equal(requestedUrl, '/v1/videos/task_public_1/content')
     assert.equal(requestedConfig?.responseType, 'blob')
+    assert.deepEqual(requestedConfig?.params, { user_id: 42 })
     assert.equal(
       dialog.querySelector('video')?.getAttribute('src')?.startsWith('blob:'),
       true

@@ -29,6 +29,7 @@ import { api } from '@/lib/api'
 interface TaskVideoPreviewProps {
   taskId: string
   sourceUrl: string
+  ownerUserId?: number
 }
 
 export function TaskVideoPreview(props: TaskVideoPreviewProps) {
@@ -64,6 +65,10 @@ export function TaskVideoPreview(props: TaskVideoPreviewProps) {
 
     try {
       const response = await api.get<Blob>(props.sourceUrl, {
+        params:
+          props.ownerUserId && props.ownerUserId > 0
+            ? { user_id: props.ownerUserId }
+            : undefined,
         responseType: 'blob',
         signal: abortController.signal,
         disableDuplicate: true,
@@ -81,7 +86,7 @@ export function TaskVideoPreview(props: TaskVideoPreviewProps) {
       setLoading(false)
       setLoadFailed(true)
     }
-  }, [props.sourceUrl])
+  }, [props.ownerUserId, props.sourceUrl])
 
   useEffect(() => {
     return () => {

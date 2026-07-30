@@ -400,7 +400,11 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
               />
             ) : null}
             {videoUrl ? (
-              <TaskVideoPreview taskId={log.task_id} sourceUrl={videoUrl} />
+              <TaskVideoPreview
+                taskId={log.task_id}
+                sourceUrl={videoUrl}
+                ownerUserId={isAdmin ? log.user_id : undefined}
+              />
             ) : null}
           </DetailSection>
         ) : null}
