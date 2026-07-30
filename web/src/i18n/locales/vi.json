@@ -5248,6 +5248,7 @@
     "Vertex AI service account key must be valid JSON": "Khóa tài khoản dịch vụ Vertex AI phải là JSON hợp lệ",
     "Video": "Video",
     "Video Billing Mode": "Chế độ tính phí video",
+    "Video Duration": "Thời lượng video",
     "Video length in seconds": "Độ dài video (giây)",
     "Video Preview": "Xem trước video",
     "Video Remix": "Remix video",

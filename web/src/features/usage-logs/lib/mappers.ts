@@ -20,6 +20,8 @@ For commercial licensing, please contact support@quantumnous.com
  * Status mappers for different log types
  * Centralized mapper instances for consistent usage across components
  */
+import { CHANNEL_TYPES } from '@/features/channels/constants'
+
 import {
   MJ_TASK_TYPE_MAPPINGS,
   MJ_STATUS_MAPPINGS,
@@ -69,3 +71,13 @@ export const taskStatusMapper = createStatusMapper(TASK_STATUS_MAPPINGS)
  * Task platform mapper
  */
 export const taskPlatformMapper = createStatusMapper(TASK_PLATFORM_MAPPINGS)
+
+export function getTaskPlatformName(platform: string): string {
+  if (!platform) return ''
+  const channelType = Number(platform)
+  if (Number.isInteger(channelType) && channelType > 0) {
+    const name = CHANNEL_TYPES[channelType as keyof typeof CHANNEL_TYPES]
+    if (name) return name
+  }
+  return platform
+}

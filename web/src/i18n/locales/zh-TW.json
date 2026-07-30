@@ -5248,6 +5248,7 @@
     "Vertex AI service account key must be valid JSON": "Vertex AI 服務賬號金鑰必須是有效 JSON",
     "Video": "影片",
     "Video Billing Mode": "视频计费模式",
+    "Video Duration": "影片時長",
     "Video length in seconds": "影片時長（秒）",
     "Video Preview": "影片預覽",
     "Video Remix": "影片 Remix",

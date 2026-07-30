@@ -5248,6 +5248,7 @@
     "Vertex AI service account key must be valid JSON": "Vertex AI サービスアカウントキーは有効な JSON である必要があります",
     "Video": "動画",
     "Video Billing Mode": "動画課金モード",
+    "Video Duration": "動画の長さ",
     "Video length in seconds": "動画の長さ（秒）",
     "Video Preview": "動画プレビュー",
     "Video Remix": "動画 Remix",

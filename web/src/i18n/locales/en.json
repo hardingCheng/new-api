@@ -5248,6 +5248,7 @@
     "Vertex AI service account key must be valid JSON": "Vertex AI service account key must be valid JSON",
     "Video": "Video",
     "Video Billing Mode": "Video Billing Mode",
+    "Video Duration": "Video Duration",
     "Video length in seconds": "Video length in seconds",
     "Video Preview": "Video Preview",
     "Video Remix": "Video Remix",

@@ -347,6 +347,7 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) error
 	if poolErr != nil {
 		return poolErr
 	}
+	task.PrivateData.RefundQuota = quota
 	task.Quota = 0
 	if task.ID > 0 {
 		task.BillingStatus = model.TaskBillingStatusRefunded

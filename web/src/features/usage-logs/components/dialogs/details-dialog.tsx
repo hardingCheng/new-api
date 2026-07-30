@@ -674,7 +674,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
             <DetailRow label={t('Token')} value={props.log.token_name} mono />
           )}
 
-          {(props.log.group || other?.group) && (
+          {props.isAdmin && (props.log.group || other?.group) && (
             <DetailRow
               label={t('Group')}
               value={props.log.group || other?.group || ''}

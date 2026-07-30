@@ -346,8 +346,14 @@ function CommonLogsCard<TData>({
           <SummaryField cell={cells.get('user')} />
         )}
         <SummaryField
+          label={t('Group')}
+          cell={cells.get('group')}
+          valueClassName='[&_.flex-col]:max-w-none'
+        />
+        <SummaryField
+          label={t('Token')}
           cell={cells.get('token_name')}
-          valueClassName='[&_.flex-col]:max-w-none [&_.flex-col>*:not(:first-child)]:text-[11px] [&_.flex-col>*:not(:first-child)]:leading-none'
+          valueClassName='[&_.flex-col]:max-w-none'
         />
         {rowData ? (
           <MobileStreamTimingField log={rowData} />
@@ -389,7 +395,17 @@ function TaskLogsCard<TData>({
 
       <div className='grid grid-cols-2 gap-1.5'>
         <SummaryField label={t('Submit Time')} cell={submitTimeCell} />
+        <SummaryField label={t('Channel')} cell={cells.get('channel')} />
         <SummaryField label={t('User')} cell={cells.get('user')} primaryOnly />
+        <SummaryField
+          label={t('Video Duration')}
+          cell={cells.get('video_duration')}
+        />
+        <SummaryField label={t('Billing')} cell={cells.get('billing')} />
+        <SummaryField
+          label={t('Reference video')}
+          cell={cells.get('reference_video')}
+        />
         <SummaryField
           label={t('Result')}
           cell={cells.get('fail_reason')}

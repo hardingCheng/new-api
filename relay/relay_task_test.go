@@ -110,6 +110,34 @@ func TestTaskModel2PublicVideoDtoRedactsUpstreamIdentifiers(t *testing.T) {
 	assert.Equal(t, "final-video.mp4", result["name"])
 }
 
+func TestTaskModel2DtoIncludesAdminVideoBillingMetrics(t *testing.T) {
+	task := &model.Task{
+		TaskID:      "task_admin_metrics",
+		ChannelId:   42,
+		ChannelName: "primary-video-channel",
+		Quota:       125000,
+		Properties: model.Properties{
+			HasReferenceVideo:     true,
+			ReferenceVideoSeconds: 4,
+			VideoSeconds:          10,
+		},
+		PrivateData: model.TaskPrivateData{RefundQuota: 25000},
+		Data:        []byte(`{}`),
+	}
+
+	out := TaskModel2Dto(task)
+
+	assert.Equal(t, 42, out.ChannelId)
+	assert.Equal(t, "primary-video-channel", out.ChannelName)
+	assert.Equal(t, 125000, out.Quota)
+	assert.Equal(t, 25000, out.RefundQuota)
+	assert.Equal(t, 10, out.VideoDuration)
+	properties, ok := out.Properties.(model.Properties)
+	require.True(t, ok)
+	assert.True(t, properties.HasReferenceVideo)
+	assert.Equal(t, 4, properties.ReferenceVideoSeconds)
+}
+
 // 对齐设计示例：原价每秒 0.1 美元，生成 3 秒，参考 15 秒。
 // basePerSec = 0.1 × QuotaPerUnit × groupRatio(1) = 0.1 × 500000 = 50000。
 func TestReferenceVideoCost(t *testing.T) {

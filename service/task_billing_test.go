@@ -408,7 +408,11 @@ func TestRefundTaskQuota_Wallet(t *testing.T) {
 	assert.Equal(t, preConsumed, log.Quota)
 	assert.Equal(t, "test-model", log.ModelName)
 	assert.Zero(t, task.Quota)
+	assert.Equal(t, preConsumed, task.PrivateData.RefundQuota)
 	assert.Zero(t, getTaskQuota(t, task.ID))
+	var persistedTask model.Task
+	require.NoError(t, model.DB.First(&persistedTask, task.ID).Error)
+	assert.Equal(t, preConsumed, persistedTask.PrivateData.RefundQuota)
 }
 
 func TestRefundTaskQuota_Subscription(t *testing.T) {

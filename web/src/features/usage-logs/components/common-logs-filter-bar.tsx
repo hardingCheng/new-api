@@ -133,7 +133,7 @@ export function CommonLogsFilterBar<TData>(
       channel: searchParams.channel,
       model: searchParams.model,
       token: searchParams.token,
-      group: searchParams.group,
+      group: isAdmin ? searchParams.group : undefined,
       username: searchParams.username,
       usernames: searchParams.usernames,
       requestId: searchParams.requestId,
@@ -148,7 +148,7 @@ export function CommonLogsFilterBar<TData>(
       channel: searchParams.channel || undefined,
       model: searchParams.model || undefined,
       token: searchParams.token || undefined,
-      group: searchParams.group || undefined,
+      group: isAdmin ? searchParams.group || undefined : undefined,
       username: searchParams.username || undefined,
       usernames: searchParams.usernames
         ? searchParams.usernames.split(',').filter(Boolean)
@@ -173,6 +173,7 @@ export function CommonLogsFilterBar<TData>(
     searchParams.requestId,
     searchParams.upstreamRequestId,
     searchParams.type,
+    isAdmin,
   ])
   const [draft, setDraft] = useState<CommonLogDraft>(() => searchState)
   const [usernameSearch, setUsernameSearch] = useState('')
@@ -271,7 +272,10 @@ export function CommonLogsFilterBar<TData>(
 
   const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
   const hasAdditionalFilters =
-    !!filters.model || !!filters.group || hasTypeFilter || hasExpandedFilters
+    !!filters.model ||
+    (isAdmin && !!filters.group) ||
+    hasTypeFilter ||
+    hasExpandedFilters
 
   const expandedFilterCount = [
     filters.token,
@@ -485,7 +489,7 @@ export function CommonLogsFilterBar<TData>(
         <>
           {dateRangeFilter}
           {modelFilter}
-          {groupFilter}
+          {isAdmin ? groupFilter : null}
           {typeFilter}
         </>
       }
@@ -494,14 +498,17 @@ export function CommonLogsFilterBar<TData>(
       mobileFilters={
         <>
           {modelFilter}
-          {groupFilter}
+          {isAdmin ? groupFilter : null}
           {typeFilter}
           {advancedFilters}
         </>
       }
       mobileFilterCount={
-        [filters.model, filters.group, hasTypeFilter].filter(Boolean).length +
-        expandedFilterCount
+        [
+          filters.model,
+          isAdmin ? filters.group : undefined,
+          hasTypeFilter,
+        ].filter(Boolean).length + expandedFilterCount
       }
       hasAdvancedActiveFilters={hasExpandedFilters}
       advancedFilterCount={expandedFilterCount}

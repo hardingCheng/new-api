@@ -116,6 +116,7 @@ func assignDisplayLogIds(logs []*Log, startIdx int) {
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
 		logs[i].ChannelName = ""
+		logs[i].Group = ""
 		var otherMap map[string]interface{}
 		otherMap, _ = common.StrToMap(logs[i].Other)
 		if otherMap != nil {
@@ -131,6 +132,7 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			delete(otherMap, "stream_status")
 			delete(otherMap, "is_model_mapped")
 			delete(otherMap, "upstream_model_name")
+			delete(otherMap, "group")
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)
 	}

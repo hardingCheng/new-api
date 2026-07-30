@@ -556,6 +556,40 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             </button>
           )
         },
+      },
+      {
+        accessorKey: 'group',
+        header: t('Group'),
+        cell: function GroupCell({ row }) {
+          const { sensitiveVisible } = useUsageLogsContext()
+          const log = row.original
+          if (!isDisplayableLogType(log.type)) return null
+
+          const other = parseLogOther(log.other)
+          const group = log.group || other?.group || ''
+          const groupRatio = getGroupRatio(other)
+          if (!group && groupRatio == null) return null
+
+          return (
+            <div className='flex max-w-[120px] min-w-0 items-baseline gap-1 overflow-hidden'>
+              {group ? (
+                <GroupBadge
+                  group={group}
+                  label={sensitiveVisible ? undefined : '••••'}
+                  type='text'
+                  size='sm'
+                  className='min-w-0 text-xs leading-none [&>span]:truncate [&>span]:leading-none'
+                />
+              ) : null}
+              {groupRatio != null ? (
+                <span className='text-muted-foreground/60 shrink-0 text-xs leading-none tabular-nums'>
+                  {formatRatioCompact(groupRatio)}x
+                </span>
+              ) : null}
+            </div>
+          )
+        },
+        size: 110,
       }
     )
   }
@@ -571,53 +605,28 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       const tokenName = log.token_name
       if (!tokenName) return null
 
-      const other = parseLogOther(log.other)
       const displayName = sensitiveVisible ? tokenName : '••••'
-      let group = log.group
-      if (!group) group = other?.group || ''
-      const groupRatio = getGroupRatio(other)
 
       return (
-        <div className='flex max-w-[200px] flex-col gap-0.5'>
-          <TooltipProvider delay={300}>
-            <Tooltip>
-              <TooltipTrigger render={<div className='max-w-full' />}>
-                <StatusBadge
-                  label={displayName}
-                  icon={KeyRound}
-                  copyText={sensitiveVisible ? tokenName : undefined}
-                  size='sm'
-                  showDot={false}
-                  className='border-border/60 bg-muted/30 text-foreground h-6 max-w-full gap-1.5 overflow-hidden rounded-md border px-2 py-0.5 [font-family:var(--font-body)]'
-                />
-              </TooltipTrigger>
-              {sensitiveVisible && tokenName.length > 16 && (
-                <TooltipContent side='top' className='max-w-xs break-all'>
-                  {tokenName}
-                </TooltipContent>
-              )}
-            </Tooltip>
-          </TooltipProvider>
-          {(group || groupRatio != null) && (
-            <span className='block max-w-full truncate text-xs leading-none'>
-              {group ? (
-                <GroupBadge
-                  group={group}
-                  label={sensitiveVisible ? undefined : '••••'}
-                  type='text'
-                  size='sm'
-                  className='inline align-baseline text-xs leading-none [&>span]:leading-none'
-                />
-              ) : null}
-              {group && groupRatio != null ? ' ' : null}
-              {groupRatio != null ? (
-                <span className='text-muted-foreground/60 relative top-px align-baseline tabular-nums'>
-                  {formatRatioCompact(groupRatio)}x
-                </span>
-              ) : null}
-            </span>
-          )}
-        </div>
+        <TooltipProvider delay={300}>
+          <Tooltip>
+            <TooltipTrigger render={<div className='max-w-[200px]' />}>
+              <StatusBadge
+                label={displayName}
+                icon={KeyRound}
+                copyText={sensitiveVisible ? tokenName : undefined}
+                size='sm'
+                showDot={false}
+                className='border-border/60 bg-muted/30 text-foreground h-6 max-w-full gap-1.5 overflow-hidden rounded-md border px-2 py-0.5 [font-family:var(--font-body)]'
+              />
+            </TooltipTrigger>
+            {sensitiveVisible && tokenName.length > 16 && (
+              <TooltipContent side='top' className='max-w-xs break-all'>
+                {tokenName}
+              </TooltipContent>
+            )}
+          </Tooltip>
+        </TooltipProvider>
       )
     },
     size: 160,

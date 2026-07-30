@@ -8,12 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestFormatUserLogsStripsQuotaSaturation verifies the admin-only quota
-// saturation marker (nested under other.admin_info) is removed for non-admin
-// log views, since formatUserLogs strips the whole admin_info object.
-func TestFormatUserLogsStripsQuotaSaturation(t *testing.T) {
+// TestFormatUserLogsStripsAdminOnlyFields verifies that non-admin log views
+// remove routing, pricing-rule, and group details while retaining public
+// billing fields.
+func TestFormatUserLogsStripsAdminOnlyFields(t *testing.T) {
 	other := common.MapToJsonStr(map[string]interface{}{
 		"model_price": 0.004,
+		"group":       "vip",
 		"user_pricing_overrides": []interface{}{
 			map[string]interface{}{"rule": map[string]interface{}{"value": 0.5}},
 		},
@@ -28,7 +29,7 @@ func TestFormatUserLogsStripsQuotaSaturation(t *testing.T) {
 			},
 		},
 	})
-	logs := []*Log{{Other: other}}
+	logs := []*Log{{Group: "vip", Other: other}}
 
 	formatUserLogs(logs, 0)
 
@@ -38,6 +39,8 @@ func TestFormatUserLogsStripsQuotaSaturation(t *testing.T) {
 	require.False(t, hasAdminInfo, "admin_info (and nested quota_saturation) must be stripped for non-admin views")
 	require.NotContains(t, parsed, "user_pricing_overrides")
 	require.NotContains(t, parsed, "model_quota_pools")
+	require.NotContains(t, parsed, "group")
+	require.Empty(t, logs[0].Group)
 	// Non-admin billing fields remain visible.
 	require.Contains(t, parsed, "model_price")
 }
