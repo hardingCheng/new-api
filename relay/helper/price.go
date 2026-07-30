@@ -69,6 +69,28 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 	return groupRatioInfo
 }
 
+// RefreshGroupRatioForRetry 重算分组倍率并**重新套上**用户价格覆盖。
+//
+// 重试会换渠道、可能落到别的分组,所以分组倍率必须重算。但重算是整体替换
+// GroupRatioInfo:HandleGroupRatio 只产出分组层的倍率,不带 UserOverrideRatio /
+// HasUserOverride。若重算后不重新应用用户价格覆盖,客户的个性折扣会在重试后
+// 静默消失、按原价扣费 —— 而日志里 user_pricing_overrides 仍显示折扣规则命中,
+// 对账时几乎无法发现。
+//
+// 重新应用是安全的:ApplyUserPricingOverrides 的每个分支都是「用规则值绝对赋值」
+// 而不是在当前值上叠乘,所以幂等;而且重试后 UsingGroup 可能已变,按新分组重新
+// 匹配规则才是正确行为。
+//
+// 任何「重算分组倍率」的新增调用点都应该走这个函数,不要直接调 HandleGroupRatio
+// 再自己拼 —— 忘记补覆盖这一层已经出过不止一次事故。
+func RefreshGroupRatioForRetry(ctx *gin.Context, info *relaycommon.RelayInfo) {
+	if info == nil {
+		return
+	}
+	info.PriceData.GroupRatioInfo = HandleGroupRatio(ctx, info)
+	applyUserPricingOverridesToPriceData(info, &info.PriceData)
+}
+
 func applyUserPricingOverridesToPriceData(info *relaycommon.RelayInfo, priceData *types.PriceData) {
 	if info == nil || priceData == nil {
 		return

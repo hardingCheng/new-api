@@ -337,7 +337,9 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 
-	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
+	// 重算分组倍率必须连带重新套用户价格覆盖,否则重试后客户的个性折扣会静默失效
+	// 并按原价扣费(日志里却仍显示折扣命中)。详见 RefreshGroupRatioForRetry 的注释。
+	helper.RefreshGroupRatioForRetry(c, info)
 
 	if err != nil {
 		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
