@@ -54,6 +54,15 @@ func checkRedisRateLimit(ctx context.Context, rdb *redis.Client, key string, max
 	}
 	// 如果在时间窗口内已达到限制，拒绝请求
 	subTime := nowTime.Sub(oldTime).Seconds()
+	// 负数说明列表里的时间戳来自另一套时钟约定：旧版本按容器本地时区取时间
+	// 却仍写 Z 后缀，升级到按 UTC 记录的版本后，这些遗留条目会被当成"未来"，
+	// 于是永远落在窗口内。而拒绝路径不写入新时间戳、每次拒绝又刷新 TTL，
+	// 列表既不轮换也不过期——用户会被永久拒死。这种数据没法参与窗口计算，
+	// 直接丢弃让它按新格式重建。
+	if subTime < 0 {
+		rdb.Del(ctx, key)
+		return true, nil
+	}
 	if int64(subTime) < duration {
 		rdb.Expire(ctx, key, time.Duration(setting.ModelRequestRateLimitDurationMinutes)*time.Minute)
 		return false, nil
