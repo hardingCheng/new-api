@@ -178,10 +178,27 @@ test('admin task columns show channel and video billing metrics', async () => {
     billing?.textContent?.includes(formatLogQuota(taskLog.refund_quota ?? 0)),
     true
   )
-  assert.match(
+  assert.equal(
+    rendered.container.querySelector('[data-header-id="reference_video"]')
+      ?.textContent,
+    'Reference video'
+  )
+  assert.equal(
     rendered.container.querySelector('[data-cell-id="reference_video"]')
-      ?.textContent ?? '',
-    /Yes.*4s/
+      ?.textContent,
+    'Yes'
+  )
+  assert.equal(
+    rendered.container.querySelector(
+      '[data-header-id="reference_video_duration"]'
+    )?.textContent,
+    'Reference Duration'
+  )
+  assert.equal(
+    rendered.container.querySelector(
+      '[data-cell-id="reference_video_duration"]'
+    )?.textContent,
+    '4s'
   )
 
   await act(async () => rendered.root.unmount())
@@ -197,6 +214,7 @@ test('non-admin task columns hide channel and billing metrics', async () => {
     'video_duration',
     'billing',
     'reference_video',
+    'reference_video_duration',
   ]) {
     assert.equal(
       rendered.container.querySelector(`[data-cell-id="${columnId}"]`),

@@ -408,6 +408,10 @@ function TaskLogsCard<TData>({
           cell={cells.get('reference_video')}
         />
         <SummaryField
+          label={t('Reference Duration')}
+          cell={cells.get('reference_video_duration')}
+        />
+        <SummaryField
           label={t('Result')}
           cell={cells.get('fail_reason')}
           className='col-span-2 bg-transparent px-0 py-0'

@@ -322,24 +322,36 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
             (typeof referenceSeconds === 'number' && referenceSeconds > 0)
 
           return (
-            <div className='flex min-w-0 flex-col gap-0.5'>
-              <StatusBadge
-                label={hasReference ? t('Yes') : t('No')}
-                variant={hasReference ? 'blue' : 'neutral'}
-                size='sm'
-                copyable={false}
-              />
-              {hasReference &&
-              typeof referenceSeconds === 'number' &&
-              referenceSeconds > 0 ? (
-                <span className='text-muted-foreground font-mono text-[11px] tabular-nums'>
-                  {referenceSeconds}s
-                </span>
-              ) : null}
-            </div>
+            <StatusBadge
+              label={hasReference ? t('Yes') : t('No')}
+              variant={hasReference ? 'blue' : 'neutral'}
+              size='sm'
+              copyable={false}
+            />
           )
         },
-        size: 125,
+        size: 115,
+      },
+      {
+        id: 'reference_video_duration',
+        header: t('Reference Duration'),
+        cell: ({ row }) => {
+          const seconds = row.original.properties?.reference_video_seconds
+          if (
+            typeof seconds !== 'number' ||
+            !Number.isFinite(seconds) ||
+            seconds <= 0
+          ) {
+            return <span className='text-muted-foreground/60 text-xs'>-</span>
+          }
+
+          return (
+            <span className='font-mono text-xs font-medium tabular-nums'>
+              {seconds}s
+            </span>
+          )
+        },
+        size: 135,
       }
     )
   }
