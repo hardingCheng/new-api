@@ -153,6 +153,16 @@ test('admin task columns show channel and video billing metrics', async () => {
     /#42.*primary-video-channel/
   )
   assert.equal(
+    rendered.container.querySelector('[data-header-id="model_name"]')
+      ?.textContent,
+    'Model'
+  )
+  assert.equal(
+    rendered.container.querySelector('[data-cell-id="model_name"]')
+      ?.textContent,
+    'secret-upstream-modelpublic-video-model'
+  )
+  assert.equal(
     rendered.container.querySelector('[data-cell-id="video_duration"]')
       ?.textContent,
     '10s'
@@ -183,6 +193,7 @@ test('non-admin task columns hide channel and billing metrics', async () => {
 
   for (const columnId of [
     'channel',
+    'model_name',
     'video_duration',
     'billing',
     'reference_video',

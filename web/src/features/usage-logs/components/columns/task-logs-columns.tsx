@@ -201,19 +201,54 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
     )
   }
 
-  columns.push(
-    {
-      accessorKey: 'task_id',
-      header: t('Task ID'),
+  columns.push({
+    accessorKey: 'task_id',
+    header: t('Task ID'),
+    cell: ({ row }) => {
+      const taskId = row.getValue('task_id') as string
+      if (!taskId) {
+        return <span className='text-muted-foreground/60 text-xs'>-</span>
+      }
+      return <TaskIdCell log={row.original} isAdmin={isAdmin} />
+    },
+    meta: { mobileTitle: true },
+  })
+
+  if (isAdmin) {
+    columns.push({
+      accessorKey: 'model_name',
+      header: t('Model'),
       cell: ({ row }) => {
-        const taskId = row.getValue('task_id') as string
-        if (!taskId) {
+        const log = row.original
+        const publicModel =
+          log.model_name || log.properties?.origin_model_name || ''
+        const upstreamModel = log.properties?.upstream_model_name || publicModel
+        if (!upstreamModel) {
           return <span className='text-muted-foreground/60 text-xs'>-</span>
         }
-        return <TaskIdCell log={row.original} isAdmin={isAdmin} />
+
+        return (
+          <div className='flex max-w-[190px] min-w-0 flex-col gap-0.5'>
+            <StatusBadge
+              label={upstreamModel}
+              copyText={upstreamModel}
+              autoColor={upstreamModel}
+              size='sm'
+              className='max-w-full font-mono'
+            />
+            {publicModel && publicModel !== upstreamModel ? (
+              <span className='text-muted-foreground/60 truncate font-mono text-[11px]'>
+                {publicModel}
+              </span>
+            ) : null}
+          </div>
+        )
       },
-      meta: { mobileTitle: true },
-    },
+      size: 180,
+    })
+  }
+
+  columns.push(
     createDurationColumn<TaskLog>({
       submitTimeKey: 'submit_time',
       finishTimeKey: 'finish_time',
