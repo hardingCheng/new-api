@@ -20,11 +20,6 @@ import { flexRender, type Cell, type Table } from '@tanstack/react-table'
 import { Database } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import {
-  dotColorMap,
-  textColorMap,
-  type StatusVariant,
-} from '@/components/status-badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Empty,
@@ -35,17 +30,12 @@ import {
 } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
-import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { LOG_TYPE_ENUM } from '../constants'
 import type { UsageLog } from '../data/schema'
 import { parseLogOther } from '../lib/format'
-import {
-  getLogTypeConfig,
-  isDisplayableLogType,
-  isTimingLogType,
-} from '../lib/utils'
+import { isDisplayableLogType, isTimingLogType } from '../lib/utils'
 import type { LogCategory } from '../types'
 import { StreamTpsCell, TimingMetricsCell } from './timing-metrics-cell'
 import { useUsageLogsContext } from './usage-logs-provider'
@@ -149,40 +139,6 @@ function SummaryField<TData>({
         primaryOnly={primaryOnly}
         className={valueClassName}
       />
-    </div>
-  )
-}
-
-function MobileLogTimeStatus({
-  createdAt,
-  type,
-}: {
-  createdAt: unknown
-  type: unknown
-}) {
-  const { t } = useTranslation()
-  const timestamp = typeof createdAt === 'number' ? createdAt : undefined
-  const logType = typeof type === 'number' ? type : undefined
-  const config = getLogTypeConfig(logType ?? LOG_TYPE_ENUM.UNKNOWN)
-  const variant = config.color as StatusVariant
-
-  return (
-    <div className='space-y-1'>
-      <div className='font-mono text-xs leading-tight tabular-nums'>
-        {formatTimestampToDate(timestamp)}
-      </div>
-      <div
-        className={cn(
-          'inline-flex items-center gap-1 text-xs leading-none font-medium',
-          textColorMap[variant]
-        )}
-      >
-        <span
-          className={cn('size-1.5 shrink-0 rounded-full', dotColorMap[variant])}
-          aria-hidden='true'
-        />
-        <span>{t(config.label)}</span>
-      </div>
     </div>
   )
 }
@@ -316,6 +272,7 @@ function CommonLogsCard<TData>({
   const { t } = useTranslation()
 
   const modelCell = cells.get('model_name')
+  const typeCell = cells.get('type')
   const quotaCell = cells.get('quota')
   const rowData = cells.get('created_at')?.row.original as UsageLog | undefined
 
@@ -323,19 +280,24 @@ function CommonLogsCard<TData>({
     <div className='space-y-2.5'>
       <div className='flex min-w-0 items-center justify-between gap-3'>
         <CompactCell cell={modelCell} className='flex-1' />
-        <CompactCell
-          cell={quotaCell}
-          className='shrink-0 text-right [&_.flex-col]:items-end'
-        />
+        <div data-slot='usage-log-mobile-type' className='shrink-0'>
+          <CompactCell cell={typeCell} className='text-right' />
+        </div>
       </div>
 
       <div className='grid grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)] gap-1.5'>
-        <div className='bg-muted/20 min-w-0 rounded-md px-2 py-1.5'>
-          <MobileLogTimeStatus
-            createdAt={rowData?.created_at}
-            type={rowData?.type}
+        <div data-slot='usage-log-mobile-time' className='min-w-0'>
+          <SummaryField
+            label={t('Time')}
+            cell={cells.get('created_at')}
+            valueClassName='font-mono tabular-nums'
           />
         </div>
+        <SummaryField
+          label={t('Cost')}
+          cell={quotaCell}
+          valueClassName='[&_.flex-col]:items-start'
+        />
         <SummaryField
           cell={cells.get('channel')}
           valueClassName='[&_.flex-col]:max-w-none'

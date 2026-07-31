@@ -312,26 +312,36 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
   const { t } = useTranslation()
   const columns: ColumnDef<UsageLog>[] = [
     {
+      accessorKey: 'type',
+      header: t('Type'),
+      cell: ({ row }) => {
+        const config = getLogTypeConfig(row.original.type)
+
+        return (
+          <StatusBadge
+            label={t(config.label)}
+            variant={config.color as StatusBadgeProps['variant']}
+            size='sm'
+            showDot
+            copyable={false}
+            className='rounded-md border border-current/20 bg-current/10 px-2 py-0.5 font-semibold'
+            aria-label={`${t('Type')}: ${t(config.label)}`}
+          />
+        )
+      },
+      enableHiding: false,
+      size: 100,
+    },
+    {
       accessorKey: 'created_at',
       header: t('Time'),
       cell: ({ row }) => {
-        const log = row.original
         const timestamp = row.getValue('created_at') as number
-        const config = getLogTypeConfig(log.type)
 
         return (
-          <div className='flex min-w-0 flex-col gap-0.5'>
-            <span className='truncate font-mono text-xs tabular-nums'>
-              {formatTimestampToDate(timestamp)}
-            </span>
-            <StatusBadge
-              label={t(config.label)}
-              variant={config.color as StatusBadgeProps['variant']}
-              size='sm'
-              copyable={false}
-              className='-ml-1.5 !text-xs [&_span]:!text-xs'
-            />
-          </div>
+          <span className='truncate font-mono text-xs tabular-nums'>
+            {formatTimestampToDate(timestamp)}
+          </span>
         )
       },
       filterFn: (row, _id, value) => {
@@ -340,7 +350,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         return value.includes(String(row.original.type))
       },
       enableHiding: false,
-      size: 180,
+      size: 165,
     },
   ]
 
