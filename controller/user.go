@@ -1234,7 +1234,9 @@ func ManageUser(c *gin.Context) {
 				return
 			}
 			recordManageAuditFor(c, user.Id, "user.quota_add", map[string]interface{}{
-				"quota": logger.LogQuota(req.Value),
+				"quota":           logger.LogQuota(req.Value),
+				"target_user_id":  user.Id,
+				"target_username": user.Username,
 			})
 		case "subtract":
 			if req.Value <= 0 {
@@ -1246,7 +1248,9 @@ func ManageUser(c *gin.Context) {
 				return
 			}
 			recordManageAuditFor(c, user.Id, "user.quota_subtract", map[string]interface{}{
-				"quota": logger.LogQuota(req.Value),
+				"quota":           logger.LogQuota(req.Value),
+				"target_user_id":  user.Id,
+				"target_username": user.Username,
 			})
 		case "override":
 			oldQuota := user.Quota
@@ -1255,8 +1259,10 @@ func ManageUser(c *gin.Context) {
 				return
 			}
 			recordManageAuditFor(c, user.Id, "user.quota_override", map[string]interface{}{
-				"from": logger.LogQuota(oldQuota),
-				"to":   logger.LogQuota(req.Value),
+				"from":            logger.LogQuota(oldQuota),
+				"to":              logger.LogQuota(req.Value),
+				"target_user_id":  user.Id,
+				"target_username": user.Username,
 			})
 		default:
 			common.ApiErrorI18n(c, i18n.MsgInvalidParams)

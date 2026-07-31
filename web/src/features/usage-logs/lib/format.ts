@@ -422,6 +422,9 @@ const AUDIT_TEMPLATES: Record<string, string> = {
     'Applied upstream model changes to channel (ID: {{id}})',
   'channel.upstream_apply_all':
     'Applied upstream model changes to {{count}} channels',
+  'channel.status_update': 'Updated channel {{id}} status to {{statusLabel}}',
+  'channel.status_update_batch':
+    'Updated {{count}} of {{total}} channel statuses to {{statusLabel}}',
   // Redemption codes
   'redemption.create':
     'Created {{count}} redemption codes named {{name}} ({{quota}} each)',
@@ -456,6 +459,14 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   generic: '{{method}} {{route}}',
 }
 
+const TARGET_USER_AUDIT_TEMPLATES: Record<string, string> = {
+  'user.quota_add': 'Increased user quota for {{targetUserLabel}} by {{quota}}',
+  'user.quota_subtract':
+    'Decreased user quota for {{targetUserLabel}} by {{quota}}',
+  'user.quota_override':
+    'Overrode user quota for {{targetUserLabel}} from {{from}} to {{to}}',
+}
+
 /**
  * Render the localized content of an audit/login log from its structured
  * `other.op` descriptor. Returns null when the log has no recognized action,
@@ -467,7 +478,36 @@ export function renderAuditContent(
 ): string | null {
   const op = other?.op
   if (!op?.action) return null
-  const template = AUDIT_TEMPLATES[op.action]
+  const params = { ...op.params } as Record<string, unknown>
+  const targetUserId = params.target_user_id
+  const hasTargetUserId =
+    (typeof targetUserId === 'number' && Number.isFinite(targetUserId)) ||
+    (typeof targetUserId === 'string' && targetUserId.trim() !== '')
+  let template = AUDIT_TEMPLATES[op.action]
+
+  if (hasTargetUserId) {
+    const targetUsername = params.target_username
+    if (typeof targetUsername === 'string' && targetUsername.trim() !== '') {
+      params.targetUserLabel = `${targetUsername} (${t('ID')}: ${targetUserId})`
+    } else {
+      params.targetUserLabel = `${t('User ID')}: ${targetUserId}`
+    }
+    template = TARGET_USER_AUDIT_TEMPLATES[op.action] ?? template
+  }
+
+  if (
+    op.action === 'channel.status_update' ||
+    op.action === 'channel.status_update_batch'
+  ) {
+    if (params.status === 1 || params.status === '1') {
+      params.statusLabel = t('Enabled')
+    } else if (params.status === 2 || params.status === '2') {
+      params.statusLabel = t('Disabled')
+    } else {
+      params.statusLabel = String(params.status ?? '-')
+    }
+  }
+
   if (!template) return null
-  return t(template, (op.params ?? {}) as Record<string, unknown>)
+  return t(template, params)
 }
