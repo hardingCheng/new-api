@@ -22,11 +22,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import {
-  DataTablePage,
-  DataTableRow,
-  useDataTable,
-} from '@/components/data-table'
+import { DataTablePage, useDataTable } from '@/components/data-table'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { cn } from '@/lib/utils'
@@ -214,7 +210,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
           <TaskLogsFilterBar table={table} logCategory={logCategory} />
         )
       }
-      renderRow={(row) => {
+      getRowClassName={(row) => {
         const logType = (row.original as Record<string, unknown>).type as
           | number
           | undefined
@@ -229,15 +225,9 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
           }
         }
 
-        return (
-          <DataTableRow
-            key={row.id}
-            row={row}
-            className={cn('transition-colors', tintClass)}
-            getColumnClassName={() => (isCommon ? 'py-2' : 'py-3.5')}
-          />
-        )
+        return cn('transition-colors', tintClass)
       }}
+      getColumnClassName={() => (isCommon ? 'py-2' : 'py-3.5')}
     />
   )
 }

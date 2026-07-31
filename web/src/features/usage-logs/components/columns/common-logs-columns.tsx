@@ -842,6 +842,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       },
       size: 180,
       maxSize: 200,
+      meta: { pinned: 'right' as const },
     }
   )
 
