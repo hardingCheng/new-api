@@ -380,7 +380,7 @@ func ShouldTripChannelBreakerWithRule(c *gin.Context, channelError types.Channel
 }
 
 // shouldInstantDisableChannel 判断错误是否命中"立即禁用"规则。
-// 立即禁用为开箱即用的内置保护，独立于全局熔断开关。
+// 立即禁用为开箱即用的内置保护，独立于全局熔断开关和普通熔断排除路径。
 // 命中条件：InstantDisableEnabled && 状态码命中 &&（上游额度错误码命中 || 关键词命中）。
 // 关键安全约束：
 //   - 我方预扣费 / 用户额度不足等错误均带 skipRetry，绝不能据此禁用上游渠道；
@@ -402,9 +402,10 @@ func shouldInstantDisableChannel(c *gin.Context, channelError types.ChannelError
 	if isOwnQuotaError(err) {
 		return false, "", emptyRule
 	}
-	// 立即禁用独立于全局熔断开关，使用专用解析；DisableBreaker/排除路径仍是退出口
+	// 路径排除只用于避免异步任务被普通短时故障熔断；余额耗尽是终态，不能因此跳过。
+	// DisableBreaker 是规则明确配置的总开关，仍应生效。
 	rule := resolveInstantDisableRule(c, channelError)
-	if !rule.InstantDisableEnabled || shouldExcludeChannelBreakerByRule(c, rule) {
+	if !rule.InstantDisableEnabled || rule.DisableBreaker {
 		return false, "", emptyRule
 	}
 	if len(rule.InstantDisableStatusCodes) == 0 {
@@ -980,6 +981,7 @@ func runtimeRuleFromConfig(rule common.ChannelBreakerRule, fallback channelBreak
 // 供未返回结构化额度错误码的上游与状态码 403 配合兜底，开箱即用。
 var defaultInstantDisableKeywordList = []string{
 	"insufficient account balance",
+	"insufficient balance",
 	"insufficient user quota",
 	"insufficient_user_quota",
 	"用户额度不足",

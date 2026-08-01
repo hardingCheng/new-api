@@ -107,7 +107,7 @@ const BUILTIN_BREAKER_RULE = normalizeBreakerRule({
   instant_disable_enabled: true,
   instant_disable_status_codes: '403',
   instant_disable_keywords:
-    'insufficient account balance\ninsufficient user quota\ninsufficient_user_quota\n预扣费额度失败',
+    'insufficient account balance\ninsufficient balance\ninsufficient user quota\ninsufficient_user_quota\n预扣费额度失败',
 })
 
 function pickConfig(settings: OperationsSettings): BreakerConfig {
