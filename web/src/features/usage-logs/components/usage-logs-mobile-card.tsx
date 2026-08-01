@@ -359,6 +359,10 @@ function TaskLogsCard<TData>({
         <SummaryField label={t('Submit Time')} cell={submitTimeCell} />
         <SummaryField label={t('Channel')} cell={cells.get('channel')} />
         <SummaryField label={t('User')} cell={cells.get('user')} primaryOnly />
+        <SummaryField
+          label={t('Upstream Task ID')}
+          cell={cells.get('upstream_task_id')}
+        />
         <SummaryField label={t('Model')} cell={cells.get('model_name')} />
         <SummaryField
           label={t('Video Duration')}

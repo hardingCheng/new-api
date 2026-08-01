@@ -216,6 +216,27 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
 
   if (isAdmin) {
     columns.push({
+      accessorKey: 'upstream_task_id',
+      header: t('Upstream Task ID'),
+      cell: ({ row }) => {
+        const upstreamTaskId = row.getValue('upstream_task_id') as string
+        if (!upstreamTaskId) {
+          return <span className='text-muted-foreground/60 text-xs'>-</span>
+        }
+        return (
+          <StatusBadge
+            label={upstreamTaskId}
+            copyText={upstreamTaskId}
+            variant='neutral'
+            size='sm'
+            className='border-border/60 bg-muted/30 !text-foreground max-w-[210px] rounded-md border px-1.5 py-0.5 font-mono'
+          />
+        )
+      },
+      size: 210,
+    })
+
+    columns.push({
       accessorKey: 'model_name',
       header: t('Model'),
       cell: ({ row }) => {

@@ -5096,6 +5096,7 @@
     "Upstream Response (billing-usage-openai-estimated)": "Réponse amont (billing-usage-openai-estimated)",
     "Upstream Response (billing-usage-openai)": "Réponse amont (billing-usage-openai)",
     "upstream services integrated": "services en amont intégrés",
+    "Upstream Task ID": "ID de tâche en amont",
     "Upstream Updates": "Mises à jour en amont",
     "Upstream URL": "URL amont",
     "Upstream URL must be a full URL": "L’URL amont doit etre une URL complete",

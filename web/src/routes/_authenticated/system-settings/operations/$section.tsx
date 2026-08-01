@@ -28,6 +28,13 @@ export const Route = createFileRoute(
   '/_authenticated/system-settings/operations/$section'
 )({
   beforeLoad: ({ params }) => {
+    if (params.section === 'alerts') {
+      throw redirect({
+        to: '/system-settings/operations/$section',
+        params: { section: 'channel-breaker' },
+      })
+    }
+
     if (params.section === 'monitoring') {
       throw redirect({
         to: '/system-settings/models/$section',

@@ -508,6 +508,7 @@ export function ChannelBreakerSection(props: {
                 t('Model'),
                 t('Group'),
                 t('Rule'),
+                t('Reason'),
                 t('Failures'),
                 t('Cooldown'),
               ]}
@@ -532,6 +533,18 @@ export function ChannelBreakerSection(props: {
                     <TableCell>{item.model_name || '-'}</TableCell>
                     <TableCell>{item.using_group || '-'}</TableCell>
                     <TableCell>{item.rule_name || '-'}</TableCell>
+                    <TableCell className='max-w-[480px] min-w-[260px] align-top'>
+                      {item.reason ? (
+                        <span
+                          data-slot='channel-breaker-reason'
+                          className='block text-sm leading-5 break-words whitespace-normal'
+                        >
+                          {item.reason}
+                        </span>
+                      ) : (
+                        <span className='text-muted-foreground'>-</span>
+                      )}
+                    </TableCell>
                     <TableCell>{instant ? '-' : item.failures}</TableCell>
                     <TableCell>{instant ? '-' : item.cooldown_secs}</TableCell>
                   </TableRow>

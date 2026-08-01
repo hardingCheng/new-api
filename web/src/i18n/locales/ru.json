@@ -5096,6 +5096,7 @@
     "Upstream Response (billing-usage-openai-estimated)": "Ответ upstream (billing-usage-openai-estimated)",
     "Upstream Response (billing-usage-openai)": "Ответ upstream (billing-usage-openai)",
     "upstream services integrated": "интеграций с вышестоящими сервисами",
+    "Upstream Task ID": "ID задачи провайдера",
     "Upstream Updates": "Обновления вышестоящих моделей",
     "Upstream URL": "URL вышестоящего сервиса",
     "Upstream URL must be a full URL": "Upstream URL должен быть полным URL",

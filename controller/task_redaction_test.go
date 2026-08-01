@@ -12,6 +12,9 @@ import (
 func TestTasksToDtoRecursivelyRedactsUserTaskData(t *testing.T) {
 	task := &model.Task{
 		TaskID: "task_public",
+		PrivateData: model.TaskPrivateData{
+			UpstreamTaskID: "upstream-private-task-id",
+		},
 		Properties: model.Properties{
 			OriginModelName:   "public-video-model",
 			UpstreamModelName: "provider-secret-model",
@@ -52,8 +55,9 @@ func TestTasksToDtoRecursivelyRedactsUserTaskData(t *testing.T) {
 		}`),
 	}
 
-	items := tasksToDto([]*model.Task{task}, false)
+	items := tasksToDto([]*model.Task{task}, taskDtoOptions{})
 	require.Len(t, items, 1)
+	assert.Empty(t, items[0].UpstreamTaskID)
 
 	properties, ok := items[0].Properties.(model.Properties)
 	require.True(t, ok)
@@ -107,6 +111,28 @@ func TestTasksToDtoRecursivelyRedactsUserTaskData(t *testing.T) {
 	assert.NotContains(t, string(items[0].Data), "upstream-operation")
 }
 
+func TestTasksToDtoIncludesUpstreamTaskIDForAdmin(t *testing.T) {
+	task := &model.Task{
+		TaskID: "task_public",
+		PrivateData: model.TaskPrivateData{
+			UpstreamTaskID: "upstream-private-task-id",
+		},
+	}
+
+	items := tasksToDto([]*model.Task{task}, taskDtoOptions{
+		adminView:             true,
+		includeUpstreamTaskID: true,
+	})
+	require.Len(t, items, 1)
+	assert.Equal(t, "upstream-private-task-id", items[0].UpstreamTaskID)
+
+	exportItems := tasksToDto([]*model.Task{task}, taskDtoOptions{
+		adminView: true,
+	})
+	require.Len(t, exportItems, 1)
+	assert.Empty(t, exportItems[0].UpstreamTaskID)
+}
+
 func TestTasksToDtoDoesNotPromoteLegacyUpstreamModelToPublicName(t *testing.T) {
 	task := &model.Task{
 		TaskID: "task_legacy",
@@ -116,7 +142,7 @@ func TestTasksToDtoDoesNotPromoteLegacyUpstreamModelToPublicName(t *testing.T) {
 		Data: []byte(`{"model":"provider-secret-model"}`),
 	}
 
-	items := tasksToDto([]*model.Task{task}, false)
+	items := tasksToDto([]*model.Task{task}, taskDtoOptions{})
 	require.Len(t, items, 1)
 	assert.Empty(t, items[0].ModelName)
 	assert.NotContains(t, string(items[0].Data), "provider-secret-model")

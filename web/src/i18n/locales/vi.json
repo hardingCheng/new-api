@@ -5096,6 +5096,7 @@
     "Upstream Response (billing-usage-openai-estimated)": "Phản hồi upstream (billing-usage-openai-estimated)",
     "Upstream Response (billing-usage-openai)": "Phản hồi upstream (billing-usage-openai)",
     "upstream services integrated": "dịch vụ thượng nguồn tích hợp",
+    "Upstream Task ID": "ID tác vụ thượng nguồn",
     "Upstream Updates": "Cập nhật nguồn",
     "Upstream URL": "URL upstream",
     "Upstream URL must be a full URL": "URL upstream phải là URL đầy đủ",

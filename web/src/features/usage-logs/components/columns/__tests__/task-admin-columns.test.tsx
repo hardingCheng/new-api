@@ -72,6 +72,7 @@ const taskLog: TaskLog = {
   username: 'admin-test-user',
   platform: '1',
   task_id: 'task_admin_metrics',
+  upstream_task_id: 'provider-task-987654321',
   action: 'textGenerate',
   channel_id: 42,
   channel_name: 'primary-video-channel',
@@ -153,6 +154,36 @@ test('admin task columns show channel and video billing metrics', async () => {
     /#42.*primary-video-channel/
   )
   assert.equal(
+    rendered.container.querySelector('[data-header-id="upstream_task_id"]')
+      ?.textContent,
+    'Upstream Task ID'
+  )
+  const upstreamTaskId = rendered.container.querySelector(
+    '[data-cell-id="upstream_task_id"]'
+  )
+  assert.equal(upstreamTaskId?.textContent, taskLog.upstream_task_id)
+
+  let copiedUpstreamTaskId = ''
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: {
+      writeText: async (text: string) => {
+        copiedUpstreamTaskId = text
+      },
+    },
+  })
+  const upstreamTaskIdBadge = upstreamTaskId?.querySelector<HTMLElement>(
+    '[data-slot="status-badge"]'
+  )
+  assert.ok(upstreamTaskIdBadge)
+  await act(async () =>
+    upstreamTaskIdBadge.dispatchEvent(
+      new MouseEvent('click', { bubbles: true })
+    )
+  )
+  assert.equal(copiedUpstreamTaskId, taskLog.upstream_task_id)
+
+  assert.equal(
     rendered.container.querySelector('[data-header-id="model_name"]')
       ?.textContent,
     'Model'
@@ -210,6 +241,7 @@ test('non-admin task columns hide channel and billing metrics', async () => {
 
   for (const columnId of [
     'channel',
+    'upstream_task_id',
     'model_name',
     'video_duration',
     'billing',
