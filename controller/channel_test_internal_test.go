@@ -358,6 +358,42 @@ func TestUnsupportedChannelIsNotTreatedAsSuccessfulDuringRecovery(t *testing.T) 
 	require.False(t, result.successful())
 }
 
+func TestBreakerRetestUsesRecordedModelGroupAndKey(t *testing.T) {
+	channel := &model.Channel{
+		Id:  390,
+		Key: "key-a\nkey-b",
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey: true,
+		},
+	}
+	keyHash := service.ChannelBreakerKeyHash("key-b")
+	selection, ok := resolveBreakerRetestKeySelection(channel, keyHash)
+	require.True(t, ok)
+	require.Equal(t, 1, selection.Index)
+
+	status := service.ChannelBreakerStatus{
+		ChannelId: channel.Id,
+		KeyHash:   keyHash,
+		Model:     "gpt-image-2-pro",
+		Group:     "gpt image",
+	}
+	target, err := resolveBreakerRetestTarget(channel, status)
+	require.NoError(t, err)
+	require.Equal(t, "gpt-image-2-pro", target.Model)
+	require.Equal(t, "gpt image", target.Group)
+	require.Equal(t, []channelTestKeySelection{{Index: 1}}, target.KeySelections)
+
+	singleKeyChannel := &model.Channel{Id: 391, Key: "only-key"}
+	singleKeyStatus := service.ChannelBreakerStatus{
+		ChannelId: singleKeyChannel.Id,
+		KeyHash:   service.ChannelBreakerKeyHash("only-key"),
+		Model:     "gpt-image-2-pro",
+	}
+	singleKeyTarget, err := resolveBreakerRetestTarget(singleKeyChannel, singleKeyStatus)
+	require.NoError(t, err)
+	require.Empty(t, singleKeyTarget.KeySelections)
+}
+
 func TestTestAllChannelsRejectsExistingActiveTask(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.SystemTask{}, &model.SystemTaskLock{}))
