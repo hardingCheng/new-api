@@ -75,9 +75,20 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	//originalModel := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
 
 	var (
-		newAPIError *types.NewAPIError
-		ws          *websocket.Conn
+		newAPIError  *types.NewAPIError
+		ws           *websocket.Conn
+		imageRequest *dto.ImageRequest
 	)
+
+	imageRelayMode := relayconstant.Path2RelayMode(c.Request.URL.Path)
+	imagePayloadLogEnabled := relayFormat == types.RelayFormatOpenAIImage &&
+		(imageRelayMode == relayconstant.RelayModeImagesGenerations || imageRelayMode == relayconstant.RelayModeImagesEdits)
+	if imagePayloadLogEnabled {
+		finishPayloadLog := relay.StartImageFailurePayloadLog(c)
+		defer func() {
+			finishPayloadLog(imageRequest)
+		}()
+	}
 
 	if relayFormat == types.RelayFormatOpenAIRealtime {
 		var err error
@@ -110,6 +121,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}()
 
 	request, err := helper.GetAndValidateRequest(c, relayFormat)
+	if imagePayloadLogEnabled {
+		imageRequest, _ = request.(*dto.ImageRequest)
+	}
 	if err != nil {
 		// Map "request body too large" to 413 so clients can handle it correctly
 		if common.IsRequestBodyTooLargeError(err) || errors.Is(err, common.ErrRequestBodyTooLarge) {
