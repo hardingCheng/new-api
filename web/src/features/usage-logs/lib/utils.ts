@@ -92,24 +92,6 @@ function timestampToSeconds(ms: number): number {
 }
 
 /**
- * Build query parameters from filters
- */
-export function buildQueryParams(
-  params: Record<string, unknown>
-): URLSearchParams {
-  const queryParams = new URLSearchParams()
-
-  Object.entries(params).forEach(([key, value]) => {
-    // Keep 0 as a valid value, only filter out undefined, null, and empty string
-    if (value !== undefined && value !== null && value !== '') {
-      queryParams.append(key, String(value))
-    }
-  })
-
-  return queryParams
-}
-
-/**
  * Build time range parameters with default values
  * Shared logic for all log types
  */
@@ -209,7 +191,9 @@ export function buildApiParams(config: {
     ...(searchParams.type ? { type: processType(searchParams.type) } : {}),
     ...(searchParams.model ? { model_name: String(searchParams.model) } : {}),
     ...(searchParams.token ? { token_name: String(searchParams.token) } : {}),
-    ...(searchParams.group ? { group: String(searchParams.group) } : {}),
+    ...(isAdmin && searchParams.group
+      ? { group: String(searchParams.group) }
+      : {}),
     ...(isAdmin && searchParams.channel
       ? { channel: Number(searchParams.channel) || 0 }
       : {}),
@@ -239,7 +223,7 @@ export function buildApiParams(config: {
           params.token_name = String(value)
           break
         case 'group':
-          params.group = String(value)
+          if (isAdmin) params.group = String(value)
           break
         case 'channel':
           if (isAdmin) params.channel = Number(value) || 0

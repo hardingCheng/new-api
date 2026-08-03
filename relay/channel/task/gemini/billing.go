@@ -1,9 +1,11 @@
 package gemini
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
+	taskcommon "github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
 
@@ -82,6 +84,38 @@ func ResolveVeoResolution(metadata map[string]any, stdSize string) string {
 		return SizeToVeoResolution(stdSize)
 	}
 	return "720p"
+}
+
+// ResolveVeoRequestParameters applies metadata and standard request fields,
+// then validates the exact parameters shared by billing and the upstream body.
+func ResolveVeoRequestParameters(req relaycommon.TaskSubmitReq) (*VeoParameters, error) {
+	params := &VeoParameters{}
+	if err := taskcommon.UnmarshalMetadata(req.Metadata, params); err != nil {
+		return nil, err
+	}
+
+	if _, metadataDurationSet := req.Metadata["durationSeconds"]; !metadataDurationSet {
+		params.DurationSeconds = ResolveVeoDuration(nil, req.Duration, req.Seconds)
+	}
+	if params.DurationSeconds <= 0 || params.DurationSeconds > relaycommon.MaxTaskDurationSeconds {
+		return nil, fmt.Errorf("durationSeconds must be between 1 and %d", relaycommon.MaxTaskDurationSeconds)
+	}
+
+	if params.Resolution == "" {
+		params.Resolution = ResolveVeoResolution(nil, req.Size)
+	}
+	params.Resolution = strings.ToLower(strings.TrimSpace(params.Resolution))
+	switch params.Resolution {
+	case "720p", "1080p", "4k":
+	default:
+		return nil, fmt.Errorf("invalid resolution: %s", params.Resolution)
+	}
+
+	if params.AspectRatio == "" && req.Size != "" {
+		params.AspectRatio = SizeToVeoAspectRatio(req.Size)
+	}
+	params.SampleCount = 1
+	return params, nil
 }
 
 // SizeToVeoResolution converts a "WxH" size string to a Veo resolution label.

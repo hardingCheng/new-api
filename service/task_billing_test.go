@@ -292,6 +292,31 @@ func TestTaskBillingContextPriceDataFiltersMultiplier(t *testing.T) {
 	}, priceData.OtherRatios())
 }
 
+func TestTaskBillingContextUsesConfiguredVideoBillingMode(t *testing.T) {
+	givenVideoModes := ratio_setting.VideoBillingMode2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateVideoBillingModeByJSONString(givenVideoModes))
+	})
+
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "fixed-price-video",
+		PriceData: types.PriceData{
+			UsePrice:   true,
+			ModelPrice: 0.8,
+		},
+	}
+
+	require.NoError(t, ratio_setting.UpdateVideoBillingModeByJSONString(`{}`))
+	perSecondContext := taskBillingContextFromRelayInfo(info)
+	assert.Equal(t, ratio_setting.VideoBillingModePerSecond, perSecondContext.VideoBillingMode)
+	assert.False(t, perSecondContext.PerCallBilling)
+
+	require.NoError(t, ratio_setting.UpdateVideoBillingModeByJSONString(`{"fixed-price-video":"per_call"}`))
+	perCallContext := taskBillingContextFromRelayInfo(info)
+	assert.Equal(t, ratio_setting.VideoBillingModePerCall, perCallContext.VideoBillingMode)
+	assert.True(t, perCallContext.PerCallBilling)
+}
+
 // ---------------------------------------------------------------------------
 // Read-back helpers
 // ---------------------------------------------------------------------------
@@ -367,7 +392,7 @@ func TestRefundTaskQuota_Wallet(t *testing.T) {
 	task := makeTask(userID, channelID, preConsumed, tokenID, BillingSourceWallet, 0)
 	require.NoError(t, model.DB.Create(task).Error)
 
-	assert.NoError(t, RefundTaskQuota(ctx, task, "task failed: upstream error"))
+	require.NoError(t, RefundTaskQuota(ctx, task, "task failed: upstream error"))
 
 	// User quota should increase by preConsumed
 	assert.Equal(t, initQuota+preConsumed, getUserQuota(t, userID))
@@ -384,6 +409,12 @@ func TestRefundTaskQuota_Wallet(t *testing.T) {
 	assert.Equal(t, "test-model", log.ModelName)
 	// 新契约：保留 quota 作为扣费记录，改由 billing_adjustments 的唯一键防重复退款
 	assert.Equal(t, model.TaskBillingStatusRefunded, task.BillingStatus)
+	assert.Equal(t, preConsumed, task.Quota)
+	assert.Equal(t, preConsumed, task.PrivateData.RefundQuota)
+	assert.Equal(t, preConsumed, getTaskQuota(t, task.ID))
+	var persistedTask model.Task
+	require.NoError(t, model.DB.First(&persistedTask, task.ID).Error)
+	assert.Equal(t, preConsumed, persistedTask.PrivateData.RefundQuota)
 }
 
 func TestRefundTaskQuota_Subscription(t *testing.T) {
@@ -403,7 +434,7 @@ func TestRefundTaskQuota_Subscription(t *testing.T) {
 	task := makeTask(userID, channelID, preConsumed, tokenID, BillingSourceSubscription, subID)
 	require.NoError(t, model.DB.Create(task).Error)
 
-	assert.NoError(t, RefundTaskQuota(ctx, task, "subscription task failed"))
+	require.NoError(t, RefundTaskQuota(ctx, task, "subscription task failed"))
 
 	// Subscription used should decrease by preConsumed
 	assert.Equal(t, subUsed-int64(preConsumed), getSubscriptionUsed(t, subID))
@@ -426,7 +457,7 @@ func TestRefundTaskQuota_ZeroQuota(t *testing.T) {
 
 	task := makeTask(userID, 0, 0, 0, BillingSourceWallet, 0)
 
-	assert.NoError(t, RefundTaskQuota(ctx, task, "zero quota task"))
+	require.NoError(t, RefundTaskQuota(ctx, task, "zero quota task"))
 
 	// No change to user quota
 	assert.Equal(t, 5000, getUserQuota(t, userID))
@@ -448,7 +479,7 @@ func TestRefundTaskQuota_NoToken(t *testing.T) {
 	task := makeTask(userID, channelID, preConsumed, 0, BillingSourceWallet, 0) // TokenId=0
 	require.NoError(t, model.DB.Create(task).Error)
 
-	assert.NoError(t, RefundTaskQuota(ctx, task, "no token task failed"))
+	require.NoError(t, RefundTaskQuota(ctx, task, "no token task failed"))
 
 	// User quota refunded
 	assert.Equal(t, initQuota+preConsumed, getUserQuota(t, userID))
@@ -470,7 +501,7 @@ func TestRefundTaskQuota_FundingFailureKeepsPendingMarker(t *testing.T) {
 	task.Status = model.TaskStatusFailure
 	require.NoError(t, model.DB.Create(task).Error)
 
-	assert.Error(t, RefundTaskQuota(ctx, task, "subscription missing"))
+	require.Error(t, RefundTaskQuota(ctx, task, "subscription missing"))
 	assert.Equal(t, preConsumed, task.Quota)
 	assert.Equal(t, preConsumed, getTaskQuota(t, task.ID))
 	assert.Equal(t, int64(0), countLogs(t))

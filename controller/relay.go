@@ -11,7 +11,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/dto"
+	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
@@ -20,10 +20,11 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/samber/lo"
@@ -74,9 +75,20 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	//originalModel := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
 
 	var (
-		newAPIError *types.NewAPIError
-		ws          *websocket.Conn
+		newAPIError  *types.NewAPIError
+		ws           *websocket.Conn
+		imageRequest *dto.ImageRequest
 	)
+
+	imageRelayMode := relayconstant.Path2RelayMode(c.Request.URL.Path)
+	imagePayloadLogEnabled := relayFormat == types.RelayFormatOpenAIImage &&
+		(imageRelayMode == relayconstant.RelayModeImagesGenerations || imageRelayMode == relayconstant.RelayModeImagesEdits)
+	if imagePayloadLogEnabled {
+		finishPayloadLog := relay.StartImageFailurePayloadLog(c)
+		defer func() {
+			finishPayloadLog(imageRequest)
+		}()
+	}
 
 	if relayFormat == types.RelayFormatOpenAIRealtime {
 		var err error
@@ -110,6 +122,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}()
 
 	request, err := helper.GetAndValidateRequest(c, relayFormat)
+	if imagePayloadLogEnabled {
+		imageRequest, _ = request.(*dto.ImageRequest)
+	}
 	if err != nil {
 		// Map "request body too large" to 413 so clients can handle it correctly
 		if common.IsRequestBodyTooLargeError(err) || errors.Is(err, common.ErrRequestBodyTooLarge) {
@@ -125,7 +140,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
-	if message, blocked := operation_setting.IsSeedanceResourcePoolGuardBlocked(relayInfo.UserId, relayInfo.OriginModelName); blocked {
+	if message, blocked := operation_setting.IsSeedanceResourcePoolGuardBlocked(relayInfo.UserId, relayInfo.EffectiveRoutingModelName()); blocked {
 		recordSeedanceResourcePoolGuardErrorLog(c, relayInfo, message, "get_channel_failed", http.StatusTooManyRequests)
 		newAPIError = types.NewErrorWithStatusCode(
 			errors.New(message),
@@ -211,7 +226,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	retryParam := &service.RetryParam{
 		Ctx:         c,
 		TokenGroup:  relayInfo.TokenGroup,
-		ModelName:   relayInfo.OriginModelName,
+		ModelName:   relayInfo.EffectiveRoutingModelName(),
 		RequestPath: c.Request.URL.Path,
 		Retry:       common.GetPointer(0),
 	}
@@ -348,9 +363,12 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		return nil, types.NewError(fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 
-	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName)
+	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, retryParam.ModelName)
 	if newAPIError != nil {
 		return nil, newAPIError
+	}
+	if retryParam.ModelName != info.OriginModelName {
+		common.SetContextKey(c, constant.ContextKeyOriginalModel, info.OriginModelName)
 	}
 	return channel, nil
 }
@@ -513,7 +531,7 @@ func RelayMidjourney(c *gin.Context) {
 		return
 	}
 
-	var mjErr *dto.MidjourneyResponse
+	var mjErr *taskdto.MidjourneyResponse
 	switch relayInfo.RelayMode {
 	case relayconstant.RelayModeMidjourneyNotify:
 		mjErr = relay.RelayMidjourneyNotify(c)
@@ -571,7 +589,7 @@ func RelayNotFound(c *gin.Context) {
 func RelayTaskFetch(c *gin.Context) {
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatTask, nil, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, &dto.TaskError{
+		c.JSON(http.StatusInternalServerError, &taskdto.TaskError{
 			Code:       "gen_relay_info_failed",
 			Message:    err.Error(),
 			StatusCode: http.StatusInternalServerError,
@@ -586,7 +604,7 @@ func RelayTaskFetch(c *gin.Context) {
 func RelayTask(c *gin.Context) {
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatTask, nil, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, &dto.TaskError{
+		c.JSON(http.StatusInternalServerError, &taskdto.TaskError{
 			Code:       "gen_relay_info_failed",
 			Message:    err.Error(),
 			StatusCode: http.StatusInternalServerError,
@@ -598,14 +616,14 @@ func RelayTask(c *gin.Context) {
 		respondTaskError(c, taskErr)
 		return
 	}
-	if message, blocked := operation_setting.IsSeedanceResourcePoolGuardBlocked(relayInfo.UserId, relayInfo.OriginModelName); blocked {
+	if message, blocked := operation_setting.IsSeedanceResourcePoolGuardBlocked(relayInfo.UserId, relayInfo.EffectiveRoutingModelName()); blocked {
 		recordSeedanceResourcePoolGuardErrorLog(c, relayInfo, message, "model_resource_pool_exhausted", http.StatusTooManyRequests)
 		respondTaskError(c, service.TaskErrorWrapperLocal(errors.New(message), "model_resource_pool_exhausted", http.StatusTooManyRequests))
 		return
 	}
 
 	var result *relay.TaskSubmitResult
-	var taskErr *dto.TaskError
+	var taskErr *taskdto.TaskError
 	defer func() {
 		if taskErr != nil {
 			handled, finalizeErr := service.MarkTaskSubmissionFailed(c.Request.Context(), relayInfo.UserId, relayInfo.PublicTaskID, taskErr.Message)
@@ -626,7 +644,7 @@ func RelayTask(c *gin.Context) {
 	retryParam := &service.RetryParam{
 		Ctx:         c,
 		TokenGroup:  relayInfo.TokenGroup,
-		ModelName:   relayInfo.OriginModelName,
+		ModelName:   relayInfo.EffectiveRoutingModelName(),
 		RequestPath: c.Request.URL.Path,
 		Retry:       common.GetPointer(0),
 	}
@@ -641,9 +659,12 @@ func RelayTask(c *gin.Context) {
 				break
 			}
 			if retryParam.GetRetry() > 0 {
-				if setupErr := middleware.SetupContextForSelectedChannel(c, channel, relayInfo.OriginModelName); setupErr != nil {
+				if setupErr := middleware.SetupContextForSelectedChannel(c, channel, relayInfo.EffectiveRoutingModelName()); setupErr != nil {
 					taskErr = service.TaskErrorWrapperLocal(setupErr.Err, "setup_locked_channel_failed", http.StatusInternalServerError)
 					break
+				}
+				if relayInfo.EffectiveRoutingModelName() != relayInfo.OriginModelName {
+					common.SetContextKey(c, constant.ContextKeyOriginalModel, relayInfo.OriginModelName)
 				}
 			}
 		} else {
@@ -729,7 +750,7 @@ func RelayTask(c *gin.Context) {
 }
 
 // respondTaskError 统一输出 Task 错误响应（含 429 限流提示改写）
-func respondTaskError(c *gin.Context, taskErr *dto.TaskError) {
+func respondTaskError(c *gin.Context, taskErr *taskdto.TaskError) {
 	if !taskErr.LocalError && types.MatchesUpstreamBillingLeak(taskErr.Message) {
 		taskErr.StatusCode = http.StatusTooManyRequests
 	}
@@ -739,7 +760,7 @@ func respondTaskError(c *gin.Context, taskErr *dto.TaskError) {
 	c.JSON(taskErr.StatusCode, taskErr)
 }
 
-func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *dto.TaskError, retryTimes int) bool {
+func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *taskdto.TaskError, retryTimes int) bool {
 	if taskErr == nil {
 		return false
 	}

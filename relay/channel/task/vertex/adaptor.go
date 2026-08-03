@@ -14,12 +14,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/dto"
+	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/channel"
 	geminitask "github.com/QuantumNous/new-api/relay/channel/task/gemini"
 	taskcommon "github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	vertexcore "github.com/QuantumNous/new-api/relay/channel/vertex"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 )
 
@@ -75,7 +76,7 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
-func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
+func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *taskdto.TaskError) {
 	// Use the standard validation method for TaskSubmitReq
 	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionTextGenerate)
 }
@@ -122,21 +123,23 @@ func (a *TaskAdaptor) BuildRequestHeader(c *gin.Context, req *http.Request, info
 }
 
 // EstimateBilling returns OtherRatios based on durationSeconds and resolution.
-func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
+func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) (map[string]float64, error) {
 	v, ok := c.Get("task_request")
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	req := v.(relaycommon.TaskSubmitReq)
 
-	seconds := geminitask.ResolveVeoDuration(req.Metadata, req.Duration, req.Seconds)
-	resolution := geminitask.ResolveVeoResolution(req.Metadata, req.Size)
-	resRatio := geminitask.VeoResolutionRatio(info.UpstreamModelName, resolution)
+	params, err := geminitask.ResolveVeoRequestParameters(req)
+	if err != nil {
+		return nil, err
+	}
+	resRatio := geminitask.VeoResolutionRatio(info.UpstreamModelName, params.Resolution)
 
 	return map[string]float64{
-		"seconds":    float64(seconds),
+		"seconds":    float64(params.DurationSeconds),
 		"resolution": resRatio,
-	}
+	}, nil
 }
 
 // BuildRequestBody converts request into Vertex specific format.
@@ -157,23 +160,10 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		}
 	}
 
-	params := &geminitask.VeoParameters{}
-	if err := taskcommon.UnmarshalMetadata(req.Metadata, params); err != nil {
-		return nil, fmt.Errorf("unmarshal metadata failed: %w", err)
+	params, err := geminitask.ResolveVeoRequestParameters(req)
+	if err != nil {
+		return nil, fmt.Errorf("invalid Veo parameters: %w", err)
 	}
-	if params.DurationSeconds == 0 {
-		if duration := geminitask.ResolveVeoDuration(nil, req.Duration, req.Seconds); duration > 0 {
-			params.DurationSeconds = duration
-		}
-	}
-	if params.Resolution == "" && req.Size != "" {
-		params.Resolution = geminitask.SizeToVeoResolution(req.Size)
-	}
-	if params.AspectRatio == "" && req.Size != "" {
-		params.AspectRatio = geminitask.SizeToVeoAspectRatio(req.Size)
-	}
-	params.Resolution = strings.ToLower(params.Resolution)
-	params.SampleCount = 1
 
 	body := geminitask.VeoRequestPayload{
 		Instances:  []geminitask.VeoInstance{instance},
@@ -193,7 +183,7 @@ func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, req
 }
 
 // DoResponse handles upstream response, returns taskID etc.
-func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (taskID string, taskData []byte, taskErr *dto.TaskError) {
+func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (taskID string, taskData []byte, taskErr *taskdto.TaskError) {
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", nil, service.TaskErrorWrapper(err, "read_response_body_failed", http.StatusInternalServerError)

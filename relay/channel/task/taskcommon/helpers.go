@@ -82,8 +82,8 @@ const (
 type BaseBilling struct{}
 
 // EstimateBilling returns nil (no extra ratios; use base model price).
-func (BaseBilling) EstimateBilling(_ *gin.Context, _ *relaycommon.RelayInfo) map[string]float64 {
-	return nil
+func (BaseBilling) EstimateBilling(_ *gin.Context, _ *relaycommon.RelayInfo) (map[string]float64, error) {
+	return nil, nil
 }
 
 // AdjustBillingOnSubmit returns nil (no submit-time adjustment).

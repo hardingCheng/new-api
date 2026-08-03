@@ -18,15 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
-import { type ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import {
-  DataTablePage,
-  DataTableRow,
-  useDataTable,
-} from '@/components/data-table'
+import { DataTablePage, useDataTable } from '@/components/data-table'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { cn } from '@/lib/utils'
@@ -64,7 +60,12 @@ function getColumnVisibilityStorageKey(
 }
 
 function deserializeLogTypeFilter(value: unknown): unknown[] {
-  const values = Array.isArray(value) ? value : value ? [value] : []
+  let values: unknown[] = []
+  if (Array.isArray(value)) {
+    values = value
+  } else if (value) {
+    values = [value]
+  }
   return values.filter((item) => String(item) !== LOG_TYPE_ALL_VALUE)
 }
 
@@ -98,9 +99,13 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
       },
       { columnId: 'model_name', searchKey: 'model', type: 'string' as const },
       { columnId: 'token_name', searchKey: 'token', type: 'string' as const },
-      { columnId: 'group', searchKey: 'group', type: 'string' as const },
       ...(isAdmin
         ? [
+            {
+              columnId: 'group',
+              searchKey: 'group',
+              type: 'string' as const,
+            },
             {
               columnId: 'channel',
               searchKey: 'channel',
@@ -205,7 +210,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
           <TaskLogsFilterBar table={table} logCategory={logCategory} />
         )
       }
-      renderRow={(row) => {
+      getRowClassName={(row) => {
         const logType = (row.original as Record<string, unknown>).type as
           | number
           | undefined
@@ -220,15 +225,9 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
           }
         }
 
-        return (
-          <DataTableRow
-            key={row.id}
-            row={row}
-            className={cn('transition-colors', tintClass)}
-            getColumnClassName={() => (isCommon ? 'py-2' : 'py-3.5')}
-          />
-        )
+        return cn('transition-colors', tintClass)
       }}
+      getColumnClassName={() => (isCommon ? 'py-2' : 'py-3.5')}
     />
   )
 }

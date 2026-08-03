@@ -3,24 +3,25 @@ package dto
 import (
 	"testing"
 
+	relaydto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestScaleUsageCopyDoublesBillingCountersWithoutMutatingProviderUsage(t *testing.T) {
-	inputDetails := &InputTokenDetails{CachedTokens: 9, AudioTokens: 3}
-	original := &Usage{
+	inputDetails := &relaydto.InputTokenDetails{CachedTokens: 9, AudioTokens: 3}
+	original := &relaydto.Usage{
 		PromptTokens:     1000,
 		CompletionTokens: 200,
 		TotalTokens:      1200,
 		InputTokens:      1000,
 		OutputTokens:     200,
-		PromptTokensDetails: InputTokenDetails{
+		PromptTokensDetails: relaydto.InputTokenDetails{
 			CachedTokens:         100,
 			CachedCreationTokens: 20,
 			ImageTokens:          10,
 		},
-		CompletionTokenDetails: OutputTokenDetails{ReasoningTokens: 50},
+		CompletionTokenDetails: relaydto.OutputTokenDetails{ReasoningTokens: 50},
 		InputTokensDetails:     inputDetails,
 	}
 
@@ -43,15 +44,15 @@ func TestScaleUsageCopyDoublesBillingCountersWithoutMutatingProviderUsage(t *tes
 }
 
 func TestScaleRealtimeUsageCopy(t *testing.T) {
-	original := &RealtimeUsage{
+	original := &relaydto.RealtimeUsage{
 		TotalTokens:  120,
 		InputTokens:  100,
 		OutputTokens: 20,
-		InputTokenDetails: InputTokenDetails{
+		InputTokenDetails: relaydto.InputTokenDetails{
 			TextTokens:  80,
 			AudioTokens: 20,
 		},
-		OutputTokenDetails: OutputTokenDetails{
+		OutputTokenDetails: relaydto.OutputTokenDetails{
 			TextTokens:  10,
 			AudioTokens: 10,
 		},

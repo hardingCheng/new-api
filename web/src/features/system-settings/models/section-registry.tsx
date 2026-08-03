@@ -25,6 +25,7 @@ import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
 import { RoutingReliabilitySection } from './routing-reliability-section'
+import { UserModelViewSection } from './user-model-view-section'
 
 function formatJsonForEditor(value: string, fallback: string) {
   const raw = (value ?? '').toString().trim()
@@ -86,6 +87,15 @@ const MODELS_SECTIONS = [
           'monitor_setting.channel_test_mode':
             settings['monitor_setting.channel_test_mode'],
         }}
+      />
+    ),
+  },
+  {
+    id: 'user-model-views',
+    titleKey: 'User Model Views',
+    build: (settings: ModelSettings) => (
+      <UserModelViewSection
+        defaultValue={settings.UserModelView ?? '{"rules":[]}'}
       />
     ),
   },

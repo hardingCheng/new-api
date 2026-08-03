@@ -1,10 +1,13 @@
 package dto
 
-import "github.com/QuantumNous/new-api/common"
+import (
+	"github.com/QuantumNous/new-api/common"
+	relaydto "github.com/QuantumNous/new-api/relaykit/dto"
+)
 
 // ScaleUsageCopy returns an independently scalable usage value so contractual
 // billing/display adjustments never mutate the provider's original usage.
-func ScaleUsageCopy(usage *Usage, multiplier int) *Usage {
+func ScaleUsageCopy(usage *relaydto.Usage, multiplier int) *relaydto.Usage {
 	if usage == nil || multiplier <= 1 {
 		return usage
 	}
@@ -29,7 +32,7 @@ func ScaleUsageCopy(usage *Usage, multiplier int) *Usage {
 	return &scaled
 }
 
-func ScaleRealtimeUsageCopy(usage *RealtimeUsage, multiplier int) *RealtimeUsage {
+func ScaleRealtimeUsageCopy(usage *relaydto.RealtimeUsage, multiplier int) *relaydto.RealtimeUsage {
 	if usage == nil || multiplier <= 1 {
 		return usage
 	}
@@ -43,7 +46,7 @@ func ScaleRealtimeUsageCopy(usage *RealtimeUsage, multiplier int) *RealtimeUsage
 	return &scaled
 }
 
-func scaleInputTokenDetails(details *InputTokenDetails, multiplier int) {
+func scaleInputTokenDetails(details *relaydto.InputTokenDetails, multiplier int) {
 	if details == nil {
 		return
 	}
@@ -55,7 +58,7 @@ func scaleInputTokenDetails(details *InputTokenDetails, multiplier int) {
 	details.ImageTokens = common.ScaleTokenCount(details.ImageTokens, multiplier)
 }
 
-func scaleOutputTokenDetails(details *OutputTokenDetails, multiplier int) {
+func scaleOutputTokenDetails(details *relaydto.OutputTokenDetails, multiplier int) {
 	if details == nil {
 		return
 	}

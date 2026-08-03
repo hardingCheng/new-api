@@ -83,6 +83,7 @@ type FlatMonitoringDefaults = {
 
 type MonitoringSettingsSectionProps = {
   defaultValues: FlatMonitoringDefaults
+  showTitle?: boolean
 }
 
 const buildFormDefaults = (
@@ -124,6 +125,7 @@ const normalizeFormValues = (
 
 export function MonitoringSettingsSection({
   defaultValues,
+  showTitle = false,
 }: MonitoringSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
@@ -178,7 +180,7 @@ export function MonitoringSettingsSection({
     baselineSerializedRef.current = JSON.stringify(normalized)
   }
 
-  return (
+  const section = (
     <SettingsSection title={t('Monitoring & Alerts')}>
       <Form {...form}>
         <SettingsForm onSubmit={form.handleSubmit(onSubmit)}>
@@ -316,5 +318,14 @@ export function MonitoringSettingsSection({
         </SettingsForm>
       </Form>
     </SettingsSection>
+  )
+
+  if (!showTitle) return section
+
+  return (
+    <div className='flex flex-col gap-4'>
+      <h2 className='text-base font-semibold'>{t('Monitoring & Alerts')}</h2>
+      {section}
+    </div>
   )
 }

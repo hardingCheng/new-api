@@ -121,6 +121,7 @@ function formatImageResolution(raw: string): string {
   else if (maxDimension <= 4096) tier = '4K'
   return `${tier} (${width}x${height})`
 }
+
 function buildDetailSegments(
   log: UsageLog,
   other: LogOtherData | null,
@@ -319,26 +320,36 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
   const { t } = useTranslation()
   const columns: ColumnDef<UsageLog>[] = [
     {
+      accessorKey: 'type',
+      header: t('Type'),
+      cell: ({ row }) => {
+        const config = getLogTypeConfig(row.original.type)
+
+        return (
+          <StatusBadge
+            label={t(config.label)}
+            variant={config.color as StatusBadgeProps['variant']}
+            size='sm'
+            showDot
+            copyable={false}
+            className='rounded-md border border-current/20 bg-current/10 px-2 py-0.5 font-semibold'
+            aria-label={`${t('Type')}: ${t(config.label)}`}
+          />
+        )
+      },
+      enableHiding: false,
+      size: 100,
+    },
+    {
       accessorKey: 'created_at',
       header: t('Time'),
       cell: ({ row }) => {
-        const log = row.original
         const timestamp = row.getValue('created_at') as number
-        const config = getLogTypeConfig(log.type)
 
         return (
-          <div className='flex min-w-0 flex-col gap-0.5'>
-            <span className='truncate font-mono text-xs tabular-nums'>
-              {formatTimestampToDate(timestamp)}
-            </span>
-            <StatusBadge
-              label={t(config.label)}
-              variant={config.color as StatusBadgeProps['variant']}
-              size='sm'
-              copyable={false}
-              className='-ml-1.5 !text-xs [&_span]:!text-xs'
-            />
-          </div>
+          <span className='truncate font-mono text-xs tabular-nums'>
+            {formatTimestampToDate(timestamp)}
+          </span>
         )
       },
       filterFn: (row, _id, value) => {
@@ -347,7 +358,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         return value.includes(String(row.original.type))
       },
       enableHiding: false,
-      size: 180,
+      size: 165,
     },
   ]
 
@@ -563,6 +574,40 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             </button>
           )
         },
+      },
+      {
+        accessorKey: 'group',
+        header: t('Group'),
+        cell: function GroupCell({ row }) {
+          const { sensitiveVisible } = useUsageLogsContext()
+          const log = row.original
+          if (!isDisplayableLogType(log.type)) return null
+
+          const other = parseLogOther(log.other)
+          const group = log.group || other?.group || ''
+          const groupRatio = getGroupRatio(other)
+          if (!group && groupRatio == null) return null
+
+          return (
+            <div className='flex max-w-[120px] min-w-0 items-baseline gap-1 overflow-hidden'>
+              {group ? (
+                <GroupBadge
+                  group={group}
+                  label={sensitiveVisible ? undefined : '••••'}
+                  type='text'
+                  size='sm'
+                  className='min-w-0 text-xs leading-none [&>span]:truncate [&>span]:leading-none'
+                />
+              ) : null}
+              {groupRatio != null ? (
+                <span className='text-muted-foreground/60 shrink-0 text-xs leading-none tabular-nums'>
+                  {formatRatioCompact(groupRatio)}x
+                </span>
+              ) : null}
+            </div>
+          )
+        },
+        size: 110,
       }
     )
   }
@@ -578,53 +623,28 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       const tokenName = log.token_name
       if (!tokenName) return null
 
-      const other = parseLogOther(log.other)
       const displayName = sensitiveVisible ? tokenName : '••••'
-      let group = log.group
-      if (!group) group = other?.group || ''
-      const groupRatio = getGroupRatio(other)
 
       return (
-        <div className='flex max-w-[200px] flex-col gap-0.5'>
-          <TooltipProvider delay={300}>
-            <Tooltip>
-              <TooltipTrigger render={<div className='max-w-full' />}>
-                <StatusBadge
-                  label={displayName}
-                  icon={KeyRound}
-                  copyText={sensitiveVisible ? tokenName : undefined}
-                  size='sm'
-                  showDot={false}
-                  className='border-border/60 bg-muted/30 text-foreground h-6 max-w-full gap-1.5 overflow-hidden rounded-md border px-2 py-0.5 [font-family:var(--font-body)]'
-                />
-              </TooltipTrigger>
-              {sensitiveVisible && tokenName.length > 16 && (
-                <TooltipContent side='top' className='max-w-xs break-all'>
-                  {tokenName}
-                </TooltipContent>
-              )}
-            </Tooltip>
-          </TooltipProvider>
-          {(group || groupRatio != null) && (
-            <span className='block max-w-full truncate text-xs leading-none'>
-              {group ? (
-                <GroupBadge
-                  group={group}
-                  label={sensitiveVisible ? undefined : '••••'}
-                  type='text'
-                  size='sm'
-                  className='inline align-baseline text-xs leading-none [&>span]:leading-none'
-                />
-              ) : null}
-              {group && groupRatio != null ? ' ' : null}
-              {groupRatio != null ? (
-                <span className='text-muted-foreground/60 relative top-px align-baseline tabular-nums'>
-                  {formatRatioCompact(groupRatio)}x
-                </span>
-              ) : null}
-            </span>
-          )}
-        </div>
+        <TooltipProvider delay={300}>
+          <Tooltip>
+            <TooltipTrigger render={<div className='max-w-[200px]' />}>
+              <StatusBadge
+                label={displayName}
+                icon={KeyRound}
+                copyText={sensitiveVisible ? tokenName : undefined}
+                size='sm'
+                showDot={false}
+                className='border-border/60 bg-muted/30 text-foreground h-6 max-w-full gap-1.5 overflow-hidden rounded-md border px-2 py-0.5 [font-family:var(--font-body)]'
+              />
+            </TooltipTrigger>
+            {sensitiveVisible && tokenName.length > 16 && (
+              <TooltipContent side='top' className='max-w-xs break-all'>
+                {tokenName}
+              </TooltipContent>
+            )}
+          </Tooltip>
+        </TooltipProvider>
       )
     },
     size: 160,
@@ -840,6 +860,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       },
       size: 180,
       maxSize: 200,
+      meta: { pinned: 'right' as const },
     }
   )
 

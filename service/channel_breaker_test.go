@@ -14,8 +14,8 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
@@ -202,6 +202,11 @@ func TestChannelBreakerExcludesVideos(t *testing.T) {
 		require.False(t, opened)
 	}
 	require.True(t, AllowChannelByBreaker(c, channelError))
+
+	balanceErr := types.NewErrorWithStatusCode(
+		errors.New("Insufficient account balance"), types.ErrorCodeBadResponse, http.StatusForbidden)
+	shouldDisable, _, _ := shouldInstantDisableChannel(c, channelError, balanceErr)
+	require.True(t, shouldDisable, "video path exclusions must not suppress terminal upstream balance handling")
 }
 
 func TestChannelBreakerHalfOpenRestoresAfterMajoritySuccess(t *testing.T) {
@@ -910,6 +915,11 @@ func TestInstantDisableBuiltinDefault(t *testing.T) {
 	should, _, rule := shouldInstantDisableChannel(c, channelError, upstreamErr)
 	require.True(t, should)
 	require.Equal(t, "global-default", rule.Id)
+
+	upstreamShortBalanceErr := types.NewErrorWithStatusCode(
+		errors.New("insufficient balance"), types.ErrorCodeBadResponse, http.StatusForbidden)
+	should, _, _ = shouldInstantDisableChannel(c, channelError, upstreamShortBalanceErr)
+	require.True(t, should)
 
 	// 我方扣费失败带 skipRetry，内置规则也不能误触发
 	ownQuotaErr := types.NewErrorWithStatusCode(

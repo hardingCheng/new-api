@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel"
 	taskcommon "github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relaydto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
@@ -124,15 +125,15 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 }
 
 // EstimateBilling 根据用户请求的 seconds 和 size 计算 OtherRatios。
-func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
+func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) (map[string]float64, error) {
 	// remix 路径的 OtherRatios 已在 ResolveOriginTask 中设置
 	if info.Action == constant.TaskActionRemix {
-		return nil
+		return nil, nil
 	}
 
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	seconds := relaycommon.EffectiveTaskDuration(req)
@@ -140,8 +141,11 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		seconds = 4
 	}
 	referenceSeconds := 0
-	if relaycommon.IsSeedanceVideoModel(req.Model) || relaycommon.IsSeedanceVideoModel(info.OriginModelName) {
-		referenceSeconds = service.SumReferenceVideoDurationSeconds(c, relaycommon.ExtractReferenceVideoURLs(req))
+	if relaycommon.IsSeedanceRelayModel(info, req.Model) {
+		referenceSeconds, err = service.SumReferenceVideoDurationSeconds(c, relaycommon.ExtractReferenceVideoURLs(req))
+		if err != nil {
+			return nil, err
+		}
 	}
 	billableSeconds := seconds + referenceSeconds
 	c.Set("generated_video_seconds", seconds)
@@ -159,7 +163,7 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		"seconds": float64(billableSeconds),
 		"size":    1,
 	}
-	return ratios
+	return ratios, nil
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
@@ -191,10 +195,16 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		var bodyMap map[string]interface{}
 		if err := common.Unmarshal(cachedBody, &bodyMap); err == nil {
 			bodyMap["model"] = info.UpstreamModelName
-			if req, err := relaycommon.GetTaskRequest(c); err == nil && relaycommon.EffectiveTaskDuration(req) > 0 {
-				bodyMap["seconds"] = req.Seconds
-				if _, exists := bodyMap["duration"]; exists {
-					bodyMap["duration"] = req.Duration
+			if req, err := relaycommon.GetTaskRequest(c); err == nil {
+				duration := relaycommon.EffectiveTaskDuration(req)
+				if duration > 0 {
+					bodyMap["seconds"] = strconv.Itoa(duration)
+					_, hasDuration := bodyMap["duration"]
+					if hasDuration || relaycommon.IsSeedanceVideoModel(req.Model) ||
+						relaycommon.IsSeedanceVideoModel(info.OriginModelName) ||
+						relaycommon.IsSeedanceVideoModel(info.UpstreamModelName) {
+						bodyMap["duration"] = duration
+					}
 				}
 			}
 			if req, err := relaycommon.GetTaskRequest(c); err == nil {
@@ -221,7 +231,12 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		writer := multipart.NewWriter(&buf)
 		writer.WriteField("model", info.UpstreamModelName)
 		taskReq, _ := relaycommon.GetTaskRequest(c)
-		hasDuration := relaycommon.EffectiveTaskDuration(taskReq) > 0
+		duration := relaycommon.EffectiveTaskDuration(taskReq)
+		hasDuration := duration > 0
+		_, hasDurationField := formData.Value["duration"]
+		writeDuration := hasDurationField || relaycommon.IsSeedanceVideoModel(taskReq.Model) ||
+			relaycommon.IsSeedanceVideoModel(info.OriginModelName) ||
+			relaycommon.IsSeedanceVideoModel(info.UpstreamModelName)
 		hasInputReference := false
 		for key, values := range formData.Value {
 			if key == "model" {
@@ -238,9 +253,9 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 			}
 		}
 		if hasDuration {
-			writer.WriteField("seconds", taskReq.Seconds)
-			if _, exists := formData.Value["duration"]; exists {
-				writer.WriteField("duration", strconv.Itoa(taskReq.Duration))
+			writer.WriteField("seconds", strconv.Itoa(duration))
+			if writeDuration {
+				writer.WriteField("duration", strconv.Itoa(duration))
 			}
 		}
 		if !hasInputReference && relaycommon.ShouldFillGrokImagineInputReference(info, taskReq) {
@@ -432,14 +447,14 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	// 但不会回写 task.Data；若纯透传，下游会一直看到 "processing" 而永远轮询。
 	switch task.Status {
 	case model.TaskStatusSuccess:
-		if data, err = sjson.SetBytes(data, "status", dto.VideoStatusCompleted); err != nil {
+		if data, err = sjson.SetBytes(data, "status", relaydto.VideoStatusCompleted); err != nil {
 			return nil, errors.Wrap(err, "set status failed")
 		}
 		if data, err = sjson.SetBytes(data, "progress", 100); err != nil {
 			return nil, errors.Wrap(err, "set progress failed")
 		}
 	case model.TaskStatusFailure:
-		if data, err = sjson.SetBytes(data, "status", dto.VideoStatusFailed); err != nil {
+		if data, err = sjson.SetBytes(data, "status", relaydto.VideoStatusFailed); err != nil {
 			return nil, errors.Wrap(err, "set status failed")
 		}
 		if data, err = sjson.SetBytes(data, "progress", 100); err != nil {

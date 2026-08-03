@@ -4,7 +4,8 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/dto"
+	hostdto "github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 )
 
 const (
@@ -26,7 +27,7 @@ func effectiveBillingUsage(usage *dto.Usage) *dto.Usage {
 }
 
 func contractualBillingUsage(usage *dto.Usage, multiplier int) *dto.Usage {
-	return dto.ScaleUsageCopy(effectiveBillingUsage(usage), multiplier)
+	return hostdto.ScaleUsageCopy(effectiveBillingUsage(usage), multiplier)
 }
 
 func attachUsageTokenMultiplier(other map[string]interface{}) {

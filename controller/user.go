@@ -11,14 +11,15 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/QuantumNous/new-api/constant"
@@ -709,10 +710,16 @@ func GetUserModels(c *gin.Context) {
 			groupsToQuery = []string{group}
 		}
 	}
+	models := service.GetGroupsEnabledModels(groupsToQuery)
+	visibleModels := model_setting.BuildVisibleUserModels(id, models)
+	models = make([]string, 0, len(visibleModels))
+	for _, visibleModel := range visibleModels {
+		models = append(models, visibleModel.Name)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    service.GetGroupsEnabledModels(groupsToQuery),
+		"data":    models,
 	})
 }
 
@@ -1248,7 +1255,9 @@ func ManageUser(c *gin.Context) {
 				return
 			}
 			recordManageAuditFor(c, user.Id, "user.quota_add", map[string]interface{}{
-				"quota": logger.LogQuota(req.Value),
+				"quota":           logger.LogQuota(req.Value),
+				"target_user_id":  user.Id,
+				"target_username": user.Username,
 			})
 		case "subtract":
 			if req.Value <= 0 {
@@ -1260,7 +1269,9 @@ func ManageUser(c *gin.Context) {
 				return
 			}
 			recordManageAuditFor(c, user.Id, "user.quota_subtract", map[string]interface{}{
-				"quota": logger.LogQuota(req.Value),
+				"quota":           logger.LogQuota(req.Value),
+				"target_user_id":  user.Id,
+				"target_username": user.Username,
 			})
 		case "override":
 			oldQuota := user.Quota
@@ -1269,8 +1280,10 @@ func ManageUser(c *gin.Context) {
 				return
 			}
 			recordManageAuditFor(c, user.Id, "user.quota_override", map[string]interface{}{
-				"from": logger.LogQuota(oldQuota),
-				"to":   logger.LogQuota(req.Value),
+				"from":            logger.LogQuota(oldQuota),
+				"to":              logger.LogQuota(req.Value),
+				"target_user_id":  user.Id,
+				"target_username": user.Username,
 			})
 		default:
 			common.ApiErrorI18n(c, i18n.MsgInvalidParams)

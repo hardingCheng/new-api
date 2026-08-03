@@ -4,10 +4,11 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/QuantumNous/new-api/dto"
+	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-	"github.com/QuantumNous/new-api/types"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 
 	"github.com/gin-gonic/gin"
 )
@@ -34,7 +35,7 @@ type Adaptor interface {
 type TaskAdaptor interface {
 	Init(info *relaycommon.RelayInfo)
 
-	ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskError
+	ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) *taskdto.TaskError
 
 	// ── Billing ──────────────────────────────────────────────────────
 
@@ -42,8 +43,9 @@ type TaskAdaptor interface {
 	// Called after ValidateRequestAndSetAction, before price calculation.
 	// Adaptors should extract duration, resolution, etc. from the parsed request
 	// and return them as ratio multipliers (e.g. {"seconds": 5, "size": 1.666}).
-	// Return nil to use the base model price without extra ratios.
-	EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64
+	// Return nil ratios to use the base model price without extra ratios.
+	// Return an error when a user-controlled multiplier cannot be validated.
+	EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) (map[string]float64, error)
 
 	// AdjustBillingOnSubmit returns adjusted OtherRatios from the upstream
 	// submit response. Called after a successful DoResponse.
@@ -67,7 +69,7 @@ type TaskAdaptor interface {
 	BuildRequestBody(c *gin.Context, info *relaycommon.RelayInfo) (io.Reader, error)
 
 	DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (*http.Response, error)
-	DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (taskID string, taskData []byte, err *dto.TaskError)
+	DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (taskID string, taskData []byte, err *taskdto.TaskError)
 
 	GetModelList() []string
 	GetChannelName() string

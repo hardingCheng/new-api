@@ -17,31 +17,32 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { ColumnDef } from '@tanstack/react-table'
-import { Music } from 'lucide-react'
+import { Check, Copy, Music } from 'lucide-react'
 /* eslint-disable react-refresh/only-export-components */
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { StatusBadge } from '@/components/status-badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
-import { formatTimestampToDate } from '@/lib/format'
+import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-import { TASK_ACTIONS, TASK_STATUS } from '../../constants'
-import { taskActionMapper, taskStatusMapper } from '../../lib/mappers'
+import { TASK_STATUS } from '../../constants'
+import { taskStatusMapper } from '../../lib/mappers'
+import { resolveTaskVideoPreviewUrl } from '../../lib/task-video-preview'
 import type { TaskLog } from '../../types'
 import {
   AudioPreviewDialog,
   type AudioClip,
 } from '../dialogs/audio-preview-dialog'
 import { FailReasonDialog } from '../dialogs/fail-reason-dialog'
+import { TaskDetailsDialog } from '../dialogs/task-details-dialog'
+import { TaskVideoPreview } from '../dialogs/video-preview-dialog'
 import { useUsageLogsContext } from '../usage-logs-provider'
-import {
-  createDurationColumn,
-  createChannelColumn,
-  createProgressColumn,
-} from './column-helpers'
+import { createDurationColumn, createProgressColumn } from './column-helpers'
 
 function parseTaskData(data: unknown): unknown[] {
   if (Array.isArray(data)) return data
@@ -120,82 +121,263 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
   ]
 
   if (isAdmin) {
-    columns.push(createChannelColumn<TaskLog>({ headerLabel: t('Channel') }), {
-      id: 'user',
-      header: t('User'),
-      accessorFn: (row) => row.username || row.user_id,
-      cell: function UserCell({ row }) {
-        const { sensitiveVisible, setSelectedUserId, setUserInfoDialogOpen } =
-          useUsageLogsContext()
-        const log = row.original
-        const displayName = log.username || String(log.user_id || '?')
+    columns.push(
+      {
+        id: 'channel',
+        accessorFn: (row) => row.channel_id,
+        header: t('Channel'),
+        cell: function ChannelCell({ row }) {
+          const { sensitiveVisible } = useUsageLogsContext()
+          const log = row.original
+          const channelName = sensitiveVisible ? log.channel_name : '••••'
 
+          if (!log.channel_id && !log.channel_name) {
+            return <span className='text-muted-foreground/60 text-xs'>-</span>
+          }
+
+          return (
+            <div className='flex max-w-[160px] min-w-0 flex-col gap-0.5'>
+              {log.channel_id ? (
+                <StatusBadge
+                  label={`#${log.channel_id}`}
+                  autoColor={String(log.channel_id)}
+                  copyText={String(log.channel_id)}
+                  size='sm'
+                  showDot={false}
+                  className='font-mono'
+                />
+              ) : null}
+              {log.channel_name ? (
+                <span className='text-muted-foreground truncate text-[11px]'>
+                  {channelName}
+                </span>
+              ) : null}
+            </div>
+          )
+        },
+      },
+      {
+        id: 'user',
+        header: t('User'),
+        accessorFn: (row) => row.username || row.user_id,
+        cell: function UserCell({ row }) {
+          const { sensitiveVisible, setSelectedUserId, setUserInfoDialogOpen } =
+            useUsageLogsContext()
+          const log = row.original
+          const displayName = log.username || String(log.user_id || '?')
+
+          return (
+            <button
+              type='button'
+              className='flex items-center gap-1.5 text-left'
+              onClick={(e) => {
+                e.stopPropagation()
+                setSelectedUserId(log.user_id)
+                setUserInfoDialogOpen(true)
+              }}
+            >
+              <Avatar className='ring-border/60 size-6 ring-1 max-sm:hidden'>
+                <AvatarFallback
+                  className={cn(
+                    'text-[11px] font-semibold',
+                    !sensitiveVisible && 'bg-muted text-muted-foreground'
+                  )}
+                  style={
+                    sensitiveVisible
+                      ? getUserAvatarStyle(displayName)
+                      : undefined
+                  }
+                >
+                  {sensitiveVisible ? getUserAvatarFallback(displayName) : '•'}
+                </AvatarFallback>
+              </Avatar>
+              <span className='text-muted-foreground truncate text-sm hover:underline'>
+                {sensitiveVisible ? displayName : '••••'}
+              </span>
+            </button>
+          )
+        },
+      }
+    )
+  }
+
+  columns.push({
+    accessorKey: 'task_id',
+    header: t('Task ID'),
+    cell: ({ row }) => {
+      const taskId = row.getValue('task_id') as string
+      if (!taskId) {
+        return <span className='text-muted-foreground/60 text-xs'>-</span>
+      }
+      return <TaskIdCell log={row.original} isAdmin={isAdmin} />
+    },
+    meta: { mobileTitle: true },
+  })
+
+  if (isAdmin) {
+    columns.push({
+      accessorKey: 'upstream_task_id',
+      header: t('Upstream Task ID'),
+      cell: ({ row }) => {
+        const upstreamTaskId = row.getValue('upstream_task_id') as string
+        if (!upstreamTaskId) {
+          return <span className='text-muted-foreground/60 text-xs'>-</span>
+        }
         return (
-          <button
-            type='button'
-            className='flex items-center gap-1.5 text-left'
-            onClick={(e) => {
-              e.stopPropagation()
-              setSelectedUserId(log.user_id)
-              setUserInfoDialogOpen(true)
-            }}
-          >
-            <Avatar className='ring-border/60 size-6 ring-1 max-sm:hidden'>
-              <AvatarFallback
-                className={cn(
-                  'text-[11px] font-semibold',
-                  !sensitiveVisible && 'bg-muted text-muted-foreground'
-                )}
-                style={
-                  sensitiveVisible ? getUserAvatarStyle(displayName) : undefined
-                }
-              >
-                {sensitiveVisible ? getUserAvatarFallback(displayName) : '•'}
-              </AvatarFallback>
-            </Avatar>
-            <span className='text-muted-foreground truncate text-sm hover:underline'>
-              {sensitiveVisible ? displayName : '••••'}
-            </span>
-          </button>
+          <StatusBadge
+            label={upstreamTaskId}
+            copyText={upstreamTaskId}
+            variant='neutral'
+            size='sm'
+            className='border-border/60 bg-muted/30 !text-foreground max-w-[210px] rounded-md border px-1.5 py-0.5 font-mono'
+          />
         )
       },
+      size: 210,
+    })
+
+    columns.push({
+      accessorKey: 'model_name',
+      header: t('Model'),
+      cell: ({ row }) => {
+        const log = row.original
+        const publicModel =
+          log.model_name || log.properties?.origin_model_name || ''
+        const upstreamModel = log.properties?.upstream_model_name || publicModel
+        if (!upstreamModel) {
+          return <span className='text-muted-foreground/60 text-xs'>-</span>
+        }
+
+        return (
+          <div className='flex max-w-[190px] min-w-0 flex-col gap-0.5'>
+            <StatusBadge
+              label={upstreamModel}
+              copyText={upstreamModel}
+              autoColor={upstreamModel}
+              size='sm'
+              className='max-w-full font-mono'
+            />
+            {publicModel && publicModel !== upstreamModel ? (
+              <span className='text-muted-foreground/60 truncate font-mono text-[11px]'>
+                {publicModel}
+              </span>
+            ) : null}
+          </div>
+        )
+      },
+      size: 180,
     })
   }
 
   columns.push(
-    {
-      accessorKey: 'task_id',
-      header: t('Task ID'),
-      cell: ({ row }) => {
-        const log = row.original
-        const taskId = row.getValue('task_id') as string
-        if (!taskId) {
-          return <span className='text-muted-foreground/60 text-xs'>-</span>
-        }
-        return (
-          <div className='flex max-w-[170px] flex-col gap-0.5'>
-            <StatusBadge
-              label={taskId}
-              copyText={taskId}
-              variant='neutral'
-              size='sm'
-              className='border-border/60 bg-muted/30 !text-foreground max-w-full truncate rounded-md border px-1.5 py-0.5 font-mono'
-            />
-            <span className='text-muted-foreground/60 truncate text-[11px]'>
-              {t(log.platform)} · {t(taskActionMapper.getLabel(log.action))}
-            </span>
-          </div>
-        )
-      },
-      meta: { mobileTitle: true },
-    },
     createDurationColumn<TaskLog>({
       submitTimeKey: 'submit_time',
       finishTimeKey: 'finish_time',
       unit: 'seconds',
       headerLabel: t('Duration'),
       warningThresholdSec: 300,
-    }),
+    })
+  )
+
+  if (isAdmin) {
+    columns.push(
+      {
+        accessorKey: 'video_duration',
+        header: t('Video Duration'),
+        cell: ({ row }) => {
+          const log = row.original
+          const seconds = log.video_duration ?? log.properties?.video_seconds
+          if (
+            typeof seconds !== 'number' ||
+            !Number.isFinite(seconds) ||
+            seconds <= 0
+          ) {
+            return <span className='text-muted-foreground/60 text-xs'>-</span>
+          }
+          return (
+            <span className='font-mono text-xs font-medium tabular-nums'>
+              {seconds}s
+            </span>
+          )
+        },
+        size: 110,
+      },
+      {
+        id: 'billing',
+        header: t('Billing'),
+        cell: function BillingCell({ row }) {
+          const { sensitiveVisible } = useUsageLogsContext()
+          const log = row.original
+          const fee = log.quota ?? 0
+          const refund = log.refund_quota ?? 0
+
+          return (
+            <div className='flex min-w-[130px] flex-col gap-0.5 font-mono text-xs tabular-nums'>
+              <span>
+                <span className='text-muted-foreground'>{t('Fee')}:</span>{' '}
+                {sensitiveVisible ? formatLogQuota(fee) : '••••'}
+              </span>
+              <span
+                className={cn(
+                  refund > 0
+                    ? 'text-blue-600 dark:text-blue-400'
+                    : 'text-muted-foreground/60'
+                )}
+              >
+                {t('Refund')}:{' '}
+                {sensitiveVisible ? formatLogQuota(refund) : '••••'}
+              </span>
+            </div>
+          )
+        },
+        size: 155,
+      },
+      {
+        id: 'reference_video',
+        header: t('Reference video'),
+        cell: ({ row }) => {
+          const properties = row.original.properties
+          const referenceSeconds = properties?.reference_video_seconds
+          const hasReference =
+            properties?.has_reference_video === true ||
+            (typeof referenceSeconds === 'number' && referenceSeconds > 0)
+
+          return (
+            <StatusBadge
+              label={hasReference ? t('Yes') : t('No')}
+              variant={hasReference ? 'blue' : 'neutral'}
+              size='sm'
+              copyable={false}
+            />
+          )
+        },
+        size: 115,
+      },
+      {
+        id: 'reference_video_duration',
+        header: t('Reference Duration'),
+        cell: ({ row }) => {
+          const seconds = row.original.properties?.reference_video_seconds
+          if (
+            typeof seconds !== 'number' ||
+            !Number.isFinite(seconds) ||
+            seconds <= 0
+          ) {
+            return <span className='text-muted-foreground/60 text-xs'>-</span>
+          }
+
+          return (
+            <span className='font-mono text-xs font-medium tabular-nums'>
+              {seconds}s
+            </span>
+          )
+        },
+        size: 135,
+      }
+    )
+  }
+
+  columns.push(
     {
       accessorKey: 'status',
       header: t('Status'),
@@ -238,26 +420,14 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
           }
         }
 
-        const isVideoTask =
-          log.action === TASK_ACTIONS.GENERATE ||
-          log.action === TASK_ACTIONS.TEXT_GENERATE ||
-          log.action === TASK_ACTIONS.FIRST_TAIL_GENERATE ||
-          log.action === TASK_ACTIONS.REFERENCE_GENERATE ||
-          log.action === TASK_ACTIONS.REMIX_GENERATE
-        const isSuccess = status === TASK_STATUS.SUCCESS
-        const isUrl = failReason?.startsWith('http')
-
-        if (isSuccess && isVideoTask && isUrl) {
-          const videoUrl = `/v1/videos/${log.task_id}/content`
+        const videoUrl = resolveTaskVideoPreviewUrl(log)
+        if (videoUrl) {
           return (
-            <a
-              href={videoUrl}
-              target='_blank'
-              rel='noopener noreferrer'
-              className='text-foreground text-xs hover:underline'
-            >
-              {t('Click to preview video')}
-            </a>
+            <TaskVideoPreview
+              taskId={log.task_id}
+              sourceUrl={videoUrl}
+              ownerUserId={isAdmin ? log.user_id : undefined}
+            />
           )
         }
 
@@ -291,4 +461,59 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
   )
 
   return columns
+}
+
+function TaskIdCell(props: { log: TaskLog; isAdmin: boolean }) {
+  const { t } = useTranslation()
+  const { copiedText, copyToClipboard } = useCopyToClipboard()
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <div className='flex max-w-[190px] min-w-0 items-center gap-0.5'>
+        <button
+          type='button'
+          className='block min-w-0 flex-1 text-left'
+          onClick={(event) => {
+            event.stopPropagation()
+            setOpen(true)
+          }}
+          title={t('View the complete details for this task')}
+          aria-label={`${t('Task Details')}: ${props.log.task_id}`}
+          aria-haspopup='dialog'
+          aria-expanded={open}
+        >
+          <StatusBadge
+            label={props.log.task_id}
+            variant='neutral'
+            size='sm'
+            copyable={false}
+            className='border-border/60 bg-muted/30 !text-foreground max-w-full rounded-md border px-1.5 py-0.5 font-mono hover:underline'
+          />
+        </button>
+        <Button
+          type='button'
+          variant='ghost'
+          size='icon-xs'
+          className='text-muted-foreground hover:text-foreground shrink-0'
+          onClick={(event) => {
+            event.stopPropagation()
+            void copyToClipboard(props.log.task_id)
+          }}
+          title={t('Copy to clipboard')}
+          aria-label={`${t('Copy to clipboard')}: ${props.log.task_id}`}
+        >
+          {copiedText === props.log.task_id ? <Check /> : <Copy />}
+        </Button>
+      </div>
+      {open ? (
+        <TaskDetailsDialog
+          log={props.log}
+          isAdmin={props.isAdmin}
+          open={open}
+          onOpenChange={setOpen}
+        />
+      ) : null}
+    </>
+  )
 }

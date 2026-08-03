@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { TFunction } from 'i18next'
 import {
   Activity,
   BookOpen,
@@ -36,6 +37,7 @@ import {
   Settings,
   Sparkles,
   TerminalSquare,
+  ShieldAlert,
   Ticket,
   User,
   Users,
@@ -52,9 +54,7 @@ import { ROLE } from '@/lib/roles'
  * These are shown when the URL does not match any nested sidebar view
  * registered in `layout/lib/sidebar-view-registry.ts`.
  */
-export function useSidebarData(): SidebarData {
-  const { t } = useTranslation()
-
+export function getSidebarData(t: TFunction): SidebarData {
   return {
     navGroups: [
       {
@@ -199,6 +199,11 @@ export function useSidebarData(): SidebarData {
             icon: CreditCard,
           },
           {
+            title: t('Channel Circuit Breaker'),
+            url: '/system-settings/operations/channel-breaker',
+            icon: ShieldAlert,
+          },
+          {
             title: t('System Info'),
             url: '/system-info',
             icon: ServerCog,
@@ -214,4 +219,9 @@ export function useSidebarData(): SidebarData {
       },
     ],
   }
+}
+
+export function useSidebarData(): SidebarData {
+  const { t } = useTranslation()
+  return getSidebarData(t)
 }

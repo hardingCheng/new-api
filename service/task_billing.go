@@ -23,7 +23,7 @@ import (
 func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	tokenName := c.GetString("token_name")
 	logContent := fmt.Sprintf("操作 %s", info.Action)
-	videoBillingMode := ratio_setting.GetVideoBillingMode(info.OriginModelName)
+	videoBillingMode := info.VideoBillingMode()
 	// 支持任务仅按次计费
 	if videoBillingMode == ratio_setting.VideoBillingModePerCall {
 		logContent = fmt.Sprintf("%s，按次计费", logContent)
@@ -125,16 +125,17 @@ func EnsureTaskSubmissionRecord(c *gin.Context, info *relaycommon.RelayInfo, pla
 }
 
 func taskBillingContextFromRelayInfo(info *relaycommon.RelayInfo) *model.TaskBillingContext {
+	videoBillingMode := info.VideoBillingMode()
 	return &model.TaskBillingContext{
 		ModelPrice:                 info.PriceData.ModelPrice,
 		GroupRatio:                 info.PriceData.GroupRatioInfo.GroupRatio,
 		ModelRatio:                 info.PriceData.ModelRatio,
 		OtherRatios:                info.PriceData.OtherRatios(),
 		OriginModelName:            info.OriginModelName,
-		VideoBillingMode:           ratio_setting.GetVideoBillingMode(info.OriginModelName),
+		VideoBillingMode:           videoBillingMode,
 		UserPricingOverrides:       info.UserPricingOverrides,
 		ModelQuotaPools:            info.ModelQuotaPools,
-		PerCallBilling:             ratio_setting.IsVideoBillingPerCall(info.OriginModelName) || (info.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(info.OriginModelName)),
+		PerCallBilling:             videoBillingMode == ratio_setting.VideoBillingModePerCall,
 		SubmissionRequestID:        info.RequestId,
 		SubmissionPreConsumedQuota: info.FinalPreConsumedQuota,
 		SubmissionTokenBilling:     !info.IsPlayground,
@@ -346,6 +347,7 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) error
 	if poolErr != nil {
 		return poolErr
 	}
+	task.PrivateData.RefundQuota = quota
 	if task.ID > 0 {
 		task.BillingStatus = model.TaskBillingStatusRefunded
 		if err := task.UpdateBillingState(); err != nil {

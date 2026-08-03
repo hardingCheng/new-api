@@ -159,3 +159,32 @@ func TestManageUserDeleteReturnsImmediatelyAndUnknownActionFails(t *testing.T) {
 	assert.EqualValues(t, 1, unchanged.AuthVersion)
 	assert.Equal(t, common.UserStatusEnabled, unchanged.Status)
 }
+
+func TestManageUserQuotaAuditRecordsTargetIdentity(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	user := model.User{
+		Username: "quota-target-user", Password: "password", Role: common.RoleCommonUser,
+		Status: common.UserStatusEnabled, Group: "default", Quota: 100,
+	}
+	require.NoError(t, db.Create(&user).Error)
+
+	recorder := performManageUserRequest(t, fmt.Sprintf(
+		`{"id":%d,"action":"add_quota","mode":"add","value":500}`,
+		user.Id,
+	))
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), `"success":true`)
+
+	var auditLog model.Log
+	require.NoError(t, db.Where("type = ?", model.LogTypeManage).Order("id desc").First(&auditLog).Error)
+	var auditData struct {
+		Operation struct {
+			Action string                 `json:"action"`
+			Params map[string]interface{} `json:"params"`
+		} `json:"op"`
+	}
+	require.NoError(t, common.UnmarshalJsonStr(auditLog.Other, &auditData))
+	assert.Equal(t, "user.quota_add", auditData.Operation.Action)
+	assert.EqualValues(t, user.Id, auditData.Operation.Params["target_user_id"])
+	assert.Equal(t, user.Username, auditData.Operation.Params["target_username"])
+}

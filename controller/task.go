@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -50,7 +49,10 @@ func GetAllTask(c *gin.Context) {
 	items := model.TaskGetAllTasks(pageInfo.GetStartIdx(), pageInfo.GetPageSize(), queryParams)
 	total := model.TaskCountAllTasks(queryParams)
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(tasksToDto(items, true))
+	pageInfo.SetItems(tasksToDto(items, taskDtoOptions{
+		adminView:             true,
+		includeUpstreamTaskID: true,
+	}))
 	common.ApiSuccess(c, pageInfo)
 }
 
@@ -73,7 +75,7 @@ func GetUserTask(c *gin.Context) {
 	items := model.TaskGetAllUserTask(userId, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), queryParams)
 	total := model.TaskCountAllUserTask(userId, queryParams)
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(tasksToDto(items, false))
+	pageInfo.SetItems(tasksToDto(items, taskDtoOptions{}))
 	common.ApiSuccess(c, pageInfo)
 }
 
@@ -133,7 +135,9 @@ func GetAllTaskExport(c *gin.Context) {
 		common.ApiErrorMsg(c, "task export exceeds 5000 rows; narrow the filters")
 		return
 	}
-	common.ApiSuccess(c, gin.H{"items": tasksToDto(items, true)})
+	common.ApiSuccess(c, gin.H{"items": tasksToDto(items, taskDtoOptions{
+		adminView: true,
+	})})
 }
 
 func GetModelQuotaPoolUsage(c *gin.Context) {
@@ -142,14 +146,21 @@ func GetModelQuotaPoolUsage(c *gin.Context) {
 	common.ApiSuccess(c, service.GetVisibleModelQuotaPoolUsage(userID, includeAllUserPools))
 }
 
-func tasksToDto(tasks []*model.Task, fillUser bool) []*dto.TaskDto {
+type taskDtoOptions struct {
+	adminView             bool
+	includeUpstreamTaskID bool
+}
+
+func tasksToDto(tasks []*model.Task, options taskDtoOptions) []*dto.TaskDto {
 	var userIdMap map[int]*model.UserBase
 	channelIdMap := make(map[int]string)
-	if fillUser {
+	if options.adminView {
 		userIdMap = make(map[int]*model.UserBase)
 		userIds := types.NewSet[int]()
 		for _, task := range tasks {
-			userIds.Add(task.UserId)
+			if task.UserId > 0 {
+				userIds.Add(task.UserId)
+			}
 		}
 		for _, userId := range userIds.Items() {
 			cacheUser, err := model.GetUserCache(userId)
@@ -172,7 +183,7 @@ func tasksToDto(tasks []*model.Task, fillUser bool) []*dto.TaskDto {
 	}
 	result := make([]*dto.TaskDto, len(tasks))
 	for i, task := range tasks {
-		if fillUser {
+		if options.adminView {
 			if user, ok := userIdMap[task.UserId]; ok {
 				task.Username = user.Username
 			}
@@ -181,8 +192,11 @@ func tasksToDto(tasks []*model.Task, fillUser bool) []*dto.TaskDto {
 			task.ChannelName = channelName
 		}
 		dtoItem := relay.TaskModel2Dto(task)
+		if options.includeUpstreamTaskID {
+			dtoItem.UpstreamTaskID = task.GetUpstreamTaskID()
+		}
 		// 普通用户路径（非管理员）脱敏：移除计费/渠道/上游模型名等内部字段
-		if !fillUser {
+		if !options.adminView {
 			redactTaskDtoForUser(dtoItem)
 		}
 		result[i] = dtoItem
@@ -195,47 +209,18 @@ func tasksToDto(tasks []*model.Task, fillUser bool) []*dto.TaskDto {
 func redactTaskDtoForUser(d *dto.TaskDto) {
 	d.Quota = 0
 	d.RefundQuota = 0
+	d.UpstreamTaskID = ""
 	// 注意：d.Key 是任务的数据库自增 ID 字符串（非 API 密钥），
 	// 前端任务表格用它作为 rowKey，置空会导致行 key 冲突，故保留。
 	d.Group = ""
 	d.ChannelId = 0
 	d.ChannelName = ""
+	publicModel := ""
 	if props, ok := d.Properties.(model.Properties); ok {
+		publicModel = strings.TrimSpace(props.OriginModelName)
 		props.UpstreamModelName = ""
 		d.Properties = props
 	}
-	d.Data = redactTaskDataForUser(d.Data, d.ModelName, d.TaskID)
-}
-
-// redactTaskDataForUser 脱敏原始上游响应体中的 model（替换为对外模型名）和
-// task_id（替换为对外公开 ID）。
-func redactTaskDataForUser(data json.RawMessage, originModel, publicTaskID string) json.RawMessage {
-	if len(data) == 0 {
-		return data
-	}
-	var m map[string]any
-	if err := common.Unmarshal(data, &m); err != nil {
-		return data
-	}
-	changed := false
-	if _, ok := m["model"]; ok {
-		if originModel != "" {
-			m["model"] = originModel
-		} else {
-			delete(m, "model")
-		}
-		changed = true
-	}
-	if _, ok := m["task_id"]; ok {
-		m["task_id"] = publicTaskID
-		changed = true
-	}
-	if !changed {
-		return data
-	}
-	b, err := common.Marshal(m)
-	if err != nil {
-		return data
-	}
-	return json.RawMessage(b)
+	d.ModelName = publicModel
+	d.Data = relay.RedactTaskDataForPublic(d.Data, publicModel, d.TaskID)
 }

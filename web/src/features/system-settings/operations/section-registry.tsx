@@ -42,29 +42,27 @@ const OPERATIONS_SECTIONS = [
     ),
   },
   {
-    id: 'alerts',
-    titleKey: 'Monitoring & Alerts',
-    build: (settings: OperationsSettings) => (
-      <MonitoringSettingsSection
-        defaultValues={{
-          QuotaRemindThreshold: settings.QuotaRemindThreshold,
-          'perf_metrics_setting.enabled':
-            settings['perf_metrics_setting.enabled'] ?? true,
-          'perf_metrics_setting.flush_interval':
-            settings['perf_metrics_setting.flush_interval'] ?? 5,
-          'perf_metrics_setting.bucket_time':
-            settings['perf_metrics_setting.bucket_time'] ?? 'hour',
-          'perf_metrics_setting.retention_days':
-            settings['perf_metrics_setting.retention_days'] ?? 0,
-        }}
-      />
-    ),
-  },
-  {
     id: 'channel-breaker',
     titleKey: 'Channel Circuit Breaker',
+    hiddenFromNav: true,
     build: (settings: OperationsSettings) => (
-      <ChannelBreakerSection defaultValues={settings} />
+      <div className='grid gap-4'>
+        <ChannelBreakerSection defaultValues={settings} />
+        <MonitoringSettingsSection
+          defaultValues={{
+            QuotaRemindThreshold: settings.QuotaRemindThreshold,
+            'perf_metrics_setting.enabled':
+              settings['perf_metrics_setting.enabled'] ?? true,
+            'perf_metrics_setting.flush_interval':
+              settings['perf_metrics_setting.flush_interval'] ?? 5,
+            'perf_metrics_setting.bucket_time':
+              settings['perf_metrics_setting.bucket_time'] ?? 'hour',
+            'perf_metrics_setting.retention_days':
+              settings['perf_metrics_setting.retention_days'] ?? 0,
+          }}
+          showTitle
+        />
+      </div>
     ),
   },
   {

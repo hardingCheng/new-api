@@ -17,7 +17,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -25,10 +24,12 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
-	"github.com/QuantumNous/new-api/types"
+	hosttypes "github.com/QuantumNous/new-api/types"
 
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -44,6 +45,10 @@ type testResult struct {
 
 type channelTestKeySelection struct {
 	Index int
+}
+
+type channelTestOptions struct {
+	Group string
 }
 
 func (r testResult) successful() bool {
@@ -82,6 +87,10 @@ func resolveChannelTestUserID(c *gin.Context) (int, error) {
 }
 
 func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool, keySelections ...channelTestKeySelection) testResult {
+	return testChannelWithOptions(ctx, channel, testUserID, testModel, endpointType, isStream, channelTestOptions{}, keySelections...)
+}
+
+func testChannelWithOptions(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool, options channelTestOptions, keySelections ...channelTestKeySelection) testResult {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -180,6 +189,9 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	c.Set("channel", channel.Type)
 	c.Set("base_url", channel.GetBaseURL())
 	group, _ := model.GetUserGroup(testUserID, false)
+	if options.Group != "" {
+		group = options.Group
+	}
 	c.Set("group", group)
 
 	var newAPIError *types.NewAPIError
@@ -544,7 +556,7 @@ func attachTestBillingRequestInput(info *relaycommon.RelayInfo, request dto.Requ
 	return nil
 }
 
-func settleTestQuota(info *relaycommon.RelayInfo, priceData types.PriceData, usage *dto.Usage) (int, *billingexpr.TieredResult) {
+func settleTestQuota(info *relaycommon.RelayInfo, priceData hosttypes.PriceData, usage *dto.Usage) (int, *billingexpr.TieredResult) {
 	if usage != nil && info != nil && info.TieredBillingSnapshot != nil {
 		isClaudeUsageSemantic := usage.UsageSemantic == "anthropic" || info.GetFinalRequestRelayFormat() == types.RelayFormatClaude
 		usedVars := billingexpr.UsedVars(info.TieredBillingSnapshot.ExprString)
@@ -566,7 +578,7 @@ func settleTestQuota(info *relaycommon.RelayInfo, priceData types.PriceData, usa
 	return int(priceData.ModelPrice * common.QuotaPerUnit), nil
 }
 
-func buildTestLogOther(c *gin.Context, info *relaycommon.RelayInfo, priceData types.PriceData, usage *dto.Usage, tieredResult *billingexpr.TieredResult) map[string]interface{} {
+func buildTestLogOther(c *gin.Context, info *relaycommon.RelayInfo, priceData hosttypes.PriceData, usage *dto.Usage, tieredResult *billingexpr.TieredResult) map[string]interface{} {
 	other := service.GenerateTextOtherInfo(c, info, priceData.ModelRatio, priceData.GroupRatioInfo.GroupRatio, priceData.CompletionRatio,
 		usage.PromptTokensDetails.CachedTokens, priceData.CacheRatio, priceData.ModelPrice, priceData.GroupRatioInfo.EffectiveUserRatio())
 	if tieredResult != nil {
@@ -1108,6 +1120,64 @@ func testChannelAnyModel(ctx context.Context, channel *model.Channel, testUserID
 	return last
 }
 
+type channelBreakerRetestTarget struct {
+	Model         string
+	Group         string
+	KeySelections []channelTestKeySelection
+}
+
+func resolveBreakerRetestKeySelection(channel *model.Channel, keyHash string) (channelTestKeySelection, bool) {
+	if channel == nil || keyHash == "" {
+		return channelTestKeySelection{}, false
+	}
+	for index, key := range channel.GetKeys() {
+		if service.ChannelBreakerKeyHash(key) == keyHash {
+			return channelTestKeySelection{Index: index}, true
+		}
+	}
+	return channelTestKeySelection{}, false
+}
+
+func resolveBreakerRetestTarget(channel *model.Channel, status service.ChannelBreakerStatus) (channelBreakerRetestTarget, error) {
+	target := channelBreakerRetestTarget{
+		Model: strings.TrimSpace(status.Model),
+		Group: status.Group,
+	}
+	if status.KeyHash == "" {
+		return target, nil
+	}
+	if channel == nil {
+		return target, fmt.Errorf("breaker key %s has no channel", status.KeyHash)
+	}
+	if channel.ChannelInfo.IsMultiKey {
+		keySelection, ok := resolveBreakerRetestKeySelection(channel, status.KeyHash)
+		if !ok {
+			return target, fmt.Errorf("breaker key %s is not present on channel #%d", status.KeyHash, status.ChannelId)
+		}
+		target.KeySelections = []channelTestKeySelection{keySelection}
+		return target, nil
+	}
+	keys := channel.GetKeys()
+	if len(keys) == 0 || service.ChannelBreakerKeyHash(keys[0]) != status.KeyHash {
+		return target, fmt.Errorf("breaker key %s is not present on channel #%d", status.KeyHash, status.ChannelId)
+	}
+	return target, nil
+}
+
+func testChannelForBreaker(ctx context.Context, channel *model.Channel, testUserID int, status service.ChannelBreakerStatus) testResult {
+	target, err := resolveBreakerRetestTarget(channel, status)
+	if err != nil {
+		return testResult{localErr: err}
+	}
+	if target.Model == "" {
+		if len(target.KeySelections) == 0 {
+			return testChannelAnyModel(ctx, channel, testUserID)
+		}
+		return testChannelAnyModel(ctx, channel, testUserID, target.KeySelections...)
+	}
+	return testChannelWithOptions(ctx, channel, testUserID, target.Model, "", shouldUseStreamForAutomaticChannelTest(channel), channelTestOptions{Group: target.Group}, target.KeySelections...)
+}
+
 func handleTerminalRecoveryError(channel *model.Channel, result testResult, keySelections []channelTestKeySelection) bool {
 	if len(keySelections) == 0 || result.context == nil || result.newAPIError == nil {
 		return false
@@ -1166,8 +1236,9 @@ func recoverableMultiKeyIndexes(channel *model.Channel) []int {
 
 var retestDisabledChannelsLock sync.Mutex
 
-// retestRecoverableChannels tests auto-disabled and open-breaker channels. Any
-// successful model is enough to restore the channel or close its breaker.
+// retestRecoverableChannels tests auto-disabled channels and exact breaker targets.
+// A model-scoped breaker must be cleared only after that model succeeds; another
+// model on the same channel is not evidence that the failed route recovered.
 func retestRecoverableChannels(ctx context.Context) error {
 	testUserID, err := resolveChannelTestUserID(nil)
 	if err != nil {
@@ -1197,23 +1268,17 @@ func retestRecoverableChannels(ctx context.Context) error {
 		}
 	}
 
-	testedOK := make(map[int]bool)
 	for _, status := range service.ListChannelBreakerStatuses() {
 		channel := channelByID[status.ChannelId]
 		if channel == nil || channel.Status != common.ChannelStatusEnabled {
 			continue
 		}
-		ok, tested := testedOK[status.ChannelId]
-		if !tested {
-			result := testChannelAnyModel(ctx, channel, testUserID)
-			ok = result.successful()
-			testedOK[status.ChannelId] = ok
-			if common.RequestInterval > 0 {
-				time.Sleep(common.RequestInterval)
-			}
-		}
-		if ok {
+		result := testChannelForBreaker(ctx, channel, testUserID, status)
+		if result.successful() {
 			service.ClearChannelBreakerByStateKey(status.StateKey)
+		}
+		if common.RequestInterval > 0 {
+			time.Sleep(common.RequestInterval)
 		}
 	}
 	return nil

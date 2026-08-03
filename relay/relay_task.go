@@ -166,13 +166,21 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	if modelName == "" {
 		modelName = service.CoverTaskActionToModelName(platform, info.Action)
 	}
+	routingModelName := info.EffectiveRoutingModelName()
+	if routingModelName == "" {
+		routingModelName = modelName
+	}
 
 	// 2.5 应用渠道的模型映射（与同步任务对齐）
-	info.OriginModelName = modelName
-	info.UpstreamModelName = modelName
+	info.OriginModelName = routingModelName
+	info.UpstreamModelName = routingModelName
 	if err := helper.ModelMappedHelper(c, info, nil); err != nil {
 		return nil, service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
 	}
+	if routingModelName != modelName {
+		info.IsModelMapped = true
+	}
+	info.OriginModelName = modelName
 
 	// 3. 预生成公开 task ID（仅首次）
 	if info.PublicTaskID == "" {
@@ -190,52 +198,21 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	// 5. 计费估算：让适配器根据用户请求提供 OtherRatios（时长、分辨率等）
 	//    必须在 ModelPriceHelperPerCall 之后调用（它会重建 PriceData）。
 	//    ResolveOriginTask 可能已在 remix 路径中预设了 OtherRatios，此处合并。
-	if estimatedRatios := adaptor.EstimateBilling(c, info); len(estimatedRatios) > 0 {
+	estimatedRatios, err := adaptor.EstimateBilling(c, info)
+	if err != nil {
+		return nil, service.TaskErrorWrapperLocal(err, "invalid_billing_input", http.StatusBadRequest)
+	}
+	if len(estimatedRatios) > 0 {
 		for k, v := range estimatedRatios {
 			info.PriceData.AddOtherRatio(k, v)
 		}
 	}
 
-	perCallBilling := ratio_setting.IsVideoBillingPerCall(modelName) ||
-		(info.PriceData.UsePrice && !ratio_setting.HasVideoBillingMode(modelName))
+	perCallBilling := info.VideoBillingMode() == ratio_setting.VideoBillingModePerCall
 
 	// 6. 将 OtherRatios 应用到基础额度；按次计费的视频任务不受 seconds 等倍率影响。
 	if !perCallBilling {
-		genSec := c.GetInt("generated_video_seconds")
-		refSec := c.GetInt("reference_video_seconds")
-		if genSec > 0 || refSec > 0 {
-			// 视频按秒计费：把「生成秒」与「参考秒」拆开分别计价。
-			// basePerSec 是每秒基础额度（已含 group ratio）；参考秒按用户级规则计价。
-			basePerSec := float64(info.PriceData.Quota)
-			relativeRatio := 1.0
-			for key, ratio := range info.PriceData.OtherRatios() {
-				if key != "seconds" && ratio != 1.0 {
-					relativeRatio *= ratio
-				}
-			}
-			genCost := basePerSec * float64(genSec) * relativeRatio
-			refCost := referenceVideoCost(info.PriceData.VideoRefMode, info.PriceData.VideoRefValue, float64(refSec), basePerSec, relativeRatio, info.PriceData.GroupRatioInfo.GroupRatio, info.PriceData.VideoRefApplyGroupRatio)
-			quota, clamp := common.QuotaFromFloatChecked(genCost + refCost)
-			info.PriceData.Quota = quota
-			noteTaskQuotaClamp(info, clamp)
-			// 参考固定单价/总价可能在「免费基础模型」上产生正额度，
-			// 必须清掉 FreeModel，否则预扣会被跳过导致漏扣。
-			if info.PriceData.Quota > 0 {
-				info.PriceData.FreeModel = false
-			}
-			// 用「等效秒数」回写 seconds 倍率，便于日志透明与潜在的 token 重算保持一致。
-			if basePerSec > 0 && relativeRatio > 0 {
-				effSec := (genCost + refCost) / basePerSec / relativeRatio
-				info.PriceData.AddOtherRatio("seconds", effSec)
-				c.Set("billable_video_seconds", int(effSec))
-			}
-		} else {
-			// 回退：没有 generated/reference 秒数上下文（如 remix），按 OtherRatios 连乘。
-			quotaWithRatios := info.PriceData.ApplyOtherRatiosToFloat(float64(info.PriceData.Quota))
-			quota, clamp := common.QuotaFromFloatChecked(quotaWithRatios)
-			info.PriceData.Quota = quota
-			noteTaskQuotaClamp(info, clamp)
-		}
+		applyTaskVideoBillingRatios(c, info)
 	}
 
 	// 7. 限量池检查 + 预扣费（仅首次 — 重试时 info.Billing 已存在，跳过）
@@ -305,6 +282,45 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		Platform:       platform,
 		Quota:          finalQuota,
 	}, nil
+}
+
+func applyTaskVideoBillingRatios(c *gin.Context, info *relaycommon.RelayInfo) {
+	genSec := c.GetInt("generated_video_seconds")
+	refSec := c.GetInt("reference_video_seconds")
+	if genSec <= 0 && refSec <= 0 {
+		// 回退：没有 generated/reference 秒数上下文（如 remix），按 OtherRatios 连乘。
+		quotaWithRatios := info.PriceData.ApplyOtherRatiosToFloat(float64(info.PriceData.Quota))
+		quota, clamp := common.QuotaFromFloatChecked(quotaWithRatios)
+		info.PriceData.Quota = quota
+		noteTaskQuotaClamp(info, clamp)
+		return
+	}
+
+	// 视频按秒计费：把「生成秒」与「参考秒」拆开分别计价。
+	// basePerSec 是每秒基础额度（已含 group ratio）；参考秒按用户级规则计价。
+	basePerSec := float64(info.PriceData.Quota)
+	relativeRatio := 1.0
+	for key, ratio := range info.PriceData.OtherRatios() {
+		if key != "seconds" && ratio != 1.0 {
+			relativeRatio *= ratio
+		}
+	}
+	genCost := basePerSec * float64(genSec) * relativeRatio
+	refCost := referenceVideoCost(info.PriceData.VideoRefMode, info.PriceData.VideoRefValue, float64(refSec), basePerSec, relativeRatio, info.PriceData.GroupRatioInfo.GroupRatio, info.PriceData.VideoRefApplyGroupRatio)
+	quota, clamp := common.QuotaFromFloatChecked(genCost + refCost)
+	info.PriceData.Quota = quota
+	noteTaskQuotaClamp(info, clamp)
+	// 参考固定单价/总价可能在「免费基础模型」上产生正额度，
+	// 必须清掉 FreeModel，否则预扣会被跳过导致漏扣。
+	if info.PriceData.Quota > 0 {
+		info.PriceData.FreeModel = false
+	}
+	// 用「等效秒数」回写 seconds 倍率，便于日志透明与潜在的 token 重算保持一致。
+	if basePerSec > 0 && relativeRatio > 0 {
+		effSec := (genCost + refCost) / basePerSec / relativeRatio
+		info.PriceData.AddOtherRatio("seconds", effSec)
+		c.Set("billable_video_seconds", int(effSec))
+	}
 }
 
 // referenceVideoCost 计算「参考视频秒数」那部分的额度（不含生成秒）。
@@ -667,6 +683,9 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 // 不暴露 platform / user_id / group / channel_id / quota 等内部信息。
 func TaskModel2PublicVideoDto(task *model.Task) *dto.VideoTaskPublicDto {
 	full := TaskModel2Dto(task)
+	publicModelName := strings.TrimSpace(task.Properties.OriginModelName)
+	publicProperties := task.Properties
+	publicProperties.UpstreamModelName = ""
 	seconds, size := extractVideoSecondsSize(task.Data)
 	if seconds == "" && full.VideoDuration > 0 {
 		seconds = strconv.Itoa(full.VideoDuration)
@@ -674,7 +693,7 @@ func TaskModel2PublicVideoDto(task *model.Task) *dto.VideoTaskPublicDto {
 	out := &dto.VideoTaskPublicDto{
 		ID:     full.TaskID,
 		Object: "video",
-		Model:  full.ModelName,
+		Model:  publicModelName,
 		// status 映射为 OpenAI 小写（queued/in_progress/completed/failed），
 		// 让 OpenAI SDK 与下游 new-api 的 sora 解析器都能正确识别任务完成/失败。
 		Status:           task.Status.ToVideoStatus(),
@@ -692,10 +711,10 @@ func TaskModel2PublicVideoDto(task *model.Task) *dto.VideoTaskPublicDto {
 		StartTime:        full.StartTime,
 		FinishTime:       full.FinishTime,
 		Progress:         publicVideoProgress(task, full.Progress),
-		Properties:       full.Properties,
-		ModelName:        full.ModelName,
+		Properties:       publicProperties,
+		ModelName:        publicModelName,
 		VideoDuration:    full.VideoDuration,
-		Data:             stripTaskDataSensitiveFields(full.Data),
+		Data:             RedactTaskDataForPublic(full.Data, publicModelName, full.TaskID),
 		Timestamp2String: full.Timestamp2String,
 	}
 	if task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure {
@@ -732,25 +751,99 @@ func extractVideoSecondsSize(data json.RawMessage) (string, string) {
 	return seconds, size
 }
 
-// stripTaskDataSensitiveFields 从对外返回的 data 中移除上游内部字段（如 usage 计费信息），
-// 避免把上游成本（xAI 的 usage.cost_in_usd_ticks 等）透传给调用方。
-func stripTaskDataSensitiveFields(data json.RawMessage) json.RawMessage {
+// RedactTaskDataForPublic removes upstream billing/model/task identifiers while
+// preserving provider-specific status and result fields used by clients.
+func RedactTaskDataForPublic(data json.RawMessage, publicModel, publicTaskID string) json.RawMessage {
 	if len(data) == 0 {
 		return data
 	}
 	var m map[string]any
 	if err := common.Unmarshal(data, &m); err != nil {
-		return data
+		return nil
 	}
-	if _, ok := m["usage"]; !ok {
-		return data
-	}
-	delete(m, "usage")
+	redactPublicTaskDataMap(m, publicModel, publicTaskID, true)
 	b, err := common.Marshal(m)
 	if err != nil {
-		return data
+		return nil
 	}
 	return json.RawMessage(b)
+}
+
+func redactPublicTaskDataMap(data map[string]any, publicModel, publicTaskID string, root bool) {
+	hasTaskID := false
+	for _, key := range []string{"task_id", "taskId", "taskID", "external_task_id", "externalTaskId", "externalTaskID"} {
+		if _, ok := data[key]; ok {
+			hasTaskID = true
+			break
+		}
+	}
+	_, hasStatus := data["status"]
+	hasModel := false
+	for _, key := range []string{"model", "model_name", "modelName"} {
+		if _, ok := data[key]; ok {
+			hasModel = true
+			break
+		}
+	}
+	taskObject := root || hasTaskID || (hasStatus && hasModel)
+
+	for key, value := range data {
+		switch key {
+		case "usage", "usage_metadata", "usageMetadata",
+			"upstream_model_name", "upstreamModelName",
+			"upstream_task_id", "upstreamTaskId", "upstreamTaskID":
+			delete(data, key)
+		case "operationName", "operation_name":
+			if publicTaskID == "" {
+				delete(data, key)
+			} else {
+				data[key] = publicTaskID
+			}
+		case "name":
+			name, isString := value.(string)
+			if !isString || !strings.Contains(name, "operations/") {
+				continue
+			}
+			if publicTaskID == "" {
+				delete(data, key)
+			} else {
+				data[key] = publicTaskID
+			}
+		case "model", "model_name", "modelName":
+			if publicModel == "" {
+				delete(data, key)
+			} else {
+				data[key] = publicModel
+			}
+		case "task_id", "taskId", "taskID", "external_task_id", "externalTaskId", "externalTaskID":
+			if publicTaskID == "" {
+				delete(data, key)
+			} else {
+				data[key] = publicTaskID
+			}
+		case "id":
+			if taskObject {
+				if publicTaskID == "" {
+					delete(data, key)
+				} else {
+					data[key] = publicTaskID
+				}
+			}
+		default:
+			redactPublicTaskDataValue(value, publicModel, publicTaskID)
+		}
+	}
+}
+
+func redactPublicTaskDataValue(value any, publicModel, publicTaskID string) {
+	switch nested := value.(type) {
+	case map[string]any:
+		redactPublicTaskDataMap(nested, publicModel, publicTaskID, false)
+	case []any:
+		for _, item := range nested {
+			redactPublicTaskDataValue(item, publicModel, publicTaskID)
+		}
+	}
 }
 
 // publicVideoProgress 计算对外进度：终态（成功/失败）固定 100，

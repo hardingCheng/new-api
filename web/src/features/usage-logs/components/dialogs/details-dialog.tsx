@@ -484,7 +484,8 @@ export function DetailsDialog(props: DetailsDialogProps) {
     !!other?.expr_b64
   const hasAudioTokens = other?.ws || other?.audio
   const showTiming = isTimingLogType(props.log.type)
-  const showIp = !!props.log.ip && props.log.type !== 7
+  const showAdminIp =
+    !!props.log.ip && (showTiming || (props.isAdmin && isTopup))
   const adminInfo = other?.admin_info
   const userPricingOverrides =
     adminInfo?.user_pricing_overrides ?? other?.user_pricing_overrides
@@ -679,7 +680,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
             <DetailRow label={t('Token')} value={props.log.token_name} mono />
           )}
 
-          {(props.log.group || other?.group) && (
+          {props.isAdmin && (props.log.group || other?.group) && (
             <DetailRow
               label={t('Group')}
               value={props.log.group || other?.group || ''}
@@ -687,7 +688,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
             />
           )}
 
-          {showIp && (
+          {showAdminIp && (
             <DetailRow
               label={t('IP Address')}
               value={
@@ -1086,22 +1087,20 @@ export function DetailsDialog(props: DetailsDialogProps) {
         )}
 
         {/* Model mapping */}
-        {props.isAdmin &&
-          other?.is_model_mapped &&
-          other?.upstream_model_name && (
-            <DetailSection label={t('Model Mapping')}>
-              <DetailRow
-                label={t('Request Model')}
-                value={props.log.model_name}
-                mono
-              />
-              <DetailRow
-                label={t('Actual Model')}
-                value={other.upstream_model_name}
-                mono
-              />
-            </DetailSection>
-          )}
+        {other?.is_model_mapped && other?.upstream_model_name && (
+          <DetailSection label={t('Model Mapping')}>
+            <DetailRow
+              label={t('Request Model')}
+              value={props.log.model_name}
+              mono
+            />
+            <DetailRow
+              label={t('Actual Model')}
+              value={other.upstream_model_name}
+              mono
+            />
+          </DetailSection>
+        )}
 
         {/* Token breakdown (for consume/error types with token data) */}
         {isDisplayableType(props.log.type) && other && (

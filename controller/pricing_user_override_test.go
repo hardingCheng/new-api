@@ -4,8 +4,11 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +25,9 @@ func TestApplyUserPricingToPricingList(t *testing.T) {
 			{"user_id": 7, "group_pattern": "vip", "model_pattern": "per-call-model", "type": "model_price", "value": 0},
 			{"user_id": 7, "group_pattern": "default", "model_pattern": "ratio-model", "type": "model_ratio", "value": 0},
 			{"user_id": 7, "group_pattern": "discount", "model_pattern": "ratio-model", "type": "ratio", "value": 0.25},
-			{"user_id": 7, "group_pattern": "vip", "model_pattern": "per-call-to-ratio", "type": "model_ratio", "value": 3}
+			{"user_id": 7, "group_pattern": "vip", "model_pattern": "per-call-to-ratio", "type": "model_ratio", "value": 3},
+			{"user_id": 7, "group_pattern": "vip", "model_pattern": "tiered-model", "type": "ratio", "value": 0.5},
+			{"user_id": 7, "group_pattern": "vip", "model_pattern": "tiered-model", "type": "model_price", "value": 0}
 		]
 	}`
 	require.NoError(t, ratio_setting.UpdateUserPricingOverrideByJSONString(overrideJSON))
@@ -85,7 +90,67 @@ func TestApplyUserPricingToPricingList(t *testing.T) {
 	require.Equal(t, 3.0, switched.ModelRatio)
 	require.Equal(t, -1.0, switched.ModelPrice)
 
-	require.Nil(t, result[3].UserPricing, "tiered expression pricing is not overridden in the runtime billing path")
+	require.NotNil(t, result[3].UserPricing)
+	tiered := result[3].UserPricing.Groups["vip"]
+	require.False(t, tiered.UsePrice)
+	require.Equal(t, 1.0, tiered.ModelRatio)
+	require.Equal(t, 0.5, tiered.GroupRatio)
+}
+
+func TestUserModelViewPricingInheritsTargetModelOverride(t *testing.T) {
+	originalViewJSON, err := common.Marshal(model_setting.GetUserModelViewCopy())
+	require.NoError(t, err)
+	originalPricingJSON, err := common.Marshal(ratio_setting.GetUserPricingOverrideCopy())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, model_setting.UpdateUserModelViewByJSONString(string(originalViewJSON)))
+		require.NoError(t, ratio_setting.UpdateUserPricingOverrideByJSONString(string(originalPricingJSON)))
+	})
+
+	require.NoError(t, model_setting.UpdateUserModelViewByJSONString(`{
+		"rules": [{
+			"user_id": 7,
+			"aliases": [
+				{"public_model":"521ai-2.0-720p","target_model":"seedance-2.0-720p","reference_video":"forbidden"}
+			]
+		}]
+	}`))
+	require.NoError(t, ratio_setting.UpdateUserPricingOverrideByJSONString(`{
+		"rules": [{
+			"user_id": 7,
+			"group_pattern": "sd2",
+			"model_pattern": "seedance-2.0-720p",
+			"type": "model_price",
+			"value": 0.75
+		}]
+	}`))
+
+	basePricing := []model.Pricing{
+		{
+			ModelName:              "seedance-2.0-720p",
+			QuotaType:              1,
+			ModelPrice:             2,
+			EnableGroup:            []string{"sd2"},
+			SupportedEndpointTypes: []constant.EndpointType{constant.EndpointTypeOpenAIVideo},
+		},
+	}
+	pricing := applyUserModelViewToPricing(basePricing, 7)
+	require.Len(t, pricing, 1)
+	assert.Equal(t, "521ai-2.0-720p", pricing[0].ModelName)
+	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAIVideo}, pricing[0].SupportedEndpointTypes)
+	regularPricing := applyUserModelViewToPricing(basePricing, 8)
+	require.Len(t, regularPricing, 1)
+	assert.Equal(t, "seedance-2.0-720p", regularPricing[0].ModelName)
+
+	result := applyUserPricingToPricingList(
+		pricing,
+		&model.UserBase{Id: 7, Username: "special-user", Group: "sd2"},
+		map[string]float64{"sd2": 1},
+	)
+	require.NotNil(t, result[0].UserPricing)
+	override := result[0].UserPricing.Groups["sd2"]
+	assert.True(t, override.UsePrice)
+	assert.Equal(t, 0.75, override.ModelPrice)
 }
 
 func TestApplyUserGroupRatioOverridesToMap(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -844,7 +844,7 @@ func (user *User) UpdateWithTx(tx *gorm.DB, updatePassword bool) error {
 			return err
 		}
 	}
-	// external_id 是对外稳定标识，任何更新都不能覆盖它
+	// external_id 是对外稳定标识，任何更新都不能覆盖它。
 	if err = tx.Model(&current).Omit("external_id", "quota", "used_quota", "request_count", "auth_version").Updates(newUser).Error; err != nil {
 		return err
 	}
