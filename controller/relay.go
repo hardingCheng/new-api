@@ -471,6 +471,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			adminInfo["multi_key_index"] = common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex)
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
+		service.AppendUserChannelRoutingAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {
@@ -651,6 +652,10 @@ func RelayTask(c *gin.Context) {
 
 		if lockedCh, ok := relayInfo.LockedChannel.(*model.Channel); ok && lockedCh != nil {
 			channel = lockedCh
+			if !service.AllowSelectedChannelByUserRouting(c, retryParam.TokenGroup, retryParam.ModelName, channel) {
+				taskErr = service.TaskErrorWrapperLocal(fmt.Errorf("locked channel is not allowed by user channel routing"), "user_channel_routing_denied", http.StatusServiceUnavailable)
+				break
+			}
 			if !service.AllowSelectedChannelByBreaker(c, channel) {
 				taskErr = service.TaskErrorWrapperLocal(fmt.Errorf("channel breaker is open"), "channel_breaker_open", http.StatusServiceUnavailable)
 				break

@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -118,7 +119,10 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, _ = getRandomSatisfiedChannelByBreaker(param, autoGroup, priorityRetry)
+			channel, err = getRandomSatisfiedChannelByBreaker(param, autoGroup, priorityRetry)
+			if err != nil {
+				return nil, autoGroup, err
+			}
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
 				// 当前分组没有该模型的可用渠道，尝试下一个分组
@@ -165,21 +169,42 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 }
 
 func getRandomSatisfiedChannelByBreaker(param *RetryParam, group string, priorityRetry int) (*model.Channel, error) {
+	decision := resolveUserChannelRouting(param.Ctx, group, param.ModelName)
+	channel, err := getRandomSatisfiedChannelByBreakerAndRouting(param, group, priorityRetry, decision)
+	if channel != nil || err != nil || !decision.Matched || decision.Match.Rule.Fallback != model_setting.UserChannelRoutingFallbackDefault {
+		return channel, err
+	}
+
+	channel, err = getRandomSatisfiedChannelByBreakerAndRouting(param, group, priorityRetry, userChannelRoutingDecision{})
+	setUserChannelRoutingLogInfo(param.Ctx, decision, group, param.ModelName, 0, true, "assigned_pool_unavailable")
+	if channel != nil {
+		setUserChannelRoutingLogInfo(param.Ctx, decision, group, param.ModelName, channel.Id, true, "assigned_pool_unavailable")
+	}
+	return channel, err
+}
+
+func getRandomSatisfiedChannelByBreakerAndRouting(param *RetryParam, group string, priorityRetry int, decision userChannelRoutingDecision) (*model.Channel, error) {
 	maxAttempts := common.RetryTimes + 1
 	if maxAttempts < 1 {
 		maxAttempts = 1
 	}
 	var lastErr error
-	for offset := 0; offset < maxAttempts; offset++ {
-		channel, err := model.GetRandomSatisfiedChannelWithFilter(group, param.ModelName, priorityRetry+offset, param.RequestPath, func(channel *model.Channel) bool {
+	for offset := 0; decision.Matched || offset < maxAttempts; offset++ {
+		channel, exhausted, err := model.GetRandomSatisfiedChannelWithFilters(group, param.ModelName, priorityRetry+offset, param.RequestPath, userChannelRoutingCandidateFilter(decision), func(channel *model.Channel) bool {
 			allowed := CanUseChannelByBreaker(param.Ctx, typesChannelError(channel))
 			if !allowed {
 				logger.LogWarn(param.Ctx, fmt.Sprintf("channel breaker skipped channel #%d", channel.Id))
 			}
 			return allowed
 		})
+		if exhausted {
+			break
+		}
 		if err != nil {
 			lastErr = err
+			if decision.Matched {
+				break
+			}
 			continue
 		}
 		if channel == nil {
@@ -188,6 +213,9 @@ func getRandomSatisfiedChannelByBreaker(param *RetryParam, group string, priorit
 		if !channel.ChannelInfo.IsMultiKey && !AcquireChannelBreakerProbe(param.Ctx, typesChannelError(channel)) {
 			logger.LogWarn(param.Ctx, fmt.Sprintf("channel breaker probe limit reached for channel #%d", channel.Id))
 			continue
+		}
+		if decision.Matched {
+			setUserChannelRoutingLogInfo(param.Ctx, decision, group, param.ModelName, channel.Id, false, "")
 		}
 		return channel, nil
 	}

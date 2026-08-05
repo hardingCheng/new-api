@@ -66,6 +66,11 @@ func Distribute() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorChannelDisabled))
 				return
 			}
+			usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+			if !service.AllowSelectedChannelByUserRouting(c, usingGroup, modelRequest.Model, channel) {
+				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+				return
+			}
 			if !service.AllowSelectedChannelByBreaker(c, channel) {
 				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": modelRequest.Group, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
 				return
@@ -130,7 +135,7 @@ func Distribute() func(c *gin.Context) {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 							autoGroups := service.GetUserAutoGroup(userGroup)
 							for _, g := range autoGroups {
-								if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) && service.AllowSelectedChannelByBreaker(c, preferred) {
+								if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) && service.AllowSelectedChannelByUserRouting(c, g, modelRequest.Model, preferred) && service.AllowSelectedChannelByBreaker(c, preferred) {
 									selectGroup = g
 									common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
 									channel = preferred
@@ -139,7 +144,7 @@ func Distribute() func(c *gin.Context) {
 									break
 								}
 							}
-						} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) && service.AllowSelectedChannelByBreaker(c, preferred) {
+						} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) && service.AllowSelectedChannelByUserRouting(c, usingGroup, modelRequest.Model, preferred) && service.AllowSelectedChannelByBreaker(c, preferred) {
 							channel = preferred
 							selectGroup = usingGroup
 							affinityUsable = true

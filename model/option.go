@@ -154,6 +154,7 @@ func InitOptionMap() {
 	common.OptionMap["ModelQuotaPool"] = ratio_setting.ModelQuotaPool2JSONString()
 	common.OptionMap["UserPricingOverride"] = ratio_setting.UserPricingOverride2JSONString()
 	common.OptionMap["UserModelView"] = model_setting.UserModelView2JSONString()
+	common.OptionMap["UserChannelRouting"] = model_setting.UserChannelRouting2JSONString()
 	common.OptionMap["CacheRatio"] = ratio_setting.CacheRatio2JSONString()
 	common.OptionMap["CreateCacheRatio"] = ratio_setting.CreateCacheRatio2JSONString()
 	common.OptionMap["GroupRatio"] = ratio_setting.GroupRatio2JSONString()
@@ -638,6 +639,8 @@ func updateOptionMap(key string, value string) (err error) {
 		// No additional in-memory variable to update.
 	case "UserModelView":
 		err = model_setting.UpdateUserModelViewByJSONString(value)
+	case "UserChannelRouting":
+		err = model_setting.UpdateUserChannelRoutingByJSONString(value)
 	}
 	return err
 }

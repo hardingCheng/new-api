@@ -207,6 +207,7 @@ export type ModelSettings = {
   'grok.violation_deduction_enabled': boolean
   'grok.violation_deduction_amount': number
   UserModelView?: string
+  UserChannelRouting?: string
   ModelPrice: string
   ModelRatio: string
   CacheRatio: string
