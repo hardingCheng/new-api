@@ -411,6 +411,35 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "UserChannelRouting":
+		var config model_setting.UserChannelRoutingConfig
+		config, err = model_setting.ParseUserChannelRoutingJSONString(option.Value.(string))
+		if err == nil {
+			channelIDs := make(map[int]struct{})
+			for _, rule := range config.Rules {
+				for _, channelID := range rule.ChannelIDs {
+					channelIDs[channelID] = struct{}{}
+				}
+			}
+			ids := make([]int, 0, len(channelIDs))
+			for channelID := range channelIDs {
+				ids = append(ids, channelID)
+			}
+			if len(ids) > 0 {
+				var channels []*model.Channel
+				channels, err = model.GetChannelsByIds(ids)
+				if err == nil && len(channels) != len(ids) {
+					err = fmt.Errorf("one or more channel_ids do not exist")
+				}
+			}
+		}
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
 	}
 	err = model.UpdateOption(option.Key, option.Value.(string))
 	if err != nil {

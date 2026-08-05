@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -112,17 +113,11 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 func GetChannelWithFilter(group string, model string, retry int, requestPath string, allowChannel func(*Channel) bool) (*Channel, error) {
 	var abilities []Ability
 
-	var err error = nil
 	channelQuery, err := getChannelQuery(group, model, retry)
 	if err != nil {
 		return nil, err
 	}
-	if common.UsingMainDatabase(common.DatabaseTypeSQLite) || common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	} else {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	}
-	if err != nil {
+	if err = channelQuery.Order("weight DESC").Find(&abilities).Error; err != nil {
 		return nil, err
 	}
 	abilities = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
@@ -136,9 +131,9 @@ func GetChannelWithFilter(group string, model string, retry int, requestPath str
 	}
 
 	candidates := make([]weightedChannel, 0, len(abilities))
-	for _, ability_ := range abilities {
+	for _, ability := range abilities {
 		channel := Channel{}
-		if err = DB.First(&channel, "id = ?", ability_.ChannelId).Error; err != nil {
+		if err = DB.First(&channel, "id = ?", ability.ChannelId).Error; err != nil {
 			return nil, err
 		}
 		if channel.Status != common.ChannelStatusEnabled {
@@ -148,7 +143,7 @@ func GetChannelWithFilter(group string, model string, retry int, requestPath str
 			continue
 		}
 		candidates = append(candidates, weightedChannel{
-			ability: ability_,
+			ability: ability,
 			channel: &channel,
 		})
 	}
@@ -168,6 +163,108 @@ func GetChannelWithFilter(group string, model string, retry int, requestPath str
 		}
 	}
 	return candidates[0].channel, nil
+}
+
+// GetChannelWithFilters applies candidateChannel before priority selection,
+// matching the memory-cache selection path.
+func GetChannelWithFilters(group string, model string, retry int, requestPath string, candidateChannel func(*Channel) bool, allowChannel func(*Channel) bool) (*Channel, bool, error) {
+	if candidateChannel == nil {
+		channel, err := GetChannelWithFilter(group, model, retry, requestPath, allowChannel)
+		return channel, false, err
+	}
+
+	var abilities []Ability
+	err := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).Find(&abilities).Error
+	if err != nil {
+		return nil, false, err
+	}
+	abilities = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
+	sort.SliceStable(abilities, func(i, j int) bool {
+		leftPriority := int64(0)
+		if abilities[i].Priority != nil {
+			leftPriority = *abilities[i].Priority
+		}
+		rightPriority := int64(0)
+		if abilities[j].Priority != nil {
+			rightPriority = *abilities[j].Priority
+		}
+		if leftPriority != rightPriority {
+			return leftPriority > rightPriority
+		}
+		return abilities[i].Weight > abilities[j].Weight
+	})
+	if len(abilities) == 0 {
+		return nil, true, nil
+	}
+
+	type channelAbility struct {
+		ability Ability
+		channel *Channel
+	}
+
+	routedCandidates := make([]channelAbility, 0, len(abilities))
+	for _, ability := range abilities {
+		channel := Channel{}
+		if err = DB.First(&channel, "id = ?", ability.ChannelId).Error; err != nil {
+			return nil, false, err
+		}
+		if !candidateChannel(&channel) {
+			continue
+		}
+		routedCandidates = append(routedCandidates, channelAbility{
+			ability: ability,
+			channel: &channel,
+		})
+	}
+	if len(routedCandidates) == 0 {
+		return nil, true, nil
+	}
+
+	priorities := make([]int64, 0)
+	seenPriorities := make(map[int64]struct{})
+	for _, candidate := range routedCandidates {
+		priority := int64(0)
+		if candidate.ability.Priority != nil {
+			priority = *candidate.ability.Priority
+		}
+		if _, exists := seenPriorities[priority]; exists {
+			continue
+		}
+		seenPriorities[priority] = struct{}{}
+		priorities = append(priorities, priority)
+	}
+	if retry >= len(priorities) {
+		return nil, true, nil
+	}
+	targetPriority := priorities[retry]
+
+	candidates := make([]channelAbility, 0, len(routedCandidates))
+	for _, candidate := range routedCandidates {
+		priority := int64(0)
+		if candidate.ability.Priority != nil {
+			priority = *candidate.ability.Priority
+		}
+		if priority != targetPriority || candidate.channel.Status != common.ChannelStatusEnabled || (allowChannel != nil && !allowChannel(candidate.channel)) {
+			continue
+		}
+		candidates = append(candidates, candidate)
+	}
+	if len(candidates) == 0 {
+		return nil, false, nil
+	}
+
+	weightSum := uint(0)
+	for _, candidate := range candidates {
+		weightSum += candidate.ability.Weight + 10
+	}
+	weight := common.GetRandomInt(int(weightSum))
+	for _, candidate := range candidates {
+		weight -= int(candidate.ability.Weight) + 10
+		if weight <= 0 {
+			return candidate.channel, false, nil
+		}
+	}
+	return candidates[0].channel, false, nil
 }
 
 // filterAbilitiesByRequestPathAndModel restricts candidates by request path and

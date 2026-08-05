@@ -71,6 +71,15 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	if billableSeconds := c.GetInt("billable_video_seconds"); billableSeconds > 0 {
 		other["billable_video_seconds"] = billableSeconds
 	}
+	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	if !ok || adminInfo == nil {
+		adminInfo = make(map[string]interface{})
+	}
+	AppendUserChannelRoutingAdminInfo(c, adminInfo)
+	AppendChannelAffinityAdminInfo(c, adminInfo)
+	if len(adminInfo) > 0 {
+		other["admin_info"] = adminInfo
+	}
 	attachQuotaSaturation(c, info, other)
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 		ChannelId: info.ChannelId,

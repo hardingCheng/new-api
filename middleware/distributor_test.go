@@ -8,7 +8,9 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -131,4 +133,129 @@ func TestDistributeRoutesUserAliasAndAllowsDirectTarget(t *testing.T) {
 	assert.Equal(t, "seedance-2.0-720p", publicModel)
 	assert.Empty(t, routingModel)
 	assert.Empty(t, referencePolicy)
+}
+
+func TestDistributeRejectsSpecificChannelOutsideUserRoutingPool(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
+	originalRouting := model_setting.UserChannelRouting2JSONString()
+	originalDB := model.DB
+	originalRedisEnabled := common.RedisEnabled
+	common.RedisEnabled = false
+	common.SetChannelBreakerEnabled(false)
+	t.Cleanup(func() {
+		require.NoError(t, model_setting.UpdateUserChannelRoutingByJSONString(originalRouting))
+		model.DB = originalDB
+		common.RedisEnabled = originalRedisEnabled
+		common.SetChannelBreakerEnabled(false)
+	})
+	require.NoError(t, model_setting.UpdateUserChannelRoutingByJSONString(`{
+		"rules": [{"id":"route","name":"Route","user_id":521,"group_pattern":"sd2","model_pattern":"*","channel_ids":[2],"fallback":"strict"}]
+	}`))
+
+	database, err := gorm.Open(sqlite.Open("file:middleware_user_channel_routing?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	model.DB = database
+	require.NoError(t, database.AutoMigrate(&model.Channel{}))
+	require.NoError(t, database.Create(&model.Channel{
+		Id:     1,
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "test-key",
+		Status: common.ChannelStatusEnabled,
+		Name:   "forbidden-channel",
+		Group:  "sd2",
+		Models: "video",
+	}).Error)
+
+	router := gin.New()
+	router.Use(func(context *gin.Context) {
+		common.SetContextKey(context, constant.ContextKeyUserId, 521)
+		common.SetContextKey(context, constant.ContextKeyUsingGroup, "sd2")
+		common.SetContextKey(context, constant.ContextKeyTokenSpecificChannelId, "1")
+		context.Next()
+	})
+	router.Use(Distribute())
+	router.POST("/v1/video/generations", func(context *gin.Context) {
+		context.Status(http.StatusNoContent)
+	})
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/video/generations",
+		strings.NewReader(`{"model":"video","prompt":"animate"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(response, request)
+
+	assert.Equal(t, http.StatusServiceUnavailable, response.Code)
+}
+
+func TestDistributeExpandsAutoGroupBeforeCheckingSpecificChannelRouting(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
+	originalRouting := model_setting.UserChannelRouting2JSONString()
+	originalAutoGroups := setting.AutoGroups2JsonString()
+	originalDB := model.DB
+	originalMemoryCacheEnabled := common.MemoryCacheEnabled
+	originalRedisEnabled := common.RedisEnabled
+	common.MemoryCacheEnabled = true
+	common.RedisEnabled = false
+	common.SetChannelBreakerEnabled(false)
+	t.Cleanup(func() {
+		require.NoError(t, model_setting.UpdateUserChannelRoutingByJSONString(originalRouting))
+		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
+		model.DB = originalDB
+		common.MemoryCacheEnabled = originalMemoryCacheEnabled
+		common.RedisEnabled = originalRedisEnabled
+		common.SetChannelBreakerEnabled(false)
+		model.InitChannelCache()
+	})
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["sd2"]`))
+	require.NoError(t, model_setting.UpdateUserChannelRoutingByJSONString(`{
+		"rules": [{"id":"route","name":"Route","user_id":521,"group_pattern":"sd2","model_pattern":"*","channel_ids":[1],"fallback":"strict"}]
+	}`))
+
+	database, err := gorm.Open(sqlite.Open("file:middleware_auto_user_channel_routing?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	model.DB = database
+	require.NoError(t, database.AutoMigrate(&model.Channel{}, &model.Ability{}))
+	priority := int64(10)
+	require.NoError(t, database.Create(&model.Channel{
+		Id:       1,
+		Type:     constant.ChannelTypeOpenAI,
+		Key:      "test-key",
+		Status:   common.ChannelStatusEnabled,
+		Name:     "allowed-channel",
+		Group:    "sd2",
+		Models:   "video",
+		Priority: &priority,
+	}).Error)
+	require.NoError(t, database.Create(&model.Ability{
+		Group: "sd2", Model: "video", ChannelId: 1, Enabled: true, Priority: &priority, Weight: 100,
+	}).Error)
+	model.InitChannelCache()
+
+	var selectedAutoGroup string
+	router := gin.New()
+	router.Use(func(context *gin.Context) {
+		common.SetContextKey(context, constant.ContextKeyUserId, 521)
+		common.SetContextKey(context, constant.ContextKeyUserGroup, "sd2")
+		common.SetContextKey(context, constant.ContextKeyUsingGroup, "auto")
+		common.SetContextKey(context, constant.ContextKeyTokenSpecificChannelId, "1")
+		context.Next()
+	})
+	router.Use(Distribute())
+	router.POST("/v1/video/generations", func(context *gin.Context) {
+		selectedAutoGroup = common.GetContextKeyString(context, constant.ContextKeyAutoGroup)
+		context.Status(http.StatusNoContent)
+	})
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/video/generations", strings.NewReader(`{"model":"video"}`))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(response, request)
+
+	assert.Equal(t, http.StatusNoContent, response.Code)
+	assert.Equal(t, "sd2", selectedAutoGroup)
 }

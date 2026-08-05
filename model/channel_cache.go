@@ -116,9 +116,17 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 }
 
 func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, requestPath string, allowChannel func(*Channel) bool) (*Channel, error) {
+	channel, _, err := GetRandomSatisfiedChannelWithFilters(group, model, retry, requestPath, nil, allowChannel)
+	return channel, err
+}
+
+// GetRandomSatisfiedChannelWithFilters applies candidateChannel before priority
+// selection, then applies allowChannel within the selected priority. The
+// exhausted result is true once no candidate priority remains.
+func GetRandomSatisfiedChannelWithFilters(group string, model string, retry int, requestPath string, candidateChannel func(*Channel) bool, allowChannel func(*Channel) bool) (*Channel, bool, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannelWithFilter(group, model, retry, requestPath, allowChannel)
+		return GetChannelWithFilters(group, model, retry, requestPath, candidateChannel, allowChannel)
 	}
 
 	channelSyncLock.RLock()
@@ -134,20 +142,37 @@ func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, 
 	}
 
 	if len(channels) == 0 {
-		return nil, nil
+		return nil, candidateChannel != nil, nil
+	}
+	if candidateChannel != nil {
+		filtered := make([]int, 0, len(channels))
+		for _, channelID := range channels {
+			channel, ok := channelsIDM[channelID]
+			if !ok || candidateChannel(channel) {
+				filtered = append(filtered, channelID)
+			}
+		}
+		channels = filtered
+	}
+
+	if len(channels) == 0 {
+		return nil, true, nil
 	}
 
 	if len(channels) == 1 {
 		if channel, ok := channelsIDM[channels[0]]; ok {
+			if retry > 0 && candidateChannel != nil {
+				return nil, true, nil
+			}
 			if channel.Status != common.ChannelStatusEnabled {
-				return nil, nil
+				return nil, false, nil
 			}
 			if allowChannel != nil && !allowChannel(channel) {
-				return nil, nil
+				return nil, false, nil
 			}
-			return channel, nil
+			return channel, false, nil
 		}
-		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
+		return nil, false, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
 	}
 
 	uniquePriorities := make(map[int]bool)
@@ -155,7 +180,7 @@ func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, 
 		if channel, ok := channelsIDM[channelId]; ok {
 			uniquePriorities[int(channel.GetPriority())] = true
 		} else {
-			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
+			return nil, false, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
 		}
 	}
 	var sortedUniquePriorities []int
@@ -164,6 +189,9 @@ func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, 
 	}
 	sort.Sort(sort.Reverse(sort.IntSlice(sortedUniquePriorities)))
 
+	if retry >= len(uniquePriorities) && candidateChannel != nil {
+		return nil, true, nil
+	}
 	if retry >= len(uniquePriorities) {
 		retry = len(uniquePriorities) - 1
 	}
@@ -185,12 +213,15 @@ func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, 
 				targetChannels = append(targetChannels, channel)
 			}
 		} else {
-			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
+			return nil, false, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
 		}
 	}
 
 	if len(targetChannels) == 0 {
-		return nil, errors.New(fmt.Sprintf("no channel found, group: %s, model: %s, priority: %d", group, model, targetPriority))
+		if candidateChannel != nil {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("no channel found, group: %s, model: %s, priority: %d", group, model, targetPriority)
 	}
 
 	// smoothing factor and adjustment
@@ -217,11 +248,11 @@ func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, 
 	for _, channel := range targetChannels {
 		randomWeight -= channel.GetWeight()*smoothingFactor + smoothingAdjustment
 		if randomWeight < 0 {
-			return channel, nil
+			return channel, false, nil
 		}
 	}
 	// return null if no channel is not found
-	return nil, errors.New("channel not found")
+	return nil, false, errors.New("channel not found")
 }
 
 // filterChannelsByRequestPathAndModel restricts candidates by request path and
