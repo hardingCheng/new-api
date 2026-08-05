@@ -396,10 +396,10 @@ export function UserPricingOverrideSection(props: { defaultValue: string }) {
     setSelectedModels(rule.model_pattern ? [rule.model_pattern] : [])
   }
 
-  const saveRule = () => {
+  const buildNextDraftRules = () => {
     if (!selectedUsers.length) {
       toast.error(t('Select at least one user'))
-      return
+      return null
     }
     let targetModels = ['']
     if (isModelScoped(scenario)) {
@@ -410,7 +410,7 @@ export function UserPricingOverrideSection(props: { defaultValue: string }) {
     }
     if (isModelScoped(scenario) && !targetModels.length) {
       toast.error(t('Select a model or enter a wildcard'))
-      return
+      return null
     }
 
     const additions = selectedUsers.slice(0, 1).flatMap((user) =>
@@ -450,12 +450,18 @@ export function UserPricingOverrideSection(props: { defaultValue: string }) {
       toast.error(
         t('A pricing item with the same scope and type already exists.')
       )
-      return
+      return null
     }
-    setDraftRules((current) => [
-      ...current.filter((rule) => rule.id !== editingRuleId),
+    return [
+      ...draftRules.filter((rule) => rule.id !== editingRuleId),
       ...additions,
-    ])
+    ]
+  }
+
+  const saveRule = () => {
+    const nextDraftRules = buildNextDraftRules()
+    if (!nextDraftRules) return
+    setDraftRules(nextDraftRules)
     resetRuleEditor()
   }
 
@@ -465,9 +471,15 @@ export function UserPricingOverrideSection(props: { defaultValue: string }) {
       toast.error(t('Select at least one user'))
       return
     }
+    let rulesToSave = draftRules
+    if (editingRuleId) {
+      const nextDraftRules = buildNextDraftRules()
+      if (!nextDraftRules) return
+      rulesToSave = nextDraftRules
+    }
     const nextRules = [
       ...rules.filter((rule) => rule.user_id !== user.id),
-      ...draftRules.map((rule) => ({
+      ...rulesToSave.map((rule) => ({
         ...rule,
         user_id: user.id,
         username: user.username,
