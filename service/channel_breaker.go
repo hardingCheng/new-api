@@ -982,10 +982,6 @@ func runtimeRuleFromConfig(rule common.ChannelBreakerRule, fallback channelBreak
 var defaultInstantDisableKeywordList = []string{
 	"insufficient account balance",
 	"insufficient balance",
-	"insufficient user quota",
-	"insufficient_user_quota",
-	"用户额度不足",
-	"预扣费额度失败",
 }
 
 func defaultInstantDisableStatusRanges() []operation_setting.StatusCodeRange {

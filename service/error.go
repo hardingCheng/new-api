@@ -227,6 +227,8 @@ func TaskErrorFromAPIError(apiErr *types.NewAPIError) *taskdto.TaskError {
 		StatusCode: apiErr.StatusCode,
 		// 我方自身错误（如用户预扣费失败）必须保留本地语义，
 		// 客户才能看到自己的余额提示而不是被当成上游错误脱敏。
+		// 不能无条件置 true：LocalError=false 才会触发上游计费错误的脱敏
+		// （controller/relay.go 的 MatchesUpstreamBillingLeak），置死会泄漏上游信息。
 		LocalError: apiErr.GetErrorType() == types.ErrorTypeNewAPIError,
 		Error:      apiErr.Err,
 	}

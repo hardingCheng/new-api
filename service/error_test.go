@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -62,6 +63,22 @@ func TestResetStatusCode(t *testing.T) {
 			require.Equal(t, tc.expectedCode, newAPIError.StatusCode)
 		})
 	}
+}
+
+func TestTaskErrorFromAPIErrorMarksLocalBillingFailure(t *testing.T) {
+	apiErr := types.NewErrorWithStatusCode(
+		errors.New("预扣费额度失败, 用户剩余额度: ¥0.06"),
+		types.ErrorCodeInsufficientUserQuota,
+		http.StatusForbidden,
+		types.ErrOptionWithSkipRetry(),
+	)
+
+	taskErr := TaskErrorFromAPIError(apiErr)
+
+	require.NotNil(t, taskErr)
+	require.True(t, taskErr.LocalError)
+	require.Equal(t, string(types.ErrorCodeInsufficientUserQuota), taskErr.Code)
+	require.Equal(t, http.StatusForbidden, taskErr.StatusCode)
 }
 
 func TestRelayErrorHandlerTruncatesInvalidJSONBodyInLog(t *testing.T) {

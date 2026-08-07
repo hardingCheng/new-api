@@ -93,6 +93,9 @@ export const DEFAULT_BREAKER_RULE: BreakerRule = {
   instant_disable_keywords: '',
 }
 
+export const UPSTREAM_BALANCE_EXHAUSTION_KEYWORDS =
+  'insufficient account balance\ninsufficient balance'
+
 export const BREAKER_TEMPLATES: Array<{
   label: string
   rule: Partial<BreakerRule>
@@ -132,8 +135,7 @@ export const BREAKER_TEMPLATES: Array<{
     rule: {
       instant_disable_enabled: true,
       instant_disable_status_codes: '403',
-      instant_disable_keywords:
-        'insufficient account balance\ninsufficient balance\ninsufficient_user_quota\n预扣费额度失败',
+      instant_disable_keywords: UPSTREAM_BALANCE_EXHAUSTION_KEYWORDS,
     },
   },
 ]
