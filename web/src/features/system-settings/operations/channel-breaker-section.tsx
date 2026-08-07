@@ -40,6 +40,7 @@ import { ChannelBreakerRuleDialog } from './channel-breaker-rule-dialog'
 import {
   BREAKER_TEMPLATES,
   DEFAULT_BREAKER_RULE,
+  UPSTREAM_BALANCE_EXHAUSTION_KEYWORDS,
   normalizeBreakerRule,
   type BreakerHistory,
   type BreakerRule,
@@ -106,8 +107,7 @@ const BUILTIN_BREAKER_RULE = normalizeBreakerRule({
   targets: [],
   instant_disable_enabled: true,
   instant_disable_status_codes: '403',
-  instant_disable_keywords:
-    'insufficient account balance\ninsufficient balance\ninsufficient user quota\ninsufficient_user_quota\n预扣费额度失败',
+  instant_disable_keywords: UPSTREAM_BALANCE_EXHAUSTION_KEYWORDS,
 })
 
 function pickConfig(settings: OperationsSettings): BreakerConfig {

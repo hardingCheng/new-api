@@ -978,9 +978,16 @@ func TestInstantDisableBuiltinDefaultDistinguishesChineseQuotaErrorSource(t *tes
 		Type:    "upstream_error",
 		Code:    "unknown_error",
 	}, http.StatusForbidden)
-	should, reason, _ = shouldInstantDisableChannel(c, channelError, upstreamUnstructuredErr)
-	require.True(t, should)
-	require.Contains(t, reason, "keyword=用户额度不足")
+	should, _, _ = shouldInstantDisableChannel(c, channelError, upstreamUnstructuredErr)
+	require.False(t, should)
+
+	preConsumeMessageOnlyErr := types.WithOpenAIError(types.OpenAIError{
+		Message: "预扣费额度失败, 用户剩余额度: ¥0.06",
+		Type:    "upstream_error",
+		Code:    "unknown_error",
+	}, http.StatusForbidden)
+	should, _, _ = shouldInstantDisableChannel(c, channelError, preConsumeMessageOnlyErr)
+	require.False(t, should)
 
 	ownQuotaErr := types.NewErrorWithStatusCode(
 		errors.New(message), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
