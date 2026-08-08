@@ -313,6 +313,59 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 	return nil
 }
 
+func (s *BillingSession) reserveFunding(delta int) error {
+	switch funding := s.funding.(type) {
+	case *WalletFunding:
+		// 与结算补扣（SettleBilling 正差额 → WalletFunding.Settle）语义一致：
+		// 全额无条件扣减，余额不足的部分记为欠费（余额可为负），不中断请求，
+		// 保证日志记录的预扣额度与用户余额的实际变动始终对账一致。
+		// DecreaseUserQuota 仅在数据库错误时失败。
+		if err := model.DecreaseUserQuota(funding.userId, delta, false); err != nil {
+			return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+		}
+		funding.consumed += delta
+		return nil
+	case *SubscriptionFunding:
+		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, int64(delta)); err != nil {
+			return types.NewErrorWithStatusCode(
+				fmt.Errorf("订阅额度不足或未配置订阅: %s", err.Error()),
+				types.ErrorCodeInsufficientUserQuota,
+				http.StatusForbidden,
+				types.ErrOptionWithSkipRetry(),
+				types.ErrOptionWithNoRecordErrorLog(),
+			)
+		}
+		return nil
+	default:
+		return types.NewError(fmt.Errorf("unsupported funding source: %s", s.funding.Source()), types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+	}
+}
+
+func (s *BillingSession) rollbackFundingReserve(delta int) {
+	switch funding := s.funding.(type) {
+	case *WalletFunding:
+		if err := model.IncreaseUserQuota(funding.userId, delta, false); err != nil {
+			common.SysLog("error rolling back wallet funding reserve: " + err.Error())
+		} else {
+			funding.consumed -= delta
+		}
+	case *SubscriptionFunding:
+		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, -int64(delta)); err != nil {
+			common.SysLog("error rolling back subscription funding reserve: " + err.Error())
+		}
+	}
+}
+
+func (s *BillingSession) reserveToken(delta int) error {
+	if delta <= 0 || s.relayInfo.IsPlayground {
+		return nil
+	}
+	if err := PreConsumeTokenQuota(s.relayInfo, delta); err != nil {
+		return types.NewErrorWithStatusCode(err, types.ErrorCodePreConsumeTokenQuotaFailed, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+	}
+	return nil
+}
+
 // shouldTrust 统一信任额度检查，适用于钱包和订阅。
 func (s *BillingSession) shouldTrust(c *gin.Context) bool {
 	// 异步任务（ForcePreConsume=true）必须预扣全额，不允许信任旁路
@@ -401,7 +454,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 
 		session := &BillingSession{
 			relayInfo: relayInfo,
-			funding:   &WalletFunding{},
+			funding:   &WalletFunding{userId: relayInfo.UserId},
 		}
 		if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {
 			return nil, apiErr
@@ -418,6 +471,9 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 			relayInfo: relayInfo,
 			funding: &SubscriptionFunding{
 				requestId: relayInfo.RequestId,
+				userId:    relayInfo.UserId,
+				modelName: relayInfo.OriginModelName,
+				amount:    subConsume,
 			},
 		}
 		// 订阅必须至少预扣 1，确保存在可恢复的订阅预扣记录。
