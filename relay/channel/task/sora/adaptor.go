@@ -101,7 +101,7 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.apiKey = info.ApiKey
 }
 
-func validateRemixRequest(c *gin.Context) *dto.TaskError {
+func validateRemixRequest(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskError {
 	var req relaycommon.TaskSubmitReq
 	if err := common.UnmarshalBodyReusable(c, &req); err != nil {
 		return service.TaskErrorWrapperLocal(err, "invalid_request", http.StatusBadRequest)
@@ -109,7 +109,7 @@ func validateRemixRequest(c *gin.Context) *dto.TaskError {
 	if strings.TrimSpace(req.Prompt) == "" {
 		return service.TaskErrorWrapperLocal(fmt.Errorf("field prompt is required"), "invalid_request", http.StatusBadRequest)
 	}
-	if taskErr := relaycommon.ValidateTaskDurationBounds(req); taskErr != nil {
+	if taskErr := relaycommon.ValidateTaskDurationBoundsForModel(req, info); taskErr != nil {
 		return taskErr
 	}
 	// 存储原始请求到 context，与 ValidateMultipartDirect 路径保持一致
@@ -119,7 +119,7 @@ func validateRemixRequest(c *gin.Context) *dto.TaskError {
 
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
 	if info.Action == constant.TaskActionRemix {
-		return validateRemixRequest(c)
+		return validateRemixRequest(c, info)
 	}
 	return relaycommon.ValidateMultipartDirect(c, info)
 }
@@ -197,7 +197,10 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 			bodyMap["model"] = info.UpstreamModelName
 			if req, err := relaycommon.GetTaskRequest(c); err == nil {
 				duration := relaycommon.EffectiveTaskDuration(req)
-				if duration > 0 {
+				if relaycommon.IsSeedance25AutoDuration(info, req) {
+					duration = -1
+				}
+				if duration != 0 {
 					bodyMap["seconds"] = strconv.Itoa(duration)
 					_, hasDuration := bodyMap["duration"]
 					if hasDuration || relaycommon.IsSeedanceVideoModel(req.Model) ||
@@ -232,7 +235,10 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		writer.WriteField("model", info.UpstreamModelName)
 		taskReq, _ := relaycommon.GetTaskRequest(c)
 		duration := relaycommon.EffectiveTaskDuration(taskReq)
-		hasDuration := duration > 0
+		if relaycommon.IsSeedance25AutoDuration(info, taskReq) {
+			duration = -1
+		}
+		hasDuration := duration != 0
 		_, hasDurationField := formData.Value["duration"]
 		writeDuration := hasDurationField || relaycommon.IsSeedanceVideoModel(taskReq.Model) ||
 			relaycommon.IsSeedanceVideoModel(info.OriginModelName) ||

@@ -142,8 +142,11 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		return nil, err
 	}
 	ratios := make(map[string]float64)
-	if relaycommon.IsSeedanceVideoModel(info.OriginModelName) || relaycommon.IsSeedanceVideoModel(req.Model) {
+	if relaycommon.IsSeedanceRelayModel(info, req.Model) {
 		generatedSeconds := relaycommon.EffectiveTaskDuration(req)
+		if generatedSeconds <= 0 {
+			generatedSeconds = 4
+		}
 		referenceSeconds, err := service.SumReferenceVideoDurationSeconds(c, relaycommon.ExtractReferenceVideoURLs(req))
 		if err != nil {
 			return nil, err
@@ -212,6 +215,9 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		body.Model = info.UpstreamModelName
 	} else {
 		info.UpstreamModelName = body.Model
+	}
+	if relaycommon.IsSeedance25AutoDuration(info, req) {
+		body.Duration = lo.ToPtr(dto.IntValue(-1))
 	}
 	data, err := common.Marshal(body)
 	if err != nil {
