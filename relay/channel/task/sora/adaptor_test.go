@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -50,7 +51,18 @@ func TestBuildRequestBodyJSONDurationCompatibility(t *testing.T) {
 		expectedSeconds  string
 		expectedDuration int
 		hasDuration      bool
+		autoDuration     bool
 	}{
+		{
+			name:             "seedance 2.5 preserves automatic duration",
+			body:             `{"model":"seedance-2.5-fast-720p","prompt":"test","duration":-1}`,
+			originModel:      "seedance-2.5-fast-720p",
+			upstreamModel:    "provider-video-model",
+			expectedSeconds:  "-1",
+			expectedDuration: -1,
+			hasDuration:      true,
+			autoDuration:     true,
+		},
 		{
 			name:             "prism adds numeric duration",
 			body:             `{"model":"prism-3.0-fast-480p","prompt":"test","seconds":"5"}`,
@@ -108,6 +120,11 @@ func TestBuildRequestBodyJSONDurationCompatibility(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			setting := operation_setting.GetGeneralSetting()
+			original := setting.Seedance25AutoDurationEnabled
+			setting.Seedance25AutoDurationEnabled = test.autoDuration
+			defer func() { setting.Seedance25AutoDurationEnabled = original }()
+
 			ctx := newTaskRequestContext(t, []byte(test.body), "application/json")
 			info := &relaycommon.RelayInfo{
 				OriginModelName: test.originModel,
@@ -147,7 +164,16 @@ func TestBuildRequestBodyMultipartDurationCompatibility(t *testing.T) {
 		seconds          string
 		expectedSeconds  string
 		expectedDuration string
+		autoDuration     bool
 	}{
+		{
+			name:             "seedance 2.5 sends automatic duration in both fields",
+			model:            "seedance-2.5-fast-720p",
+			seconds:          "-1",
+			expectedSeconds:  "-1",
+			expectedDuration: "-1",
+			autoDuration:     true,
+		},
 		{
 			name:             "prism sends both duration fields",
 			model:            "prism-3.0-fast-480p",
@@ -166,6 +192,11 @@ func TestBuildRequestBodyMultipartDurationCompatibility(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			setting := operation_setting.GetGeneralSetting()
+			original := setting.Seedance25AutoDurationEnabled
+			setting.Seedance25AutoDurationEnabled = test.autoDuration
+			defer func() { setting.Seedance25AutoDurationEnabled = original }()
+
 			var input bytes.Buffer
 			writer := multipart.NewWriter(&input)
 			require.NoError(t, writer.WriteField("model", test.model))

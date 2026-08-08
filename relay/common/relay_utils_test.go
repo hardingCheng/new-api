@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/setting/model_setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -294,4 +295,48 @@ func TestSeedanceDurationBoundsByVersion(t *testing.T) {
 			assert.Equal(t, fmt.Sprintf("%d", test.wantDuration), storedRequest.Seconds)
 		})
 	}
+}
+
+func TestSeedance25AutoDurationFeatureFlag(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setting := operation_setting.GetGeneralSetting()
+	original := setting.Seedance25AutoDurationEnabled
+	defer func() { setting.Seedance25AutoDurationEnabled = original }()
+
+	newContext := func(modelName, duration string) (*gin.Context, *RelayInfo) {
+		body := fmt.Sprintf(`{"model":%q,"prompt":"animate","duration":%s}`, modelName, duration)
+		request := httptest.NewRequest(http.MethodPost, "/v1/video/generations", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		context, _ := gin.CreateTestContext(httptest.NewRecorder())
+		context.Request = request
+		return context, &RelayInfo{
+			OriginModelName: modelName,
+			TaskRelayInfo:   &TaskRelayInfo{},
+		}
+	}
+
+	setting.Seedance25AutoDurationEnabled = false
+	context, info := newContext("seedance-2.5-720p", "-1")
+	taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+	require.NotNil(t, taskErr)
+	require.Equal(t, "invalid_seconds", taskErr.Code)
+
+	setting.Seedance25AutoDurationEnabled = true
+	context, info = newContext("seedance-2.5-720p", "-1")
+	taskErr = ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+	require.Nil(t, taskErr)
+	storedRequest, err := GetTaskRequest(context)
+	require.NoError(t, err)
+	assert.Equal(t, -1, storedRequest.Duration)
+	assert.Equal(t, "-1", storedRequest.Seconds)
+
+	context, info = newContext("seedance-2.0-720p", "-1")
+	taskErr = ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+	require.NotNil(t, taskErr)
+	require.Equal(t, "invalid_seconds", taskErr.Code)
+
+	context, info = newContext("sora-2", "-1")
+	taskErr = ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+	require.NotNil(t, taskErr)
+	require.Equal(t, "invalid_seconds", taskErr.Code)
 }

@@ -342,6 +342,8 @@
     "Allow requests to private IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)": "Разрешить запросы к частным диапазонам IP-адресов (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)",
     "Allow Retry": "Разрешить повтор",
     "Allow safety_identifier passthrough": "Разрешить сквозную передачу Safety_Identifier",
+    "Allow Seedance 2.5 automatic duration": "Разрешить автоматическую длительность Seedance 2.5",
+    "Allow Seedance 2.5 requests to use -1 for duration and let the upstream choose the output length. Disabled by default.": "Разрешить запросам Seedance 2.5 использовать -1 для длительности и позволить upstream выбрать длительность вывода. По умолчанию отключено.",
     "Allow self-signed or hostname-mismatched SMTP certificates": "Разрешить самоподписанные SMTP-сертификаты или сертификаты с несоответствующим именем узла",
     "Allow service_tier passthrough": "Разрешить сквозную передачу service_tier",
     "Allow speed passthrough": "Разрешить передачу speed",

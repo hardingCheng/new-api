@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/setting/model_setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
@@ -159,6 +160,30 @@ func IsSeedanceRelayModel(info *RelayInfo, modelName string) bool {
 		return true
 	}
 	return info.ChannelMeta != nil && IsSeedanceVideoModel(info.UpstreamModelName)
+}
+
+func IsSeedance25RelayModel(info *RelayInfo, modelName string) bool {
+	modelNames := []string{modelName}
+	if info != nil {
+		modelNames = append(modelNames, info.OriginModelName, info.EffectiveRoutingModelName())
+		if info.ChannelMeta != nil {
+			modelNames = append(modelNames, info.UpstreamModelName)
+		}
+	}
+	for _, name := range modelNames {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "seedance-2.5" || strings.HasPrefix(name, "seedance-2.5-") ||
+			name == "doubao-seedance-2-5" || strings.HasPrefix(name, "doubao-seedance-2-5-") {
+			return true
+		}
+	}
+	return false
+}
+
+func IsSeedance25AutoDuration(info *RelayInfo, req TaskSubmitReq) bool {
+	return HasAutoTaskDuration(req) &&
+		operation_setting.IsSeedance25AutoDurationEnabled() &&
+		IsSeedance25RelayModel(info, req.Model)
 }
 
 func IsGrokImagineVideoModel(model string) bool {
@@ -344,8 +369,19 @@ func EffectiveTaskDuration(req TaskSubmitReq) int {
 	return seconds
 }
 
+func HasAutoTaskDuration(req TaskSubmitReq) bool {
+	seconds := strings.TrimSpace(req.Seconds)
+	return (req.Duration == -1 && (seconds == "" || seconds == "-1")) ||
+		(seconds == "-1" && (req.Duration == 0 || req.Duration == -1))
+}
+
 func normalizeTaskDuration(req *TaskSubmitReq) {
 	if req == nil {
+		return
+	}
+	if HasAutoTaskDuration(*req) {
+		req.Duration = -1
+		req.Seconds = "-1"
 		return
 	}
 	seconds := EffectiveTaskDuration(*req)
@@ -360,21 +396,14 @@ func applySeedanceDurationBounds(req *TaskSubmitReq, info *RelayInfo) {
 	if req == nil || !IsSeedanceRelayModel(info, req.Model) {
 		return
 	}
-	maxSeconds := 15
-	modelNames := []string{req.Model}
-	if info != nil {
-		modelNames = append(modelNames, info.OriginModelName, info.EffectiveRoutingModelName())
-		if info.ChannelMeta != nil {
-			modelNames = append(modelNames, info.UpstreamModelName)
-		}
+	if IsSeedance25AutoDuration(info, *req) {
+		req.Duration = -1
+		req.Seconds = "-1"
+		return
 	}
-	for _, modelName := range modelNames {
-		modelName = strings.ToLower(strings.TrimSpace(modelName))
-		if modelName == "seedance-2.5" || strings.HasPrefix(modelName, "seedance-2.5-") ||
-			modelName == "doubao-seedance-2-5" || strings.HasPrefix(modelName, "doubao-seedance-2-5-") {
-			maxSeconds = 30
-			break
-		}
+	maxSeconds := 15
+	if IsSeedance25RelayModel(info, req.Model) {
+		maxSeconds = 30
 	}
 
 	seconds := EffectiveTaskDuration(*req)
@@ -513,6 +542,13 @@ func ValidateTaskDurationBounds(req TaskSubmitReq) *dto.TaskError {
 	return nil
 }
 
+func ValidateTaskDurationBoundsForModel(req TaskSubmitReq, info *RelayInfo) *dto.TaskError {
+	if IsSeedance25AutoDuration(info, req) {
+		return nil
+	}
+	return ValidateTaskDurationBounds(req)
+}
+
 func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string) (TaskSubmitReq, error) {
 	var req TaskSubmitReq
 	if _, err := c.MultipartForm(); err != nil {
@@ -598,7 +634,7 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 		return taskErr
 	}
 
-	if taskErr := ValidateTaskDurationBounds(req); taskErr != nil {
+	if taskErr := ValidateTaskDurationBoundsForModel(req, info); taskErr != nil {
 		return taskErr
 	}
 	if taskErr := validateReferenceVideoPolicy(req, info); taskErr != nil {
@@ -669,7 +705,7 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 		return taskErr
 	}
 
-	if taskErr := ValidateTaskDurationBounds(req); taskErr != nil {
+	if taskErr := ValidateTaskDurationBoundsForModel(req, info); taskErr != nil {
 		return taskErr
 	}
 	if taskErr := validateReferenceVideoPolicy(req, info); taskErr != nil {

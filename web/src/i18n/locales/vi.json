@@ -342,6 +342,8 @@
     "Allow requests to private IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)": "Cho phép các yêu cầu đến các dải IP riêng (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)",
     "Allow Retry": "Cho phép thử lại",
     "Allow safety_identifier passthrough": "Cho phép chuyển tiếp safety_identifier",
+    "Allow Seedance 2.5 automatic duration": "Cho phép thời lượng tự động của Seedance 2.5",
+    "Allow Seedance 2.5 requests to use -1 for duration and let the upstream choose the output length. Disabled by default.": "Cho phép yêu cầu Seedance 2.5 dùng -1 cho thời lượng để máy chủ upstream tự chọn độ dài đầu ra. Tắt theo mặc định.",
     "Allow self-signed or hostname-mismatched SMTP certificates": "Cho phép chứng chỉ SMTP tự ký hoặc không khớp tên máy chủ",
     "Allow service_tier passthrough": "Cho phép chuyển tiếp service_tier",
     "Allow speed passthrough": "Cho phép truyền speed",

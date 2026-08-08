@@ -61,6 +61,10 @@ const MODELS_SECTIONS = [
               settings['general_setting.ping_interval_enabled'],
             ping_interval_seconds:
               settings['general_setting.ping_interval_seconds'],
+            seedance_25_auto_duration_enabled:
+              settings[
+                'general_setting.seedance_25_auto_duration_enabled'
+              ],
           },
         }}
       />

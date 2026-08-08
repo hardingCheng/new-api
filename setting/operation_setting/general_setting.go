@@ -11,9 +11,10 @@ const (
 )
 
 type GeneralSetting struct {
-	DocsLink            string `json:"docs_link"`
-	PingIntervalEnabled bool   `json:"ping_interval_enabled"`
-	PingIntervalSeconds int    `json:"ping_interval_seconds"`
+	DocsLink                      string `json:"docs_link"`
+	PingIntervalEnabled           bool   `json:"ping_interval_enabled"`
+	PingIntervalSeconds           int    `json:"ping_interval_seconds"`
+	Seedance25AutoDurationEnabled bool   `json:"seedance_25_auto_duration_enabled"`
 	// 当前站点额度展示类型：USD / CNY / TOKENS
 	QuotaDisplayType string `json:"quota_display_type"`
 	// 自定义货币符号，用于 CUSTOM 展示类型
@@ -24,12 +25,13 @@ type GeneralSetting struct {
 
 // 默认配置
 var generalSetting = GeneralSetting{
-	DocsLink:                   "https://docs.newapi.pro",
-	PingIntervalEnabled:        false,
-	PingIntervalSeconds:        60,
-	QuotaDisplayType:           QuotaDisplayTypeUSD,
-	CustomCurrencySymbol:       "¤",
-	CustomCurrencyExchangeRate: 1.0,
+	DocsLink:                      "https://docs.newapi.pro",
+	PingIntervalEnabled:           false,
+	PingIntervalSeconds:           60,
+	Seedance25AutoDurationEnabled: false,
+	QuotaDisplayType:              QuotaDisplayTypeUSD,
+	CustomCurrencySymbol:          "¤",
+	CustomCurrencyExchangeRate:    1.0,
 }
 
 func init() {
@@ -39,6 +41,10 @@ func init() {
 
 func GetGeneralSetting() *GeneralSetting {
 	return &generalSetting
+}
+
+func IsSeedance25AutoDurationEnabled() bool {
+	return generalSetting.Seedance25AutoDurationEnabled
 }
 
 // IsCurrencyDisplay 是否以货币形式展示（美元或人民币）

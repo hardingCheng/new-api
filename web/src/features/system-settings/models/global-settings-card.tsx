@@ -96,6 +96,7 @@ const schema = z.object({
   general_setting: z.object({
     ping_interval_enabled: z.boolean(),
     ping_interval_seconds: z.coerce.number().min(1),
+    seedance_25_auto_duration_enabled: z.boolean(),
   }),
 })
 
@@ -108,6 +109,7 @@ type FlatGlobalModelSettings = {
   'global.chat_completions_to_responses_policy': string
   'general_setting.ping_interval_enabled': boolean
   'general_setting.ping_interval_seconds': number
+  'general_setting.seedance_25_auto_duration_enabled': boolean
 }
 
 const flattenGlobalValues = (
@@ -127,6 +129,8 @@ const flattenGlobalValues = (
     values.general_setting.ping_interval_enabled,
   'general_setting.ping_interval_seconds':
     values.general_setting.ping_interval_seconds,
+  'general_setting.seedance_25_auto_duration_enabled':
+    values.general_setting.seedance_25_auto_duration_enabled,
 })
 
 function normalizeJsonText(value: string, fallback: string) {
@@ -315,6 +319,33 @@ export function GlobalSettingsCard({ defaultValues }: GlobalSettingsCardProps) {
               )}
             />
           </div>
+
+          <Separator />
+
+          <FormField
+            control={form.control}
+            name='general_setting.seedance_25_auto_duration_enabled'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>
+                    {t('Allow Seedance 2.5 automatic duration')}
+                  </FormLabel>
+                  <FormDescription>
+                    {t(
+                      'Allow Seedance 2.5 requests to use -1 for duration and let the upstream choose the output length. Disabled by default.'
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
 
           <Separator />
 

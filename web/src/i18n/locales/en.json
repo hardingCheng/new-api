@@ -342,6 +342,8 @@
     "Allow requests to private IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)": "Allow requests to private IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)",
     "Allow Retry": "Allow Retry",
     "Allow safety_identifier passthrough": "Allow safety_identifier passthrough",
+    "Allow Seedance 2.5 automatic duration": "Allow Seedance 2.5 automatic duration",
+    "Allow Seedance 2.5 requests to use -1 for duration and let the upstream choose the output length. Disabled by default.": "Allow Seedance 2.5 requests to use -1 for duration and let the upstream choose the output length. Disabled by default.",
     "Allow self-signed or hostname-mismatched SMTP certificates": "Allow self-signed or hostname-mismatched SMTP certificates",
     "Allow service_tier passthrough": "Allow service_tier passthrough",
     "Allow speed passthrough": "Allow speed passthrough",

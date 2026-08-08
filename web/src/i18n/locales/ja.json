@@ -342,6 +342,8 @@
     "Allow requests to private IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)": "プライベートIP範囲へのリクエストを許可 (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)",
     "Allow Retry": "リトライ許可",
     "Allow safety_identifier passthrough": "SAFETY_IDENTIFIERパススルーを許可する",
+    "Allow Seedance 2.5 automatic duration": "Seedance 2.5 の自動長さを許可",
+    "Allow Seedance 2.5 requests to use -1 for duration and let the upstream choose the output length. Disabled by default.": "Seedance 2.5 のリクエストで長さに -1 を指定し、上流サービスに出力の長さを選択させます。デフォルトでは無効です。",
     "Allow self-signed or hostname-mismatched SMTP certificates": "自己署名またはホスト名が一致しない SMTP 証明書を許可する",
     "Allow service_tier passthrough": "Service_tierパススルーを許可する",
     "Allow speed passthrough": "speed パススルーを許可",

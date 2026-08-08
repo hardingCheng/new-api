@@ -342,6 +342,8 @@
     "Allow requests to private IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)": "允許請求私有 IP 範圍 (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)",
     "Allow Retry": "允許重試",
     "Allow safety_identifier passthrough": "允許透傳 safety_identifier",
+    "Allow Seedance 2.5 automatic duration": "允許 Seedance 2.5 自動時長",
+    "Allow Seedance 2.5 requests to use -1 for duration and let the upstream choose the output length. Disabled by default.": "允許 Seedance 2.5 請求將時長設為 -1，由上游選擇輸出時長。預設關閉。",
     "Allow self-signed or hostname-mismatched SMTP certificates": "允許自簽章或主機名稱不匹配的 SMTP 證書",
     "Allow service_tier passthrough": "允許透傳 service_tier",
     "Allow speed passthrough": "允許 speed 透傳",

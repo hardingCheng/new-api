@@ -342,6 +342,8 @@
     "Allow requests to private IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)": "Autoriser les requêtes vers les plages d'adresses IP privées (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)",
     "Allow Retry": "Autoriser la relance",
     "Allow safety_identifier passthrough": "Autoriser la transmission de safety_identifier",
+    "Allow Seedance 2.5 automatic duration": "Autoriser la durée automatique de Seedance 2.5",
+    "Allow Seedance 2.5 requests to use -1 for duration and let the upstream choose the output length. Disabled by default.": "Autoriser les requêtes Seedance 2.5 à utiliser -1 pour la durée et laisser le service amont choisir la durée de sortie. Désactivé par défaut.",
     "Allow self-signed or hostname-mismatched SMTP certificates": "Autoriser les certificats SMTP auto-signés ou dont le nom d'hôte ne correspond pas",
     "Allow service_tier passthrough": "Autoriser la transmission de service_tier",
     "Allow speed passthrough": "Autoriser la transmission de speed",
