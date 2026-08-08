@@ -1,6 +1,7 @@
 package common
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -235,26 +236,62 @@ func TestReferenceVideoPolicyForUserModelAlias(t *testing.T) {
 	}
 }
 
-func TestSeedanceDurationBoundsUseRoutingModel(t *testing.T) {
+func TestSeedanceDurationBoundsByVersion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	request := httptest.NewRequest(
-		http.MethodPost,
-		"/v1/video/generations",
-		strings.NewReader(`{"model":"521ai-2.0-720p","prompt":"animate","duration":1}`),
-	)
-	request.Header.Set("Content-Type", "application/json")
-	context, _ := gin.CreateTestContext(httptest.NewRecorder())
-	context.Request = request
-	info := &RelayInfo{
-		OriginModelName:  "521ai-2.0-720p",
-		RoutingModelName: "seedance-2.0-720p",
-		TaskRelayInfo:    &TaskRelayInfo{},
+	tests := []struct {
+		name         string
+		requestModel string
+		routingModel string
+		duration     int
+		wantDuration int
+	}{
+		{
+			name:         "2.0 routing model raises duration to minimum",
+			requestModel: "521ai-2.0-720p",
+			routingModel: "seedance-2.0-720p",
+			duration:     1,
+			wantDuration: 4,
+		},
+		{
+			name:         "2.0 caps duration at 15 seconds",
+			requestModel: "seedance-2.0-720p",
+			duration:     30,
+			wantDuration: 15,
+		},
+		{
+			name:         "2.5 keeps duration within expanded range",
+			requestModel: "seedance-2.5-720p",
+			duration:     20,
+			wantDuration: 20,
+		},
+		{
+			name:         "2.5 routing model caps duration at 30 seconds",
+			requestModel: "521ai-2.5-720p",
+			routingModel: "seedance-2.5-720p",
+			duration:     60,
+			wantDuration: 30,
+		},
 	}
 
-	taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
-	require.Nil(t, taskErr)
-	storedRequest, err := GetTaskRequest(context)
-	require.NoError(t, err)
-	assert.Equal(t, 4, storedRequest.Duration)
-	assert.Equal(t, "4", storedRequest.Seconds)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{"model":%q,"prompt":"animate","duration":%d}`, test.requestModel, test.duration)
+			request := httptest.NewRequest(http.MethodPost, "/v1/video/generations", strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			context, _ := gin.CreateTestContext(httptest.NewRecorder())
+			context.Request = request
+			info := &RelayInfo{
+				OriginModelName:  test.requestModel,
+				RoutingModelName: test.routingModel,
+				TaskRelayInfo:    &TaskRelayInfo{},
+			}
+
+			taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+			require.Nil(t, taskErr)
+			storedRequest, err := GetTaskRequest(context)
+			require.NoError(t, err)
+			assert.Equal(t, test.wantDuration, storedRequest.Duration)
+			assert.Equal(t, fmt.Sprintf("%d", test.wantDuration), storedRequest.Seconds)
+		})
+	}
 }

@@ -336,16 +336,6 @@ func firstReferenceImageURL(raw interface{}) string {
 	return ""
 }
 
-func clampSeedanceDuration(seconds int) int {
-	if seconds < 4 {
-		return 4
-	}
-	if seconds > 15 {
-		return 15
-	}
-	return seconds
-}
-
 func EffectiveTaskDuration(req TaskSubmitReq) int {
 	seconds, _ := strconv.Atoi(req.Seconds)
 	if req.Duration > seconds {
@@ -370,8 +360,29 @@ func applySeedanceDurationBounds(req *TaskSubmitReq, info *RelayInfo) {
 	if req == nil || !IsSeedanceRelayModel(info, req.Model) {
 		return
 	}
+	maxSeconds := 15
+	modelNames := []string{req.Model}
+	if info != nil {
+		modelNames = append(modelNames, info.OriginModelName, info.EffectiveRoutingModelName())
+		if info.ChannelMeta != nil {
+			modelNames = append(modelNames, info.UpstreamModelName)
+		}
+	}
+	for _, modelName := range modelNames {
+		modelName = strings.ToLower(strings.TrimSpace(modelName))
+		if modelName == "seedance-2.5" || strings.HasPrefix(modelName, "seedance-2.5-") ||
+			modelName == "doubao-seedance-2-5" || strings.HasPrefix(modelName, "doubao-seedance-2-5-") {
+			maxSeconds = 30
+			break
+		}
+	}
+
 	seconds := EffectiveTaskDuration(*req)
-	seconds = clampSeedanceDuration(seconds)
+	if seconds < 4 {
+		seconds = 4
+	} else if seconds > maxSeconds {
+		seconds = maxSeconds
+	}
 	req.Duration = seconds
 	req.Seconds = strconv.Itoa(seconds)
 }
