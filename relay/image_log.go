@@ -368,7 +368,7 @@ type imageResponseLogWriter struct {
 
 func (writer *imageResponseLogWriter) Write(data []byte) (int, error) {
 	n, err := writer.ResponseWriter.Write(data)
-	if n > 0 && writer.Status() >= http.StatusBadRequest {
+	if n > 0 {
 		_, _ = writer.capture.Write(data[:n])
 	}
 	return n, err
@@ -376,15 +376,14 @@ func (writer *imageResponseLogWriter) Write(data []byte) (int, error) {
 
 func (writer *imageResponseLogWriter) WriteString(data string) (int, error) {
 	n, err := writer.ResponseWriter.WriteString(data)
-	if n > 0 && writer.Status() >= http.StatusBadRequest {
+	if n > 0 {
 		_, _ = writer.capture.Write([]byte(data)[:n])
 	}
 	return n, err
 }
 
-// StartImageFailurePayloadLog records sanitized request and response payloads
-// only when the final client-facing HTTP status is 4xx or 5xx.
-func StartImageFailurePayloadLog(c *gin.Context) func(*dto.ImageRequest) {
+// StartImagePayloadLog records sanitized request and response payloads.
+func StartImagePayloadLog(c *gin.Context) func(*dto.ImageRequest) {
 	if c == nil || c.Writer == nil {
 		return func(*dto.ImageRequest) {}
 	}
@@ -392,9 +391,6 @@ func StartImageFailurePayloadLog(c *gin.Context) func(*dto.ImageRequest) {
 	writer := &imageResponseLogWriter{ResponseWriter: c.Writer, capture: capture}
 	c.Writer = writer
 	return func(request *dto.ImageRequest) {
-		if writer.Status() < http.StatusBadRequest {
-			return
-		}
 		LogImageRequestPayload(c, request)
 		payload := capture.String()
 		if payload == "" {

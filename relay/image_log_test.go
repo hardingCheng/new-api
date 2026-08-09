@@ -128,22 +128,25 @@ func TestImageResponseLogWriterPreservesFailedResponseAndCapturesSanitizedPayloa
 	assert.NotContains(t, capture.String(), strings.Repeat("QUJD", 20))
 }
 
-func TestImageResponseLogWriterDoesNotCaptureSuccessfulResponse(t *testing.T) {
+func TestImageResponseLogWriterCapturesSuccessfulResponse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
 	capture := newImagePayloadCapture()
 	c.Writer = &imageResponseLogWriter{ResponseWriter: c.Writer, capture: capture}
-	response := `{"data":[{"url":"https://example.com/image.png"}]}`
+	base64Data := strings.Repeat("QUJD", 80)
+	response := `{"data":[{"url":"https://example.com/image.png","b64_json":"` + base64Data + `"}]}`
 
 	c.Data(http.StatusOK, "application/json", []byte(response))
 
 	assert.Equal(t, response, recorder.Body.String())
-	assert.Empty(t, capture.String())
+	assert.Contains(t, capture.String(), `"url":"https://example.com/image.png"`)
+	assert.Contains(t, capture.String(), `"b64_json":"base64 data"`)
+	assert.NotContains(t, capture.String(), base64Data)
 }
 
-func TestImageFailurePayloadLogWritesOnlyForFailedRequests(t *testing.T) {
+func TestImagePayloadLogWritesSuccessfulAndFailedRequests(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	var logs bytes.Buffer
 	common.LogWriterMu.Lock()
@@ -158,14 +161,15 @@ func TestImageFailurePayloadLogWritesOnlyForFailedRequests(t *testing.T) {
 
 	successContext, _ := gin.CreateTestContext(httptest.NewRecorder())
 	successContext.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{"model":"gpt-image-1","prompt":"successful request"}`))
-	finishSuccessLog := StartImageFailurePayloadLog(successContext)
-	successContext.JSON(http.StatusOK, gin.H{"data": []any{}})
+	finishSuccessLog := StartImagePayloadLog(successContext)
+	successContext.JSON(http.StatusOK, gin.H{"data": []any{gin.H{"b64_json": strings.Repeat("QUJD", 80)}}})
 	finishSuccessLog(&dto.ImageRequest{Model: "gpt-image-1", Prompt: "successful request"})
-	assert.Empty(t, logs.String())
+	assert.Contains(t, logs.String(), `"prompt":"successful request"`)
+	assert.Contains(t, logs.String(), `"b64_json":"base64 data"`)
 
 	failureContext, _ := gin.CreateTestContext(httptest.NewRecorder())
 	failureContext.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{"model":"gpt-image-1","prompt":"failed request"}`))
-	finishFailureLog := StartImageFailurePayloadLog(failureContext)
+	finishFailureLog := StartImagePayloadLog(failureContext)
 	failureContext.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"message": "size is required"}})
 	finishFailureLog(&dto.ImageRequest{Model: "gpt-image-1", Prompt: "failed request"})
 

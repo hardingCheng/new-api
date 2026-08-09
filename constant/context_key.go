@@ -11,6 +11,7 @@ const (
 	ContextKeyRoutingModel         ContextKey = "routing_model"
 	ContextKeyReferenceVideoPolicy ContextKey = "reference_video_policy"
 	ContextKeyRequestStartTime     ContextKey = "request_start_time"
+	ContextKeyImageSize            ContextKey = "image_size"
 
 	/* token related keys */
 	ContextKeyTokenUnlimited         ContextKey = "token_unlimited_quota"

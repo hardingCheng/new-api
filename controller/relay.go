@@ -84,7 +84,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	imagePayloadLogEnabled := relayFormat == types.RelayFormatOpenAIImage &&
 		(imageRelayMode == relayconstant.RelayModeImagesGenerations || imageRelayMode == relayconstant.RelayModeImagesEdits)
 	if imagePayloadLogEnabled {
-		finishPayloadLog := relay.StartImageFailurePayloadLog(c)
+		finishPayloadLog := relay.StartImagePayloadLog(c)
 		defer func() {
 			finishPayloadLog(imageRequest)
 		}()
@@ -123,6 +123,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	request, err := helper.GetAndValidateRequest(c, relayFormat)
 	if imagePayloadLogEnabled {
 		imageRequest, _ = request.(*dto.ImageRequest)
+		if imageRequest != nil {
+			common.SetContextKey(c, constant.ContextKeyImageSize, imageRequest.Size)
+		}
 	}
 	if err != nil {
 		// Map "request body too large" to 413 so clients can handle it correctly
@@ -466,6 +469,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		other["channel_id"] = channelId
 		other["channel_name"] = c.GetString("channel_name")
 		other["channel_type"] = c.GetInt("channel_type")
+		service.AppendImageRequestLogInfo(c, other)
 		adminInfo := make(map[string]interface{})
 		adminInfo["use_channel"] = c.GetStringSlice("use_channel")
 		isMultiKey := common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey)
