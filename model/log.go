@@ -129,6 +129,8 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			// Remove operation-audit details (operator/route info), admin-only.
 			delete(otherMap, "audit_info")
 			// delete(otherMap, "reject_reason")
+			// stream_status 的 end_error/errors 是上游返回的原始报错字符串，会暴露
+			// 上游供应商信息，因此这里仍然整体剥离（上游 #6558 选择对日志所有者开放）。
 			delete(otherMap, "stream_status")
 			delete(otherMap, "is_model_mapped")
 			delete(otherMap, "upstream_model_name")

@@ -21,6 +21,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
 )
@@ -191,7 +192,7 @@ func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 		return modelListGroups{
 			userGroup:   userGroup,
 			tokenGroup:  tokenGroup,
-			ownerGroups: service.GetUserAutoGroup(userGroup),
+			ownerGroups: service.GetRequestAutoGroups(c, userGroup),
 		}, nil
 	}
 
@@ -229,38 +230,39 @@ func ListModels(c *gin.Context, modelType int) {
 	}
 	ownerGroups := groups.ownerGroups
 	modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
+	var tokenModelLimit map[string]bool
 	if modelLimitEnable {
 		s, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
-		var tokenModelLimit map[string]bool
+		var contextModelLimit map[string]bool
 		if ok {
-			tokenModelLimit = s.(map[string]bool)
-		} else {
-			tokenModelLimit = map[string]bool{}
+			contextModelLimit, _ = s.(map[string]bool)
 		}
-		for allowModel, _ := range tokenModelLimit {
-			billingModel := allowModel
+		// 令牌白名单里存的是用户看到的对外模型名，而分组启用列表里是真实模型名。
+		// 配了模型视图的用户必须先把别名解析成真实名才匹配得上。这里复制一份，
+		// 不改请求上下文里那个会被后续中继逻辑复用的 map。
+		tokenModelLimit = make(map[string]bool, len(contextModelLimit)*2)
+		for allowModel, allowed := range contextModelLimit {
+			if !allowed {
+				continue
+			}
+			tokenModelLimit[allowModel] = true
 			if alias, matched := model_setting.ResolveUserModelAlias(userID, allowModel); matched {
-				billingModel = alias.TargetModel
-			}
-			if !acceptUnsetRatioModel {
-				if !helper.HasModelBillingConfig(billingModel) {
-					continue
-				}
-			}
-			if !common.StringsContains(userModelNames, billingModel) {
-				userModelNames = append(userModelNames, billingModel)
+				tokenModelLimit[alias.TargetModel] = true
 			}
 		}
-	} else {
-		models := service.GetGroupsEnabledModels(ownerGroups)
-		for _, modelName := range models {
-			if !acceptUnsetRatioModel {
-				if !helper.HasModelBillingConfig(modelName) {
-					continue
-				}
+	}
+	models := service.GetGroupsEnabledModels(ownerGroups)
+	for _, modelName := range models {
+		if modelLimitEnable {
+			matchingName := ratio_setting.FormatMatchingModelName(modelName)
+			if !tokenModelLimit[modelName] && !tokenModelLimit[matchingName] {
+				continue
 			}
-			userModelNames = append(userModelNames, modelName)
 		}
+		if !acceptUnsetRatioModel && !helper.HasModelBillingConfig(modelName) {
+			continue
+		}
+		userModelNames = append(userModelNames, modelName)
 	}
 
 	visibleModels := model_setting.BuildVisibleUserModels(userID, userModelNames)
@@ -292,11 +294,17 @@ func ListModels(c *gin.Context, modelType int) {
 				Type:        "model",
 			}
 		}
+		firstID := ""
+		lastID := ""
+		if len(useranthropicModels) > 0 {
+			firstID = useranthropicModels[0].ID
+			lastID = useranthropicModels[len(useranthropicModels)-1].ID
+		}
 		c.JSON(200, gin.H{
 			"data":     useranthropicModels,
-			"first_id": useranthropicModels[0].ID,
+			"first_id": firstID,
 			"has_more": false,
-			"last_id":  useranthropicModels[len(useranthropicModels)-1].ID,
+			"last_id":  lastID,
 		})
 	case constant.ChannelTypeGemini:
 		userGeminiModels := make([]dto.GeminiModel, len(userOpenAiModels))
