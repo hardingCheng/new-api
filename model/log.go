@@ -57,10 +57,14 @@ func sanitizeClickHouseLikePattern(input string) (string, error) {
 }
 
 type Log struct {
-	Id                int    `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2"`
-	UserId            int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
-	CreatedAt         int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type"`
-	Type              int    `json:"type" gorm:"index:idx_created_at_type"`
+	Id     int `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2"`
+	UserId int `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
+	// idx_logs_created_type_channel 是运维看板「按渠道统计错误率」的覆盖索引：
+	// 只有 (created_at, type) 时，按 channel_id 分组会让优化器改走 channel_id 索引
+	// 全表扫再过滤（实测 8.8M 行需 2 分 06 秒）。把 channel_id 并入索引后全程不回表，
+	// 同一查询降到 0.6 秒。删它之前先确认看板的错误率统计不再需要。
+	CreatedAt         int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type;index:idx_logs_created_type_channel,priority:1"`
+	Type              int    `json:"type" gorm:"index:idx_created_at_type;index:idx_logs_created_type_channel,priority:2"`
 	Content           string `json:"content"`
 	Username          string `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
 	TokenName         string `json:"token_name" gorm:"index;default:''"`
@@ -70,7 +74,7 @@ type Log struct {
 	CompletionTokens  int    `json:"completion_tokens" gorm:"default:0"`
 	UseTime           int    `json:"use_time" gorm:"default:0"`
 	IsStream          bool   `json:"is_stream"`
-	ChannelId         int    `json:"channel" gorm:"index"`
+	ChannelId         int    `json:"channel" gorm:"index;index:idx_logs_created_type_channel,priority:3"`
 	ChannelName       string `json:"channel_name" gorm:"->"`
 	TokenId           int    `json:"token_id" gorm:"default:0;index"`
 	Group             string `json:"group" gorm:"index"`
