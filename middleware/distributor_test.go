@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/model_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -196,6 +197,8 @@ func TestDistributeExpandsAutoGroupBeforeCheckingSpecificChannelRouting(t *testi
 	require.NoError(t, i18n.Init())
 	originalRouting := model_setting.UserChannelRouting2JSONString()
 	originalAutoGroups := setting.AutoGroups2JsonString()
+	originalUsableGroups := setting.UserUsableGroups2JSONString()
+	originalRatios := ratio_setting.GroupRatio2JSONString()
 	originalDB := model.DB
 	originalMemoryCacheEnabled := common.MemoryCacheEnabled
 	originalRedisEnabled := common.RedisEnabled
@@ -205,6 +208,8 @@ func TestDistributeExpandsAutoGroupBeforeCheckingSpecificChannelRouting(t *testi
 	t.Cleanup(func() {
 		require.NoError(t, model_setting.UpdateUserChannelRoutingByJSONString(originalRouting))
 		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalRatios))
 		model.DB = originalDB
 		common.MemoryCacheEnabled = originalMemoryCacheEnabled
 		common.RedisEnabled = originalRedisEnabled
@@ -212,6 +217,9 @@ func TestDistributeExpandsAutoGroupBeforeCheckingSpecificChannelRouting(t *testi
 		model.InitChannelCache()
 	})
 	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["sd2"]`))
+	// 上游 #6590 起，auto 分组必须同时「用户可选」且「配了分组倍率」才会被展开。
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"sd2":"SD2"}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"sd2":1}`))
 	require.NoError(t, model_setting.UpdateUserChannelRoutingByJSONString(`{
 		"rules": [{"id":"route","name":"Route","user_id":521,"group_pattern":"sd2","model_pattern":"*","channel_ids":[1],"fallback":"strict"}]
 	}`))
