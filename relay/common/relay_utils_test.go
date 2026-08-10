@@ -80,6 +80,90 @@ func TestValidateMultipartDirectNormalizesImageField(t *testing.T) {
 	require.Equal(t, constant.TaskActionGenerate, info.Action)
 }
 
+func TestValidateMultipartDirectClassifiesContentVideoGenerationMode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := strings.NewReader(`{
+		"model":"seedance-2.0-720p",
+		"prompt":"animate references",
+		"content":[
+			{"type":"image_url","role":"reference_image","image_url":{"url":"https://example.com/person.jpg"}},
+			{"type":"video_url","role":"reference_video","video_url":{"url":"https://example.com/motion.mp4"}}
+		]
+	}`)
+	request := httptest.NewRequest(http.MethodPost, "/v1/videos", body)
+	request.Header.Set("Content-Type", "application/json")
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = request
+	info := &RelayInfo{TaskRelayInfo: &TaskRelayInfo{}}
+
+	taskErr := ValidateMultipartDirect(context, info)
+
+	require.Nil(t, taskErr)
+	assert.Equal(t, constant.TaskActionTextGenerate, info.Action)
+	assert.Equal(t, constant.TaskVideoGenerationModeReferenceImage,
+		context.GetString(string(constant.ContextKeyVideoGenerationMode)))
+}
+
+func TestClassifyVideoGenerationModeFallsBackToContentRoles(t *testing.T) {
+	image := func(role string) TaskContentItem {
+		return TaskContentItem{
+			Type:     "image_url",
+			Role:     role,
+			ImageURL: &TaskMediaURL{URL: "https://example.com/image.jpg"},
+		}
+	}
+	tests := []struct {
+		name string
+		req  TaskSubmitReq
+		want string
+	}{
+		{
+			name: "text only",
+			req:  TaskSubmitReq{Prompt: "animate"},
+			want: constant.TaskVideoGenerationModeTextToVideo,
+		},
+		{
+			name: "reference image",
+			req:  TaskSubmitReq{Content: []TaskContentItem{image("reference_image")}},
+			want: constant.TaskVideoGenerationModeReferenceImage,
+		},
+		{
+			name: "first and last frames",
+			req:  TaskSubmitReq{Content: []TaskContentItem{image("first_frame"), image("last_frame")}},
+			want: constant.TaskVideoGenerationModeFirstLastFrame,
+		},
+		{
+			name: "first frame",
+			req:  TaskSubmitReq{Content: []TaskContentItem{image("first_frame")}},
+			want: constant.TaskVideoGenerationModeFirstFrame,
+		},
+		{
+			name: "first frame takes precedence over reference image",
+			req: TaskSubmitReq{Content: []TaskContentItem{
+				image("reference_image"),
+				image("first_frame"),
+			}},
+			want: constant.TaskVideoGenerationModeFirstFrame,
+		},
+		{
+			name: "generic image",
+			req:  TaskSubmitReq{Content: []TaskContentItem{image("")}},
+			want: constant.TaskVideoGenerationModeImageToVideo,
+		},
+		{
+			name: "existing image input keeps legacy classification",
+			req:  TaskSubmitReq{Images: []string{"https://example.com/image.jpg"}, Content: []TaskContentItem{image("reference_image")}},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, ClassifyVideoGenerationMode(tt.req))
+		})
+	}
+}
+
 // TestTaskDurationBounds guards the billing invariant that user-supplied
 // video duration (a quota multiplier via OtherRatio "seconds") is bounded, so
 // it can never overflow quota calculation into a negative charge.

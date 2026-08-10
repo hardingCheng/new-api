@@ -27,6 +27,7 @@ import {
   MJ_STATUS_MAPPINGS,
   MJ_SUBMIT_RESULT_MAPPINGS,
   TASK_ACTION_MAPPINGS,
+  TASK_VIDEO_GENERATION_MODE_MAPPINGS,
   TASK_STATUS_MAPPINGS,
   TASK_PLATFORM_MAPPINGS,
 } from '../constants'
@@ -61,6 +62,23 @@ export const mjSubmitResultMapper = createStatusMapper(
  * Task action type mapper
  */
 export const taskActionMapper = createStatusMapper(TASK_ACTION_MAPPINGS)
+
+export const taskVideoGenerationModeMapper = createStatusMapper(
+  TASK_VIDEO_GENERATION_MODE_MAPPINGS
+)
+
+export function getTaskActionLabelKey(
+  action: string,
+  videoGenerationMode?: string
+): string {
+  if (videoGenerationMode) {
+    return taskVideoGenerationModeMapper.getLabel(
+      videoGenerationMode,
+      videoGenerationMode
+    )
+  }
+  return taskActionMapper.getLabel(action, action || '-')
+}
 
 /**
  * Task status mapper

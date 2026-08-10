@@ -121,7 +121,50 @@ func createTaskError(err error, code string, statusCode int, localError bool) *d
 
 func storeTaskRequest(c *gin.Context, info *RelayInfo, action string, requestObj TaskSubmitReq) {
 	info.Action = action
+	if mode := ClassifyVideoGenerationMode(requestObj); mode != "" {
+		common.SetContextKey(c, constant.ContextKeyVideoGenerationMode, mode)
+	}
 	c.Set("task_request", requestObj)
+}
+
+// ClassifyVideoGenerationMode determines the display mode for content-based
+// video requests. Existing images/input_reference handling takes precedence;
+// content is only a fallback for compatible requests such as Seedance.
+func ClassifyVideoGenerationMode(req TaskSubmitReq) string {
+	if req.HasImage() {
+		return ""
+	}
+
+	var hasFirstFrame, hasLastFrame, hasReferenceImage, hasGenericImage bool
+	for _, item := range req.Content {
+		if item.ImageURL == nil || strings.TrimSpace(item.ImageURL.URL) == "" {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(item.Role)) {
+		case "reference_image":
+			hasReferenceImage = true
+		case "first_frame":
+			hasFirstFrame = true
+		case "last_frame":
+			hasLastFrame = true
+		default:
+			hasGenericImage = true
+		}
+	}
+
+	if hasFirstFrame && hasLastFrame {
+		return constant.TaskVideoGenerationModeFirstLastFrame
+	}
+	if hasFirstFrame {
+		return constant.TaskVideoGenerationModeFirstFrame
+	}
+	if hasReferenceImage {
+		return constant.TaskVideoGenerationModeReferenceImage
+	}
+	if hasGenericImage {
+		return constant.TaskVideoGenerationModeImageToVideo
+	}
+	return constant.TaskVideoGenerationModeTextToVideo
 }
 func GetTaskRequest(c *gin.Context) (TaskSubmitReq, error) {
 	v, exists := c.Get("task_request")

@@ -364,6 +364,7 @@ function TaskLogsCard<TData>({
           cell={cells.get('upstream_task_id')}
         />
         <SummaryField label={t('Model')} cell={cells.get('model_name')} />
+        <SummaryField label={t('Task Type')} cell={cells.get('action')} />
         <SummaryField
           label={t('Video Duration')}
           cell={cells.get('video_duration')}

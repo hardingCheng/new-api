@@ -325,6 +325,7 @@ export interface TaskLogProperties {
   has_reference_video?: boolean
   reference_video_seconds?: number
   video_seconds?: number
+  video_generation_mode?: string
 }
 
 export interface TaskLog {

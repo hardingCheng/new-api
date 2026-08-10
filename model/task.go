@@ -99,7 +99,8 @@ type Properties struct {
 	ReferenceVideoSeconds int    `json:"reference_video_seconds,omitempty"`
 	// VideoSeconds 为提交时用户请求的生成视频时长（秒），便于任务创建即可展示时长，
 	// 不必等上游完成回写 duration。
-	VideoSeconds int `json:"video_seconds,omitempty"`
+	VideoSeconds        int    `json:"video_seconds,omitempty"`
+	VideoGenerationMode string `json:"video_generation_mode,omitempty"`
 }
 
 func (m *Properties) Scan(val interface{}) error {

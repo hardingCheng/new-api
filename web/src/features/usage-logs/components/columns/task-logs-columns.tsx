@@ -31,7 +31,12 @@ import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { TASK_STATUS } from '../../constants'
-import { taskStatusMapper } from '../../lib/mappers'
+import {
+  getTaskActionLabelKey,
+  taskActionMapper,
+  taskStatusMapper,
+  taskVideoGenerationModeMapper,
+} from '../../lib/mappers'
 import { resolveTaskVideoPreviewUrl } from '../../lib/task-video-preview'
 import type { TaskLog } from '../../types'
 import {
@@ -268,6 +273,28 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
       size: 180,
     })
   }
+
+  columns.push({
+    accessorKey: 'action',
+    header: t('Task Type'),
+    cell: ({ row }) => {
+      const log = row.original
+      const mode = log.properties?.video_generation_mode
+      const variant = mode
+        ? taskVideoGenerationModeMapper.getVariant(mode)
+        : taskActionMapper.getVariant(log.action)
+
+      return (
+        <StatusBadge
+          label={t(getTaskActionLabelKey(log.action, mode))}
+          variant={variant}
+          size='sm'
+          copyable={false}
+        />
+      )
+    },
+    size: 145,
+  })
 
   columns.push(
     createDurationColumn<TaskLog>({

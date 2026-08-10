@@ -55,6 +55,7 @@ const { I18nextProvider, initReactI18next } = await import('react-i18next')
 const { flexRender, getCoreRowModel, useReactTable } =
   await import('@tanstack/react-table')
 const { formatLogQuota } = await import('@/lib/format')
+const { UsageLogsMobileList } = await import('../../usage-logs-mobile-card')
 const { UsageLogsProvider } = await import('../../usage-logs-provider')
 const { useTaskLogsColumns } = await import('../task-logs-columns')
 
@@ -73,7 +74,7 @@ const taskLog: TaskLog = {
   platform: '1',
   task_id: 'task_admin_metrics',
   upstream_task_id: 'provider-task-987654321',
-  action: 'textGenerate',
+  action: 'imageToVideo',
   channel_id: 42,
   channel_name: 'primary-video-channel',
   group: 'vip',
@@ -91,18 +92,22 @@ const taskLog: TaskLog = {
     has_reference_video: true,
     reference_video_seconds: 4,
     video_seconds: 10,
+    video_generation_mode: 'reference_image',
     origin_model_name: 'public-video-model',
     upstream_model_name: 'secret-upstream-model',
   },
 }
 
-function TaskColumnsHarness(props: { isAdmin: boolean }) {
+function TaskColumnsHarness(props: { isAdmin: boolean; mobile?: boolean }) {
   const columns = useTaskLogsColumns(props.isAdmin)
   const table = useReactTable({
     columns,
     data: [taskLog],
     getCoreRowModel: getCoreRowModel(),
   })
+  if (props.mobile) {
+    return <UsageLogsMobileList table={table} logCategory='task' />
+  }
   const row = table.getRowModel().rows[0]
 
   return (
@@ -123,7 +128,7 @@ function TaskColumnsHarness(props: { isAdmin: boolean }) {
   )
 }
 
-async function renderColumns(isAdmin: boolean) {
+async function renderColumns(isAdmin: boolean, mobile = false) {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -132,7 +137,7 @@ async function renderColumns(isAdmin: boolean) {
     root.render(
       <I18nextProvider i18n={i18n}>
         <UsageLogsProvider>
-          <TaskColumnsHarness isAdmin={isAdmin} />
+          <TaskColumnsHarness isAdmin={isAdmin} mobile={mobile} />
         </UsageLogsProvider>
       </I18nextProvider>
     )
@@ -253,6 +258,36 @@ test('non-admin task columns hide channel and billing metrics', async () => {
       null
     )
   }
+
+  await act(async () => rendered.root.unmount())
+  rendered.container.remove()
+})
+
+test('task type column shows content-derived action for all viewers', async () => {
+  for (const isAdmin of [true, false]) {
+    const rendered = await renderColumns(isAdmin)
+
+    assert.equal(
+      rendered.container.querySelector('[data-header-id="action"]')
+        ?.textContent,
+      'Task Type'
+    )
+    assert.equal(
+      rendered.container.querySelector('[data-cell-id="action"]')?.textContent,
+      'Image to Video'
+    )
+
+    await act(async () => rendered.root.unmount())
+    rendered.container.remove()
+  }
+})
+
+test('mobile task card shows the task type', async () => {
+  const rendered = await renderColumns(false, true)
+  const text = rendered.container.textContent ?? ''
+
+  assert.equal(text.includes('Task Type'), true)
+  assert.equal(text.includes('Image to Video'), true)
 
   await act(async () => rendered.root.unmount())
   rendered.container.remove()

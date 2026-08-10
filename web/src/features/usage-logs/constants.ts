@@ -186,6 +186,20 @@ export const TASK_ACTIONS = {
   FIRST_TAIL_GENERATE: 'firstTailGenerate', // 首尾生视频
   REFERENCE_GENERATE: 'referenceGenerate', // 参照生视频
   REMIX_GENERATE: 'remixGenerate', // 视频 Remix
+
+  // Public video task actions
+  TEXT_TO_VIDEO: 'textToVideo',
+  IMAGE_TO_VIDEO: 'imageToVideo',
+  FIRST_FRAME: 'firstFrame',
+  FIRST_AND_LAST_FRAMES: 'firstAndLastFrames',
+} as const
+
+export const TASK_VIDEO_GENERATION_MODES = {
+  TEXT_TO_VIDEO: 'text_to_video',
+  IMAGE_TO_VIDEO: 'image_to_video',
+  FIRST_FRAME: 'first_frame',
+  FIRST_LAST_FRAME: 'first_last_frame',
+  REFERENCE_IMAGE: 'reference_image',
 } as const
 
 /**
@@ -289,16 +303,58 @@ export const TASK_ACTION_MAPPINGS: Record<string, StatusMapping> = {
   [TASK_ACTIONS.LYRICS]: { label: 'Generate Lyrics', variant: 'pink' },
   [TASK_ACTIONS.GENERATE]: { label: 'Image to Video', variant: 'blue' },
   [TASK_ACTIONS.TEXT_GENERATE]: { label: 'Text to Video', variant: 'blue' },
+  [TASK_ACTIONS.TEXT_TO_VIDEO]: {
+    label: 'Text to Video',
+    variant: 'blue',
+  },
+  [TASK_ACTIONS.IMAGE_TO_VIDEO]: {
+    label: 'Image to Video',
+    variant: 'blue',
+  },
+  [TASK_ACTIONS.FIRST_FRAME]: {
+    label: 'First Frame to Video',
+    variant: 'blue',
+  },
+  [TASK_ACTIONS.FIRST_AND_LAST_FRAMES]: {
+    label: 'First/Last Frame to Video',
+    variant: 'blue',
+  },
   [TASK_ACTIONS.FIRST_TAIL_GENERATE]: {
     label: 'First/Last Frame to Video',
     variant: 'blue',
   },
   [TASK_ACTIONS.REFERENCE_GENERATE]: {
-    label: 'Reference Video',
+    label: 'Image to Video',
     variant: 'blue',
   },
   [TASK_ACTIONS.REMIX_GENERATE]: {
     label: 'Video Remix',
+    variant: 'blue',
+  },
+}
+
+export const TASK_VIDEO_GENERATION_MODE_MAPPINGS: Record<
+  string,
+  StatusMapping
+> = {
+  [TASK_VIDEO_GENERATION_MODES.TEXT_TO_VIDEO]: {
+    label: 'Text to Video',
+    variant: 'blue',
+  },
+  [TASK_VIDEO_GENERATION_MODES.IMAGE_TO_VIDEO]: {
+    label: 'Image to Video',
+    variant: 'blue',
+  },
+  [TASK_VIDEO_GENERATION_MODES.FIRST_FRAME]: {
+    label: 'First Frame to Video',
+    variant: 'blue',
+  },
+  [TASK_VIDEO_GENERATION_MODES.FIRST_LAST_FRAME]: {
+    label: 'First/Last Frame to Video',
+    variant: 'blue',
+  },
+  [TASK_VIDEO_GENERATION_MODES.REFERENCE_IMAGE]: {
+    label: 'Image to Video',
     variant: 'blue',
   },
 }

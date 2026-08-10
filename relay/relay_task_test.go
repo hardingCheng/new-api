@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -129,6 +130,36 @@ func TestTaskModel2PublicVideoDtoUsesUpstreamFailureError(t *testing.T) {
 	assert.Equal(t, "视频生成失败，请稍后重试", out.Error.Message)
 	assert.Nil(t, out.Properties)
 	assert.Empty(t, out.Data)
+}
+
+func TestTaskModel2PublicVideoDtoExposesContentDerivedAction(t *testing.T) {
+	tests := []struct {
+		name   string
+		mode   string
+		action string
+	}{
+		{name: "text to video", mode: constant.TaskVideoGenerationModeTextToVideo, action: constant.TaskActionTextToVideo},
+		{name: "image to video", mode: constant.TaskVideoGenerationModeImageToVideo, action: constant.TaskActionImageToVideo},
+		{name: "first frame", mode: constant.TaskVideoGenerationModeFirstFrame, action: constant.TaskActionFirstFrame},
+		{name: "first and last frames", mode: constant.TaskVideoGenerationModeFirstLastFrame, action: constant.TaskActionFirstAndLastFrames},
+		{name: "reference image", mode: constant.TaskVideoGenerationModeReferenceImage, action: constant.TaskActionImageToVideo},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			task := &model.Task{
+				TaskID: "task_public_action",
+				Action: constant.TaskActionTextGenerate,
+				Properties: model.Properties{
+					VideoGenerationMode: tt.mode,
+				},
+			}
+
+			out := TaskModel2PublicVideoDto(task, false)
+
+			assert.Equal(t, tt.action, out.Action)
+		})
+	}
 }
 
 func TestTaskModel2DtoIncludesAdminVideoBillingMetrics(t *testing.T) {

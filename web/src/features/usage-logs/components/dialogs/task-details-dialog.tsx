@@ -42,8 +42,8 @@ import { cn } from '@/lib/utils'
 
 import { formatDuration } from '../../lib/format'
 import {
+  getTaskActionLabelKey,
   getTaskPlatformName,
-  taskActionMapper,
   taskStatusMapper,
 } from '../../lib/mappers'
 import { resolveTaskVideoPreviewUrl } from '../../lib/task-video-preview'
@@ -223,7 +223,12 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
           />
           <DetailRow
             label={t('Action')}
-            value={t(taskActionMapper.getLabel(log.action, log.action || '-'))}
+            value={t(
+              getTaskActionLabelKey(
+                log.action,
+                properties?.video_generation_mode
+              )
+            )}
           />
           <DetailRow label={t('Progress')} value={log.progress || '-'} mono />
           {publicModel ? (

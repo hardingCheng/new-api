@@ -127,6 +127,7 @@ func EnsureTaskSubmissionRecord(c *gin.Context, info *relaycommon.RelayInfo, pla
 			task.Properties.VideoSeconds = generatedSeconds
 		}
 	}
+	applyTaskVideoGenerationMode(c, task)
 	if err := task.Insert(); err != nil {
 		return nil, err
 	}
@@ -209,6 +210,7 @@ func CompleteTaskSubmissionRecord(c *gin.Context, info *relaycommon.RelayInfo, r
 			task.Properties.VideoSeconds = generatedSeconds
 		}
 	}
+	applyTaskVideoGenerationMode(c, task)
 	won, err := task.UpdateWithStatus(model.TaskStatusSubmitting)
 	if err != nil {
 		return err
@@ -217,6 +219,15 @@ func CompleteTaskSubmissionRecord(c *gin.Context, info *relaycommon.RelayInfo, r
 		return fmt.Errorf("task submission record %s was updated concurrently", info.PublicTaskID)
 	}
 	return nil
+}
+
+func applyTaskVideoGenerationMode(c *gin.Context, task *model.Task) {
+	if c == nil || task == nil {
+		return
+	}
+	if mode := common.GetContextKeyString(c, constant.ContextKeyVideoGenerationMode); mode != "" {
+		task.Properties.VideoGenerationMode = mode
+	}
 }
 
 func SyncTaskSubmissionBillingContext(info *relaycommon.RelayInfo) error {

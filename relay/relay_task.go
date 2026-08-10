@@ -647,6 +647,29 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 	resultURL := taskPublicResultURL(task)
+	publicAction := task.Action
+	switch publicAction {
+	case constant.TaskActionTextGenerate:
+		publicAction = constant.TaskActionTextToVideo
+	case constant.TaskActionGenerate:
+		publicAction = constant.TaskActionImageToVideo
+	case constant.TaskActionFirstTailGenerate:
+		publicAction = constant.TaskActionFirstAndLastFrames
+	case constant.TaskActionReferenceGenerate:
+		publicAction = constant.TaskActionImageToVideo
+	}
+	switch task.Properties.VideoGenerationMode {
+	case constant.TaskVideoGenerationModeTextToVideo:
+		publicAction = constant.TaskActionTextToVideo
+	case constant.TaskVideoGenerationModeImageToVideo:
+		publicAction = constant.TaskActionImageToVideo
+	case constant.TaskVideoGenerationModeFirstFrame:
+		publicAction = constant.TaskActionFirstFrame
+	case constant.TaskVideoGenerationModeFirstLastFrame:
+		publicAction = constant.TaskActionFirstAndLastFrames
+	case constant.TaskVideoGenerationModeReferenceImage:
+		publicAction = constant.TaskActionImageToVideo
+	}
 	return &dto.TaskDto{
 		ID:               task.ID,
 		CreatedAt:        task.CreatedAt,
@@ -659,7 +682,7 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		ChannelName:      task.ChannelName,
 		Quota:            task.Quota,
 		RefundQuota:      task.PrivateData.RefundQuota,
-		Action:           task.Action,
+		Action:           publicAction,
 		Status:           string(task.Status),
 		FailReason:       task.FailReason,
 		ResultURL:        resultURL,
