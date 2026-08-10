@@ -378,6 +378,13 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) error
 		task.BillingStatus = model.TaskBillingStatusRefunded
 	}
 
+	// A submission reservation is refunded before LogTaskConsumption runs, so
+	// there is no consume log for this amount. Recording a refund log here would
+	// make aggregate revenue subtract a charge that was never included.
+	if submissionRefunded {
+		return nil
+	}
+
 	other := taskBillingOther(task)
 	other["task_id"] = task.TaskID
 	other["reason"] = reason

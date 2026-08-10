@@ -1345,6 +1345,10 @@ func TestFailedUnsettledTaskSubmissionRefundsReservationWithoutCredit(t *testing
 	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).
 		Where("adjustment_key = ?", "task-refund:task_submission_failure").Count(&taskRefundCount).Error)
 	assert.Zero(t, taskRefundCount)
+	assert.Zero(t, countLogs(t))
+	stat, err := model.SumUsedQuota(0, 0, 0, "", "", nil, "", 0, "")
+	require.NoError(t, err)
+	assert.Zero(t, stat.RefundQuota)
 }
 
 func TestFailedTaskRefundsChargeWhenSubmissionReservationAlreadySettled(t *testing.T) {
@@ -1382,6 +1386,13 @@ func TestFailedTaskRefundsChargeWhenSubmissionReservationAlreadySettled(t *testi
 	var taskRefund model.BillingAdjustment
 	require.NoError(t, model.DB.Where("adjustment_key = ?", "task-refund:task_settled_before_failure").First(&taskRefund).Error)
 	assert.Equal(t, model.BillingAdjustmentStatusSucceeded, taskRefund.Status)
+	log := getLastLog(t)
+	require.NotNil(t, log)
+	assert.Equal(t, model.LogTypeRefund, log.Type)
+	assert.Equal(t, 1500, log.Quota)
+	stat, err := model.SumUsedQuota(0, 0, 0, "", "", nil, "", 0, "")
+	require.NoError(t, err)
+	assert.Equal(t, 1500, stat.RefundQuota)
 }
 
 func TestTaskSubmissionWithoutUpstreamIDDoesNotFallbackToPublicID(t *testing.T) {
