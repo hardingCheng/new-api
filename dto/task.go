@@ -94,11 +94,13 @@ type VideoTaskPublicDto struct {
 	FinishTime  int64             `json:"finish_time"`
 	// Progress 输出为数字（0-100），与 OpenAI Video API 一致，
 	// 避免下游按 int 解析 "100%" 字符串失败。
-	Progress         int             `json:"progress"`
-	Properties       any             `json:"properties"`
+	Progress int `json:"progress"`
+	// Properties and Data are returned only to administrators. Keeping them
+	// omitempty ensures ordinary API callers do not receive null placeholders.
+	Properties       any             `json:"properties,omitempty"`
 	ModelName        string          `json:"model_name,omitempty"`
 	VideoDuration    int             `json:"video_duration,omitempty"`
-	Data             json.RawMessage `json:"data"`
+	Data             json.RawMessage `json:"data,omitempty"`
 	Timestamp2String string          `json:"timestamp2string,omitempty"`
 }
 

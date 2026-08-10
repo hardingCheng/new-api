@@ -500,7 +500,8 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 	// 原生结构，避免 xAI 等上游把 usage/object/video 等内部字段直接暴露给调用方。
 	// 视频地址由 TaskModel2Dto 从 task.Data 递归归一化进 result_url/url/video_url。
 	if isOpenAIVideoAPI {
-		respBody, err = common.Marshal(TaskModel2PublicVideoDto(originTask))
+		includeInternalData := c.GetInt("role") >= common.RoleAdminUser
+		respBody, err = common.Marshal(TaskModel2PublicVideoDto(originTask, includeInternalData))
 		if err != nil {
 			taskResp = service.TaskErrorWrapper(err, "marshal_response_failed", http.StatusInternalServerError)
 		}
@@ -678,14 +679,11 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 	}
 }
 
-// TaskModel2PublicVideoDto 构建 /v1/videos/{task_id} 的对外精简响应，
-// 复用 TaskModel2Dto 的字段计算逻辑，但只保留调用方需要的字段，
-// 不暴露 platform / user_id / group / channel_id / quota 等内部信息。
-func TaskModel2PublicVideoDto(task *model.Task) *dto.VideoTaskPublicDto {
+// TaskModel2PublicVideoDto 构建 /v1/videos/{task_id} 的对外精简响应。
+// 管理员可额外查看 properties 和 data；普通用户不返回这两个内部字段。
+func TaskModel2PublicVideoDto(task *model.Task, includeInternalData bool) *dto.VideoTaskPublicDto {
 	full := TaskModel2Dto(task)
 	publicModelName := strings.TrimSpace(task.Properties.OriginModelName)
-	publicProperties := task.Properties
-	publicProperties.UpstreamModelName = ""
 	seconds, size := extractVideoSecondsSize(task.Data)
 	if seconds == "" && full.VideoDuration > 0 {
 		seconds = strconv.Itoa(full.VideoDuration)
@@ -711,23 +709,43 @@ func TaskModel2PublicVideoDto(task *model.Task) *dto.VideoTaskPublicDto {
 		StartTime:        full.StartTime,
 		FinishTime:       full.FinishTime,
 		Progress:         publicVideoProgress(task, full.Progress),
-		Properties:       publicProperties,
 		ModelName:        publicModelName,
 		VideoDuration:    full.VideoDuration,
-		Data:             RedactTaskDataForPublic(full.Data, publicModelName, full.TaskID),
 		Timestamp2String: full.Timestamp2String,
+	}
+	if includeInternalData {
+		out.Properties = full.Properties
+		out.Data = full.Data
 	}
 	if task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure {
 		out.CompletedAt = full.FinishTime
 	}
 	if task.Status == model.TaskStatusFailure {
-		message := full.FailReason
-		if message == "" {
-			message = "task failed"
-		}
-		out.Error = &dto.OpenAIVideoError{Message: message}
+		out.Error = taskPublicVideoError(task.Data, full.FailReason)
 	}
 	return out
+}
+
+// taskPublicVideoError extracts a provider's machine-readable task error and
+// falls back to the persisted failure reason when the provider omitted it.
+func taskPublicVideoError(data json.RawMessage, failReason string) *dto.OpenAIVideoError {
+	result := &dto.OpenAIVideoError{Code: "task_failed"}
+	var payload struct {
+		Error *dto.OpenAIVideoError `json:"error"`
+	}
+	if len(data) > 0 && common.Unmarshal(data, &payload) == nil && payload.Error != nil {
+		if code := strings.TrimSpace(payload.Error.Code); code != "" {
+			result.Code = code
+		}
+		result.Message = strings.TrimSpace(payload.Error.Message)
+	}
+	if result.Message == "" {
+		result.Message = strings.TrimSpace(failReason)
+	}
+	if result.Message == "" {
+		result.Message = "task failed"
+	}
+	return result
 }
 
 // extractVideoSecondsSize 从上游 data 里取 OpenAI 视频对象的 seconds/size 字段（若有），

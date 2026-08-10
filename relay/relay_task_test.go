@@ -44,7 +44,7 @@ func TestFixedVideoModelPriceDefaultsToPerSecondBilling(t *testing.T) {
 	assert.Equal(t, 15, context.GetInt("billable_video_seconds"))
 }
 
-func TestTaskModel2PublicVideoDtoRedactsUpstreamIdentifiers(t *testing.T) {
+func TestTaskModel2PublicVideoDtoHidesInternalDataForRegularUser(t *testing.T) {
 	task := &model.Task{
 		TaskID: "task_public",
 		Status: model.TaskStatusInProgress,
@@ -73,41 +73,62 @@ func TestTaskModel2PublicVideoDtoRedactsUpstreamIdentifiers(t *testing.T) {
 		}`),
 	}
 
-	out := TaskModel2PublicVideoDto(task)
+	out := TaskModel2PublicVideoDto(task, false)
 
 	assert.Equal(t, "public-video-model", out.Model)
 	assert.Equal(t, "public-video-model", out.ModelName)
+	assert.Nil(t, out.Properties)
+	assert.Empty(t, out.Data)
+
+	body, err := common.Marshal(out)
+	require.NoError(t, err)
+	assert.NotContains(t, string(body), `"properties"`)
+	assert.NotContains(t, string(body), `"data"`)
+	assert.NotContains(t, string(body), "provider-project")
+	assert.NotContains(t, string(body), "provider-secret-model")
+	assert.NotContains(t, string(body), "upstream-operation")
+}
+
+func TestTaskModel2PublicVideoDtoIncludesInternalDataForAdmin(t *testing.T) {
+	task := &model.Task{
+		TaskID: "task_admin",
+		Properties: model.Properties{
+			OriginModelName:   "public-video-model",
+			UpstreamModelName: "provider-secret-model",
+		},
+		Data: []byte(`{"id":"upstream-task-id","model":"provider-secret-model"}`),
+	}
+
+	out := TaskModel2PublicVideoDto(task, true)
 	properties, ok := out.Properties.(model.Properties)
 	require.True(t, ok)
-	assert.Empty(t, properties.UpstreamModelName)
-	assert.Equal(t, "public-video-model", properties.OriginModelName)
+	assert.Equal(t, "provider-secret-model", properties.UpstreamModelName)
+	assert.JSONEq(t, string(task.Data), string(out.Data))
 
-	var data map[string]any
-	require.NoError(t, common.Unmarshal(out.Data, &data))
-	assert.Equal(t, "task_public", data["id"])
-	assert.Equal(t, "task_public", data["task_id"])
-	assert.Equal(t, "task_public", data["name"])
-	assert.Equal(t, "task_public", data["operationName"])
-	assert.Equal(t, "public-video-model", data["model"])
-	assert.NotContains(t, data, "usage")
+	body, err := common.Marshal(out)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"properties"`)
+	assert.Contains(t, string(body), `"data"`)
+}
 
-	response, ok := data["response"].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, "task_public", response["id"])
-	assert.Equal(t, "task_public", response["task_id"])
-	assert.Equal(t, "public-video-model", response["model"])
-	assert.NotContains(t, response, "usage")
-	operation, ok := response["operation"].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, "task_public", operation["name"])
-	assert.NotContains(t, string(out.Data), "provider-project")
-	assert.NotContains(t, string(out.Data), "provider-secret-model")
-	assert.NotContains(t, string(out.Data), "upstream-operation")
+func TestTaskModel2PublicVideoDtoUsesUpstreamFailureError(t *testing.T) {
+	task := &model.Task{
+		TaskID:     "task_failed",
+		Status:     model.TaskStatusFailure,
+		FailReason: "视频生成失败，请稍后重试",
+		Data: []byte(`{
+			"error":{"code":"generation_failed","message":"视频生成失败，请稍后重试"},
+			"progress":100,
+			"status":"failed"
+		}`),
+	}
 
-	result, ok := data["result"].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, "asset-id", result["id"])
-	assert.Equal(t, "final-video.mp4", result["name"])
+	out := TaskModel2PublicVideoDto(task, false)
+	require.NotNil(t, out.Error)
+	assert.Equal(t, "generation_failed", out.Error.Code)
+	assert.Equal(t, "视频生成失败，请稍后重试", out.Error.Message)
+	assert.Nil(t, out.Properties)
+	assert.Empty(t, out.Data)
 }
 
 func TestTaskModel2DtoIncludesAdminVideoBillingMetrics(t *testing.T) {
