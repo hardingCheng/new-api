@@ -447,6 +447,11 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	case "done":
 		taskResult.Status = model.TaskStatusSuccess
 		taskResult.Progress = "100%"
+	default:
+		if taskResult.Status == "" {
+			taskResult.Status = model.TaskStatusUnknown
+			taskResult.Progress = taskcommon.ProgressUnknown
+		}
 	}
 	taskResult.Url = resTask.Data.VideoUrl
 	return &taskResult, nil

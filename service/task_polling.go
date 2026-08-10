@@ -300,6 +300,19 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		responseStatus := model.TaskStatus(responseItem.Status)
+		switch responseStatus {
+		case model.TaskStatusNotStart,
+			model.TaskStatusSubmitting,
+			model.TaskStatusSubmitted,
+			model.TaskStatusQueued,
+			model.TaskStatusInProgress,
+			model.TaskStatusFailure,
+			model.TaskStatusSuccess:
+		default:
+			responseStatus = model.TaskStatusUnknown
+			responseItem.Status = string(responseStatus)
+		}
 		task := taskM[responseItem.TaskID]
 		if task == nil {
 			logger.LogWarn(ctx, fmt.Sprintf("Suno task response ignored: unknown task_id=%s", responseItem.TaskID))
@@ -310,7 +323,10 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 		}
 
 		prevStatus := task.Status
-		task.Status = lo.If(model.TaskStatus(responseItem.Status) != "", model.TaskStatus(responseItem.Status)).Else(task.Status)
+		task.Status = responseStatus
+		if task.Status == model.TaskStatusUnknown {
+			task.Progress = taskcommon.ProgressUnknown
+		}
 		task.FailReason = lo.If(responseItem.FailReason != "", responseItem.FailReason).Else(task.FailReason)
 		task.SubmitTime = lo.If(responseItem.SubmitTime != 0, responseItem.SubmitTime).Else(task.SubmitTime)
 		task.StartTime = lo.If(responseItem.StartTime != 0, responseItem.StartTime).Else(task.StartTime)
@@ -552,6 +568,8 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 
 	task.Status = model.TaskStatus(taskResult.Status)
 	switch taskResult.Status {
+	case model.TaskStatusUnknown:
+		task.Progress = taskcommon.ProgressUnknown
 	case model.TaskStatusSubmitted:
 		task.Progress = taskcommon.ProgressSubmitted
 	case model.TaskStatusQueued:

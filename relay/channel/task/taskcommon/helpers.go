@@ -68,6 +68,7 @@ func BuildProxyURL(taskID string) string {
 
 // Status-to-progress mapping constants for polling updates.
 const (
+	ProgressUnknown    = "0%"
 	ProgressSubmitted  = "10%"
 	ProgressQueued     = "20%"
 	ProgressInProgress = "30%"

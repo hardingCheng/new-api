@@ -8,12 +8,21 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestParseTaskResultMapsUnknownStatusToZeroProgress(t *testing.T) {
+	result, err := (&TaskAdaptor{}).ParseTaskResult([]byte(`{"status":"new_provider_status"}`))
+
+	require.NoError(t, err)
+	assert.Equal(t, model.TaskStatusUnknown, result.Status)
+	assert.Equal(t, "0%", result.Progress)
+}
 
 func TestBuildRequestBodyPreservesSeedance25AutoDuration(t *testing.T) {
 	setting := operation_setting.GetGeneralSetting()

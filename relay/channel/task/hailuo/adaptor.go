@@ -217,8 +217,10 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 			taskResult.Reason = "task failed"
 		}
 	default:
-		taskResult.Status = model.TaskStatusInProgress
-		taskResult.Progress = "30%"
+		if taskResult.Status == "" {
+			taskResult.Status = model.TaskStatusUnknown
+			taskResult.Progress = taskcommon.ProgressUnknown
+		}
 	}
 
 	return &taskResult, nil

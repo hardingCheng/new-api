@@ -8,11 +8,25 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestParseTaskResultMapsUnknownStatusToZeroProgress(t *testing.T) {
+	adaptor := &TaskAdaptor{}
+	for _, status := range []string{"UNKNOWN", "NEW_PROVIDER_STATUS"} {
+		t.Run(status, func(t *testing.T) {
+			result, err := adaptor.ParseTaskResult([]byte(`{"output":{"task_status":"` + status + `"}}`))
+
+			require.NoError(t, err)
+			assert.Equal(t, model.TaskStatusUnknown, result.Status)
+			assert.Equal(t, "0%", result.Progress)
+		})
+	}
+}
 
 func testRelayInfo() *relaycommon.RelayInfo {
 	return &relaycommon.RelayInfo{

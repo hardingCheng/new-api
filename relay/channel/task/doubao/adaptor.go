@@ -377,9 +377,8 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 		taskResult.Progress = "100%"
 		taskResult.Reason = resTask.Error.Message
 	default:
-		// Unknown status, treat as processing
-		taskResult.Status = model.TaskStatusInProgress
-		taskResult.Progress = "30%"
+		taskResult.Status = model.TaskStatusUnknown
+		taskResult.Progress = taskcommon.ProgressUnknown
 	}
 
 	return &taskResult, nil

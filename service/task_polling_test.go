@@ -30,21 +30,30 @@ type taskPollingFetchAdaptor struct {
 	blockOnce    sync.Once
 }
 
-type sunoFailurePollingAdaptor struct {
+type sunoPollingAdaptor struct {
+	status     string
 	failReason string
 }
 
-func (a *sunoFailurePollingAdaptor) Init(_ *relaycommon.RelayInfo) {}
+func (a *sunoPollingAdaptor) Init(_ *relaycommon.RelayInfo) {}
 
-func (a *sunoFailurePollingAdaptor) FetchTask(_ string, _ string, body map[string]any, _ string) (*http.Response, error) {
+func (a *sunoPollingAdaptor) FetchTask(_ string, _ string, body map[string]any, _ string) (*http.Response, error) {
 	taskIDs, _ := body["ids"].([]string)
 	items := make([]taskdto.SunoDataResponse, 0, len(taskIDs))
+	status := a.status
+	if status == "" {
+		status = string(model.TaskStatusFailure)
+	}
+	finishTime := int64(0)
+	if status == string(model.TaskStatusFailure) {
+		finishTime = time.Now().Unix()
+	}
 	for _, taskID := range taskIDs {
 		items = append(items, taskdto.SunoDataResponse{
 			TaskID:     taskID,
-			Status:     string(model.TaskStatusFailure),
+			Status:     status,
 			FailReason: a.failReason,
-			FinishTime: time.Now().Unix(),
+			FinishTime: finishTime,
 		})
 	}
 
@@ -61,11 +70,11 @@ func (a *sunoFailurePollingAdaptor) FetchTask(_ string, _ string, body map[strin
 	}, nil
 }
 
-func (a *sunoFailurePollingAdaptor) ParseTaskResult([]byte) (*relaycommon.TaskInfo, error) {
+func (a *sunoPollingAdaptor) ParseTaskResult([]byte) (*relaycommon.TaskInfo, error) {
 	return nil, nil
 }
 
-func (a *sunoFailurePollingAdaptor) AdjustBillingOnComplete(_ *model.Task, _ *relaycommon.TaskInfo) int {
+func (a *sunoPollingAdaptor) AdjustBillingOnComplete(_ *model.Task, _ *relaycommon.TaskInfo) int {
 	return 0
 }
 
@@ -408,7 +417,7 @@ func TestUpdateSunoTasksStalePollsRefundExactlyOnce(t *testing.T) {
 	require.NoError(t, model.DB.First(&firstPollTask, task.ID).Error)
 	require.NoError(t, model.DB.First(&staleSecondPollTask, task.ID).Error)
 
-	adaptor := &sunoFailurePollingAdaptor{failReason: "upstream failed"}
+	adaptor := &sunoPollingAdaptor{failReason: "upstream failed"}
 	previousFactory := GetTaskAdaptorFunc
 	GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor { return adaptor }
 	t.Cleanup(func() { GetTaskAdaptorFunc = previousFactory })
@@ -427,6 +436,46 @@ func TestUpdateSunoTasksStalePollsRefundExactlyOnce(t *testing.T) {
 	assert.Equal(t, initialUserQuota+taskQuota, getUserQuota(t, userID))
 	assert.Equal(t, initialTokenQuota+taskQuota, getTokenRemainQuota(t, tokenID))
 	assert.Equal(t, int64(1), countLogs(t))
+}
+
+func TestUpdateSunoTasksMapsUnknownStatusToZeroProgress(t *testing.T) {
+	truncate(t)
+
+	const channelID = 403
+	const publicTaskID = "suno_public_unknown_status"
+	const upstreamTaskID = "suno_upstream_unknown_status"
+	baseURL := "https://suno.invalid"
+	require.NoError(t, model.DB.Create(&model.Channel{
+		Id:      channelID,
+		Type:    constant.ChannelTypeSunoAPI,
+		Name:    "suno_unknown_status",
+		Key:     "sk-suno-channel",
+		Status:  common.ChannelStatusEnabled,
+		BaseURL: &baseURL,
+	}).Error)
+
+	task := makeTask(403, channelID, 0, 0, BillingSourceWallet, 0)
+	task.TaskID = publicTaskID
+	task.Platform = constant.TaskPlatformSuno
+	task.Status = model.TaskStatusInProgress
+	task.Progress = "50%"
+	task.SubmitTime = time.Now().Unix()
+	task.PrivateData.UpstreamTaskID = upstreamTaskID
+	require.NoError(t, model.DB.Create(task).Error)
+
+	adaptor := &sunoPollingAdaptor{status: "new_provider_status"}
+	previousFactory := GetTaskAdaptorFunc
+	GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor { return adaptor }
+	t.Cleanup(func() { GetTaskAdaptorFunc = previousFactory })
+
+	require.NoError(t, updateSunoTasks(context.Background(), channelID, []string{upstreamTaskID}, map[string]*model.Task{
+		upstreamTaskID: task,
+	}))
+
+	var reloaded model.Task
+	require.NoError(t, model.DB.First(&reloaded, task.ID).Error)
+	assert.EqualValues(t, model.TaskStatusUnknown, reloaded.Status)
+	assert.Equal(t, "0%", reloaded.Progress)
 }
 
 func TestRunTaskPollingOnceDoesNotRefundHistoricalFailedTask(t *testing.T) {

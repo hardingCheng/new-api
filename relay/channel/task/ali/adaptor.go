@@ -538,7 +538,7 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 		taskResult.Status = model.TaskStatusSuccess
 		// 阿里直接返回视频URL，不需要额外的代理端点
 		taskResult.Url = aliResp.Output.VideoURL
-	case "FAILED", "CANCELED", "UNKNOWN":
+	case "FAILED", "CANCELED":
 		taskResult.Status = model.TaskStatusFailure
 		if aliResp.Message != "" {
 			taskResult.Reason = aliResp.Message
@@ -547,8 +547,12 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 		} else {
 			taskResult.Reason = "task failed"
 		}
+	case "UNKNOWN":
+		taskResult.Status = model.TaskStatusUnknown
+		taskResult.Progress = taskcommon.ProgressUnknown
 	default:
-		taskResult.Status = model.TaskStatusQueued
+		taskResult.Status = model.TaskStatusUnknown
+		taskResult.Progress = taskcommon.ProgressUnknown
 	}
 
 	return &taskResult, nil
@@ -595,8 +599,10 @@ func convertAliStatus(aliStatus string) string {
 		return dto.VideoStatusInProgress
 	case "SUCCEEDED":
 		return dto.VideoStatusCompleted
-	case "FAILED", "CANCELED", "UNKNOWN":
+	case "FAILED", "CANCELED":
 		return dto.VideoStatusFailed
+	case "UNKNOWN":
+		return dto.VideoStatusUnknown
 	default:
 		return dto.VideoStatusUnknown
 	}
