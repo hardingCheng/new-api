@@ -299,6 +299,10 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		}
 	}
 
+	if relayMode == relayconstant.RelayModeImagesEdits && strings.TrimSpace(imageRequest.Size) == "" {
+		imageRequest.Size = "auto"
+	}
+
 	return imageRequest, nil
 }
 

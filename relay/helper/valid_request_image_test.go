@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/constant"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetAndValidOpenAIImageRequestDefaultsGPTImageResponseFormat(t *testing.T) {
@@ -103,6 +104,43 @@ func TestGetAndValidOpenAIImageEditMultipartDefaultsGPTImageResponseFormat(t *te
 	}
 	if imageReq.ResponseFormat != "b64_json" {
 		t.Fatalf("ResponseFormat = %q, want %q", imageReq.ResponseFormat, "b64_json")
+	}
+	if imageReq.Size != "auto" {
+		t.Fatalf("Size = %q, want %q", imageReq.Size, "auto")
+	}
+}
+
+func TestGetAndValidOpenAIImageEditJSONDefaultsAndPreservesSize(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "missing size defaults to auto",
+			body: `{"model":"gpt-image-1","prompt":"edit","image":"https://example.com/input.png"}`,
+			want: "auto",
+		},
+		{
+			name: "explicit size is preserved",
+			body: `{"model":"gpt-image-1","prompt":"edit","size":"1024x1024","image":"https://example.com/input.png"}`,
+			want: "1024x1024",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/v1/images/edits", bytes.NewBufferString(tt.body))
+			request.Header.Set("Content-Type", "application/json")
+			context, _ := gin.CreateTestContext(httptest.NewRecorder())
+			context.Request = request
+
+			imageReq, err := GetAndValidOpenAIImageRequest(context, constant.RelayModeImagesEdits)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, imageReq.Size)
+		})
 	}
 }
 
