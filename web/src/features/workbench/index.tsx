@@ -41,7 +41,6 @@ import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
 import { StatusBadge } from '@/components/status-badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
@@ -124,18 +123,35 @@ function MetricTile({
 
 // 固定四格，位置不变。数量固定才形成得了肌肉记忆，每天扫同一个地方。
 // 只放「此刻的状态」和老板每天都要看的利润，累计统计一律下沉到下面的卡片。
+// 四格只放「下面那张清单里没有的东西」。原来放熔断数和禁用数，可下面的
+// 清单已经逐条列了同样的事，等于同一件事说三遍——那才是「看着没变化」的
+// 真正原因。这里换成经营面：赚了多少、跑了多少、还能跑多久。
 function NowMetrics({
   statusBar,
   sites,
+  daily,
+  watermark,
 }: {
   statusBar: WorkbenchStatusBar
   sites: WorkbenchSite[]
+  daily: WorkbenchDailyPoint[]
+  watermark: WorkbenchWatermark | null
 }) {
   const { t } = useTranslation()
   const soonest = sites
     .filter((s) => s.est_days != null)
     .sort((a, b) => (a.est_days ?? 0) - (b.est_days ?? 0))[0]
   const coverage = statusBar.pnl24_coverage
+  const today = daily.at(-1) ?? null
+  const prev = daily.length > 1 ? (daily.at(-2) ?? null) : null
+  const dod =
+    today && prev && prev.requests > 0
+      ? (today.requests - prev.requests) / prev.requests
+      : null
+  const rpmPct =
+    watermark?.peak_rpm != null && watermark.peak_rpm_line > 0
+      ? watermark.peak_rpm / watermark.peak_rpm_line
+      : null
   return (
     <div className='grid grid-cols-2 gap-3 xl:grid-cols-4'>
       <MetricTile
@@ -151,9 +167,30 @@ function NowMetrics({
         }
       />
       <MetricTile
-        label={t('Channels tripping (last hour)')}
-        value={String(statusBar.breaking_channels)}
-        tone={statusBar.breaking_channels ? 'text-destructive' : undefined}
+        label={t('Requests today')}
+        value={formatCount(today?.requests ?? null)}
+        hint={
+          dod != null
+            ? t('{{pct}}% vs yesterday', {
+                pct: (dod >= 0 ? '+' : '') + Math.round(dod * 100),
+              })
+            : undefined
+        }
+      />
+      <MetricTile
+        label={t('Peak RPM headroom')}
+        value={
+          rpmPct != null ? `${Math.round(rpmPct * 100)}%` : formatCount(null)
+        }
+        tone={rpmPct != null && rpmPct >= 0.8 ? 'text-status-warning' : undefined}
+        hint={
+          watermark?.peak_rpm != null
+            ? t('peak {{p}} / limit {{l}}', {
+                p: watermark.peak_rpm,
+                l: watermark.peak_rpm_line,
+              })
+            : undefined
+        }
       />
       <MetricTile
         label={t('Soonest upstream to run dry')}
@@ -167,39 +204,6 @@ function NowMetrics({
         }
         hint={soonest?.name}
       />
-      <MetricTile
-        label={t('Disabled channels')}
-        value={String(statusBar.disabled_channels)}
-        tone={statusBar.disabled_channels ? 'text-status-warning' : undefined}
-      />
-    </div>
-  )
-}
-
-function AlarmRow({ alarm }: { alarm: WorkbenchAlarm }) {
-  const { t } = useTranslation()
-  return (
-    <div className='flex flex-wrap items-baseline gap-2 border-b py-2.5 last:border-b-0'>
-      <StatusBadge
-        variant={alarm.level === 'bad' ? 'danger' : 'warning'}
-        className='shrink-0'
-      >
-        {alarmKindLabel(alarm.kind, t)}
-      </StatusBadge>
-      <span className='font-medium'>{alarm.title}</span>
-      {alarm.detail && (
-        <span className='text-muted-foreground min-w-0 text-xs'>
-          {alarm.detail}
-        </span>
-      )}
-      {alarm.link && (
-        <a
-          href={alarm.link}
-          className='text-primary ms-auto shrink-0 text-sm hover:underline'
-        >
-          {t('Handle')} →
-        </a>
-      )}
     </div>
   )
 }
@@ -243,33 +247,120 @@ function sortAlarms(alarms: WorkbenchAlarm[]): WorkbenchAlarm[] {
   })
 }
 
+// 同类报警必须归并。原来 26 条里有 10 条都是「某渠道熔断了 N 次」、3 条
+// 「采集失败」、3 条「渠道被禁用」——逐条平铺读起来是文字墙，真正有独立
+// 含义的只有 8 件事左右。归并成一行结论 + 需要时展开明细。
+type AlarmGroup = {
+  kind: string
+  level: 'bad' | 'warn'
+  items: WorkbenchAlarm[]
+}
+
+function groupAlarms(alarms: WorkbenchAlarm[]): AlarmGroup[] {
+  const byKind = new Map<string, WorkbenchAlarm[]>()
+  for (const a of sortAlarms(alarms)) {
+    const list = byKind.get(a.kind)
+    if (list) list.push(a)
+    else byKind.set(a.kind, [a])
+  }
+  const groups: AlarmGroup[] = []
+  for (const [kind, items] of byKind) {
+    groups.push({
+      kind,
+      level: items.some((i) => i.level === 'bad') ? 'bad' : 'warn',
+      items,
+    })
+  }
+  return groups.sort((a, b) => {
+    if (a.level !== b.level) return a.level === 'bad' ? -1 : 1
+    return (ALARM_KIND_ORDER[a.kind] ?? 99) - (ALARM_KIND_ORDER[b.kind] ?? 99)
+  })
+}
+
+function AlarmGroupBlock({ group }: { group: AlarmGroup }) {
+  const { t } = useTranslation()
+  // 三条以内直接铺开——为看两条明细多点一次不值得；超过三条才折叠。
+  const [expanded, setExpanded] = useState(group.items.length <= 3)
+  const head = group.items[0]
+  return (
+    <div className='border-b py-2.5 last:border-b-0'>
+      <div className='flex flex-wrap items-baseline gap-2'>
+        <StatusBadge
+          variant={group.level === 'bad' ? 'danger' : 'warning'}
+          className='shrink-0'
+        >
+          {alarmKindLabel(group.kind, t)}
+        </StatusBadge>
+        {expanded ? (
+          <span className='text-muted-foreground text-xs'>
+            {t('{{n}} items', { n: group.items.length })}
+          </span>
+        ) : (
+          <span className='min-w-0 font-medium'>{head.title}</span>
+        )}
+        {group.items.length > 3 && (
+          <button
+            type='button'
+            onClick={() => setExpanded((v) => !v)}
+            className='text-primary ms-auto shrink-0 text-xs hover:underline'
+          >
+            {expanded
+              ? t('Collapse')
+              : t('and {{n}} more', { n: group.items.length - 1 })}
+          </button>
+        )}
+      </div>
+      {expanded && (
+        <div className='mt-1 space-y-1 ps-1'>
+          {group.items.map((a) => (
+            <div
+              key={`${a.title}:${a.detail}`}
+              className='flex flex-wrap items-baseline gap-2 text-sm'
+            >
+              <span className='min-w-0'>{a.title}</span>
+              {a.detail && (
+                <span className='text-muted-foreground text-xs'>
+                  {a.detail}
+                </span>
+              )}
+              {a.link && (
+                <a
+                  href={a.link}
+                  className='text-primary ms-auto shrink-0 text-xs hover:underline'
+                >
+                  {t('Handle')} →
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AlarmsCard({ alarms }: { alarms: WorkbenchAlarm[] }) {
   const { t } = useTranslation()
-  const sorted = sortAlarms(alarms)
+  const groups = groupAlarms(alarms)
   return (
     <Card className='h-full'>
       <CardHeader>
         <CardTitle className='flex items-center gap-2'>
           {t('Needs your attention')}
-          {sorted.length > 0 && (
+          {groups.length > 0 && (
             <span className='text-muted-foreground text-xs font-normal'>
-              {sorted.length}
+              {t('{{n}} kinds', { n: groups.length })}
             </span>
           )}
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {sorted.length === 0 ? (
+        {groups.length === 0 ? (
           <p className='text-muted-foreground py-4 text-sm'>
             {t('Nothing needs handling right now')}
           </p>
         ) : (
-          sorted.map((alarm) => (
-            <AlarmRow
-              key={`${alarm.kind}:${alarm.title}:${alarm.detail}`}
-              alarm={alarm}
-            />
-          ))
+          groups.map((g) => <AlarmGroupBlock key={g.kind} group={g} />)
         )}
       </CardContent>
     </Card>
@@ -315,72 +406,6 @@ function TrendCard({ daily }: { daily: WorkbenchDailyPoint[] }) {
               </div>
             ))}
           </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function WatermarkMeter({
-  label,
-  value,
-  line,
-}: {
-  label: string
-  value: number | null
-  line: number
-}) {
-  const pct = value == null ? 0 : Math.min(100, (value / line) * 100)
-  return (
-    <div>
-      <div className='text-muted-foreground text-xs'>{label}</div>
-      <div className='mt-1 text-lg font-semibold tabular-nums'>
-        {formatCount(value)}{' '}
-        <span className='text-muted-foreground text-xs font-normal'>
-          / {formatCount(line)}
-        </span>
-      </div>
-      <Progress
-        value={pct}
-        className={cn(
-          'mt-2 h-1.5',
-          pct >= 100 && '[&>*]:bg-destructive',
-          pct >= 60 && pct < 100 && '[&>*]:bg-status-warning'
-        )}
-      />
-    </div>
-  )
-}
-
-function WatermarkCard({
-  watermark,
-}: {
-  watermark: WorkbenchWatermark | null
-}) {
-  const { t } = useTranslation()
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t('Capacity watermark')}</CardTitle>
-      </CardHeader>
-      <CardContent className='space-y-4'>
-        {watermark == null ? (
-          <p className='text-muted-foreground py-4 text-sm'>
-            {t('Hub database is temporarily unreadable')}
-          </p>
-        ) : (
-          <>
-            <WatermarkMeter
-              label={t('Peak requests per minute (24h)')}
-              value={watermark.peak_rpm}
-              line={watermark.peak_rpm_line}
-            />
-            <WatermarkMeter
-              label={t('Total request log rows')}
-              value={watermark.logs_rows}
-              line={watermark.logs_rows_line}
-            />
-          </>
         )}
       </CardContent>
     </Card>
@@ -513,7 +538,12 @@ function WorkbenchBody({ summary }: { summary: WorkbenchSummary }) {
           <AlertDescription>{summary.status_bar.hub_db_error}</AlertDescription>
         </Alert>
       )}
-      <NowMetrics statusBar={summary.status_bar} sites={summary.sites} />
+      <NowMetrics
+        statusBar={summary.status_bar}
+        sites={summary.sites}
+        daily={summary.daily}
+        watermark={summary.watermark}
+      />
       {/* 左宽右窄：左边是「要你处理的」，右边是「处理时要参考的前提」 */}
       <div className='grid gap-4 lg:grid-cols-5'>
         <div className='lg:col-span-3'>
@@ -523,15 +553,15 @@ function WorkbenchBody({ summary }: { summary: WorkbenchSummary }) {
           <SitesCard sites={summary.sites} />
         </div>
       </div>
+      {/* 容量水位已经收进上面的「峰值余量」一格，这里不再重复一张卡 */}
       <div className='grid gap-4 lg:grid-cols-5'>
         <div className='lg:col-span-3'>
           <ProfitCard statusBar={summary.status_bar} />
         </div>
         <div className='lg:col-span-2'>
-          <WatermarkCard watermark={summary.watermark} />
+          <TrendCard daily={summary.daily} />
         </div>
       </div>
-      <TrendCard daily={summary.daily} />
     </div>
   )
 }

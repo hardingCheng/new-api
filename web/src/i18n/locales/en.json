@@ -5734,6 +5734,13 @@
     "Losing money": "Losing money",
     "Circuit breaker": "Circuit breaker",
     "Error rate": "Error rate",
-    "Collection": "Collection"
+    "Collection": "Collection",
+    "{{n}} items": "{{n}} items",
+    "{{n}} kinds": "{{n}} kinds",
+    "and {{n}} more": "and {{n}} more",
+    "Requests today": "Requests today",
+    "{{pct}}% vs yesterday": "{{pct}}% vs yesterday",
+    "Peak RPM headroom": "Peak RPM headroom",
+    "peak {{p}} / limit {{l}}": "peak {{p}} / limit {{l}}"
   }
 }
