@@ -292,8 +292,8 @@ func TaskGetAllTasksForExport(limit int, beforeID int64, queryParams SyncTaskQue
 		return nil, gorm.ErrInvalidValue
 	}
 	var tasks []*Task
-	// Export only the columns used by the report. Task data and private_data may
-	// contain large provider payloads and are intentionally excluded.
+	// Export only the columns used by the report. Task data is intentionally
+	// excluded, and private_data is loaded separately only to copy refund quota.
 	query := applyTaskQueryFilters(DB, queryParams)
 	if beforeID > 0 {
 		query = query.Where("id < ?", beforeID)
@@ -303,7 +303,37 @@ func TaskGetAllTasksForExport(limit int, beforeID int64, queryParams SyncTaskQue
 		Order("id desc").
 		Limit(limit).
 		Find(&tasks).Error
-	return tasks, err
+	if err != nil {
+		return nil, err
+	}
+
+	failedTaskIDs := make([]int64, 0)
+	for _, task := range tasks {
+		if task.Status == TaskStatusFailure {
+			failedTaskIDs = append(failedTaskIDs, task.ID)
+		}
+	}
+	const refundLookupBatchSize = 500
+	for start := 0; start < len(failedTaskIDs); start += refundLookupBatchSize {
+		end := min(start+refundLookupBatchSize, len(failedTaskIDs))
+		var refundTasks []*Task
+		if err := DB.
+			Select([]string{"id", "private_data"}).
+			Where("id IN ?", failedTaskIDs[start:end]).
+			Find(&refundTasks).Error; err != nil {
+			return nil, err
+		}
+		refundQuotaByID := make(map[int64]int, len(refundTasks))
+		for _, task := range refundTasks {
+			refundQuotaByID[task.ID] = task.PrivateData.RefundQuota
+		}
+		for _, task := range tasks {
+			if refundQuota, ok := refundQuotaByID[task.ID]; ok {
+				task.PrivateData.RefundQuota = refundQuota
+			}
+		}
+	}
+	return tasks, nil
 }
 
 func GetTimedOutUnfinishedTasks(cutoffUnix int64, limit int) []*Task {

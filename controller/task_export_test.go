@@ -17,7 +17,8 @@ type taskExportResponse struct {
 	Message string `json:"message"`
 	Data    struct {
 		Items []struct {
-			TaskID string `json:"task_id"`
+			TaskID      string `json:"task_id"`
+			RefundQuota int    `json:"refund_quota"`
 		} `json:"items"`
 		HasMore    bool   `json:"has_more"`
 		NextCursor string `json:"next_cursor"`
@@ -114,10 +115,10 @@ func TestGetAllTaskExportDoesNotLoadLargeTaskPayloads(t *testing.T) {
 	require.NoError(t, db.Create(&model.Task{
 		TaskID:      "task_export_large_payload",
 		SubmitTime:  150,
-		Status:      model.TaskStatusSuccess,
+		Status:      model.TaskStatusFailure,
 		Progress:    "100%",
 		Data:        []byte(`{"large":"payload"}`),
-		PrivateData: model.TaskPrivateData{Key: "must-not-be-loaded"},
+		PrivateData: model.TaskPrivateData{Key: "must-not-be-loaded", RefundQuota: 123456},
 	}).Error)
 
 	items, err := model.TaskGetAllTasksForExport(10, 0, model.SyncTaskQueryParams{StartTimestamp: 100, EndTimestamp: 200})
@@ -125,4 +126,10 @@ func TestGetAllTaskExportDoesNotLoadLargeTaskPayloads(t *testing.T) {
 	require.Len(t, items, 1)
 	assert.Empty(t, items[0].Data)
 	assert.Empty(t, items[0].PrivateData.Key)
+	assert.Equal(t, 123456, items[0].PrivateData.RefundQuota)
+
+	response := runTaskExportRequest(t, "/api/task/export?start_timestamp=100&end_timestamp=200")
+	require.True(t, response.Success, response.Message)
+	require.Len(t, response.Data.Items, 1)
+	assert.Equal(t, 123456, response.Data.Items[0].RefundQuota)
 }
