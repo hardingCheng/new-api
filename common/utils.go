@@ -294,6 +294,13 @@ func MessageWithRequestId(message string, id string) string {
 	return fmt.Sprintf("%s (request id: %s)", message, id)
 }
 
+func PublicUpstreamErrorMessage(statusCode int, localError bool, message string) string {
+	if statusCode == 403 && !localError {
+		return UpstreamForbiddenPublicMessage
+	}
+	return message
+}
+
 func RandomSleep() {
 	// Sleep for 0-3000 ms
 	time.Sleep(time.Duration(rand.Intn(3000)) * time.Millisecond)

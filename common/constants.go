@@ -17,6 +17,8 @@ var Footer = ""
 var Logo = ""
 var TopUpLink = ""
 
+const UpstreamForbiddenPublicMessage = "Insufficient account balance"
+
 // var ChatLink = ""
 // var ChatLink2 = ""
 var QuotaPerUnit = 500 * 1000.0 // $0.002 / 1K tokens

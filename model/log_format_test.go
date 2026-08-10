@@ -44,3 +44,23 @@ func TestFormatUserLogsStripsAdminOnlyFields(t *testing.T) {
 	// Non-admin billing fields remain visible.
 	require.Contains(t, parsed, "model_price")
 }
+
+func TestFormatUserLogsRedactsForbiddenErrorContent(t *testing.T) {
+	logs := []*Log{
+		{
+			Type:    LogTypeError,
+			Content: "status_code=403, User has been banned by upstream account provider",
+			Other:   common.MapToJsonStr(map[string]interface{}{"status_code": 403}),
+		},
+		{
+			Type:    LogTypeError,
+			Content: "status_code=400, invalid size",
+			Other:   common.MapToJsonStr(map[string]interface{}{"status_code": 400}),
+		},
+	}
+
+	formatUserLogs(logs, 0)
+
+	require.Equal(t, "status_code=403, Insufficient account balance", logs[0].Content)
+	require.Equal(t, "status_code=400, invalid size", logs[1].Content)
+}

@@ -103,7 +103,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	defer func() {
 		if newAPIError != nil {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
-			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
+			newAPIError = prepareRelayErrorForResponse(newAPIError, requestId)
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
@@ -298,6 +298,23 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			perfmetrics.RecordRelaySample(relayInfo, false, 0)
 		})
 	}
+}
+
+func prepareRelayErrorForResponse(apiErr *types.NewAPIError, requestId string) *types.NewAPIError {
+	if apiErr == nil {
+		return nil
+	}
+	localError := apiErr.GetErrorType() == types.ErrorTypeNewAPIError && !types.IsChannelError(apiErr)
+	publicMessage := common.PublicUpstreamErrorMessage(apiErr.StatusCode, localError, apiErr.Error())
+	if publicMessage != apiErr.Error() {
+		apiErr = types.NewErrorWithStatusCode(
+			errors.New(publicMessage),
+			types.ErrorCodeBadResponseStatusCode,
+			apiErr.StatusCode,
+		)
+	}
+	apiErr.SetMessage(common.MessageWithRequestId(publicMessage, requestId))
+	return apiErr
 }
 
 var upgrader = websocket.Upgrader{
@@ -762,6 +779,8 @@ func RelayTask(c *gin.Context) {
 func respondTaskError(c *gin.Context, taskErr *taskdto.TaskError) {
 	if taskErr.StatusCode == http.StatusTooManyRequests {
 		taskErr.Message = "当前分组上游负载已饱和，请稍后再试"
+	} else {
+		taskErr.Message = common.PublicUpstreamErrorMessage(taskErr.StatusCode, taskErr.LocalError, taskErr.Message)
 	}
 	c.JSON(taskErr.StatusCode, taskErr)
 }

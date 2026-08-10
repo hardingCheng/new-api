@@ -120,6 +120,9 @@ func formatUserLogs(logs []*Log, startIdx int) {
 		var otherMap map[string]interface{}
 		otherMap, _ = common.StrToMap(logs[i].Other)
 		if otherMap != nil {
+			if statusCode, ok := otherMap["status_code"].(float64); ok && logs[i].Type == LogTypeError && int(statusCode) == 403 {
+				logs[i].Content = fmt.Sprintf("status_code=403, %s", common.UpstreamForbiddenPublicMessage)
+			}
 			// Remove admin-only debug fields.
 			delete(otherMap, "admin_info")
 			// Strip legacy top-level billing rules written before they moved under
