@@ -26,6 +26,8 @@ import type {
   GetLogStatBreakdownParams,
   GetLogStatBreakdownResponse,
   GetMidjourneyLogsParams,
+  GetTaskExportParams,
+  GetTaskExportResponse,
   GetTaskLogsParams,
   UserInfo,
 } from './types'
@@ -133,3 +135,13 @@ export const getAllTaskLogs = (params: GetTaskLogsParams) =>
 
 export const getUserTaskLogs = (params: GetTaskLogsParams) =>
   fetchLogs('/api/task', params, false)
+
+export async function getTaskExport(
+  params: GetTaskExportParams
+): Promise<GetTaskExportResponse> {
+  const queryParams = buildQueryParams(
+    params as unknown as Record<string, unknown>
+  )
+  const res = await api.get(`/api/task/export?${queryParams}`)
+  return res.data
+}

@@ -81,7 +81,7 @@ func GetUserTask(c *gin.Context) {
 
 const (
 	taskExportMaxRangeSeconds = int64(31 * 24 * 60 * 60)
-	taskExportMaxRows         = 5000
+	taskExportPageSize        = 5000
 )
 
 // GetAllTaskExport 返回指定时间范围内的任务，供后台导出报表使用。
@@ -104,6 +104,23 @@ func GetAllTaskExport(c *gin.Context) {
 		common.ApiErrorMsg(c, "task export time range cannot exceed 31 days")
 		return
 	}
+	pageSize := taskExportPageSize
+	if rawLimit := strings.TrimSpace(c.Query("limit")); rawLimit != "" {
+		parsedLimit, err := strconv.Atoi(rawLimit)
+		if err != nil || parsedLimit <= 0 || parsedLimit > taskExportPageSize {
+			common.ApiErrorMsg(c, "invalid export limit; must be between 1 and 5000")
+			return
+		}
+		pageSize = parsedLimit
+	}
+	beforeID := int64(0)
+	if rawBeforeID := strings.TrimSpace(c.Query("before_id")); rawBeforeID != "" {
+		beforeID, err = strconv.ParseInt(rawBeforeID, 10, 64)
+		if err != nil || beforeID <= 0 {
+			common.ApiErrorMsg(c, "invalid before_id")
+			return
+		}
+	}
 	queryParams := model.SyncTaskQueryParams{
 		Platform:       constant.TaskPlatform(c.Query("platform")),
 		TaskID:         c.Query("task_id"),
@@ -122,22 +139,30 @@ func GetAllTaskExport(c *gin.Context) {
 		}
 		queryParams.UserIDs = userIDs
 		if len(userIDs) == 0 {
-			common.ApiSuccess(c, gin.H{"items": []*dto.TaskDto{}})
+			common.ApiSuccess(c, gin.H{
+				"items":       []*dto.TaskDto{},
+				"has_more":    false,
+				"next_cursor": "",
+			})
 			return
 		}
 	}
-	items, err := model.TaskGetAllTasksForExport(taskExportMaxRows+1, queryParams)
+	items, err := model.TaskGetAllTasksForExport(pageSize+1, beforeID, queryParams)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	if len(items) > taskExportMaxRows {
-		common.ApiErrorMsg(c, "task export exceeds 5000 rows; narrow the filters")
-		return
+	hasMore := len(items) > pageSize
+	if hasMore {
+		items = items[:pageSize]
+	}
+	nextCursor := ""
+	if hasMore && len(items) > 0 {
+		nextCursor = strconv.FormatInt(items[len(items)-1].ID, 10)
 	}
 	common.ApiSuccess(c, gin.H{"items": tasksToDto(items, taskDtoOptions{
 		adminView: true,
-	})})
+	}), "has_more": hasMore, "next_cursor": nextCursor})
 }
 
 func GetModelQuotaPoolUsage(c *gin.Context) {

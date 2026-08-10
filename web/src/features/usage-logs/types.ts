@@ -461,6 +461,25 @@ export interface GetTaskLogsParams {
   end_timestamp?: number
 }
 
+export interface GetTaskExportParams {
+  channel_id?: string
+  task_id?: string
+  start_timestamp: number
+  end_timestamp: number
+  limit?: number
+  before_id?: string
+}
+
+export interface GetTaskExportResponse {
+  success: boolean
+  message?: string
+  data?: {
+    items: TaskLog[]
+    has_more: boolean
+    next_cursor: string
+  }
+}
+
 // ============================================================================
 // Fetch Logs Configuration
 // ============================================================================

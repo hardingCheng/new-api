@@ -287,14 +287,18 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 	return tasks
 }
 
-func TaskGetAllTasksForExport(limit int, queryParams SyncTaskQueryParams) ([]*Task, error) {
+func TaskGetAllTasksForExport(limit int, beforeID int64, queryParams SyncTaskQueryParams) ([]*Task, error) {
 	if limit <= 0 {
 		return nil, gorm.ErrInvalidValue
 	}
 	var tasks []*Task
 	// Export only the columns used by the report. Task data and private_data may
 	// contain large provider payloads and are intentionally excluded.
-	err := applyTaskQueryFilters(DB, queryParams).
+	query := applyTaskQueryFilters(DB, queryParams)
+	if beforeID > 0 {
+		query = query.Where("id < ?", beforeID)
+	}
+	err := query.
 		Select([]string{"id", "created_at", "updated_at", "task_id", "platform", "user_id", commonGroupCol, "channel_id", "quota", "action", "status", "fail_reason", "submit_time", "start_time", "finish_time", "progress", "properties"}).
 		Order("id desc").
 		Limit(limit).

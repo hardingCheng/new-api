@@ -16,7 +16,11 @@ type taskExportResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 	Data    struct {
-		Items []any `json:"items"`
+		Items []struct {
+			TaskID string `json:"task_id"`
+		} `json:"items"`
+		HasMore    bool   `json:"has_more"`
+		NextCursor string `json:"next_cursor"`
 	} `json:"data"`
 }
 
@@ -43,6 +47,8 @@ func TestGetAllTaskExportRequiresBoundedTimeRange(t *testing.T) {
 		{name: "missing end", target: "/api/task/export?start_timestamp=100", message: "invalid end_timestamp"},
 		{name: "inverted", target: "/api/task/export?start_timestamp=200&end_timestamp=100", message: "invalid time range"},
 		{name: "over 31 days", target: "/api/task/export?start_timestamp=100&end_timestamp=2678501", message: "task export time range cannot exceed 31 days"},
+		{name: "invalid limit", target: "/api/task/export?start_timestamp=100&end_timestamp=200&limit=5001", message: "invalid export limit; must be between 1 and 5000"},
+		{name: "invalid cursor", target: "/api/task/export?start_timestamp=100&end_timestamp=200&before_id=-1", message: "invalid before_id"},
 	}
 
 	for _, test := range tests {
@@ -75,6 +81,33 @@ func TestGetAllTaskExportReturnsRowsWithinBoundedRange(t *testing.T) {
 	assert.Len(t, response.Data.Items, 1)
 }
 
+func TestGetAllTaskExportPaginatesWithPrimaryKeyCursor(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Task{}))
+	for _, task := range []*model.Task{
+		{TaskID: "task_export_cursor_1", SubmitTime: 150, Status: model.TaskStatusSuccess, Progress: "100%"},
+		{TaskID: "task_export_cursor_2", SubmitTime: 150, Status: model.TaskStatusSuccess, Progress: "100%"},
+		{TaskID: "task_export_cursor_3", SubmitTime: 150, Status: model.TaskStatusSuccess, Progress: "100%"},
+	} {
+		require.NoError(t, db.Create(task).Error)
+	}
+
+	first := runTaskExportRequest(t, "/api/task/export?start_timestamp=100&end_timestamp=200&limit=2")
+	require.True(t, first.Success, first.Message)
+	require.Len(t, first.Data.Items, 2)
+	assert.True(t, first.Data.HasMore)
+	require.NotEmpty(t, first.Data.NextCursor)
+
+	second := runTaskExportRequest(t, "/api/task/export?start_timestamp=100&end_timestamp=200&limit=2&before_id="+first.Data.NextCursor)
+	require.True(t, second.Success, second.Message)
+	assert.Len(t, second.Data.Items, 1)
+	assert.False(t, second.Data.HasMore)
+	assert.Empty(t, second.Data.NextCursor)
+	for _, item := range first.Data.Items {
+		assert.NotEqual(t, item.TaskID, second.Data.Items[0].TaskID)
+	}
+}
+
 func TestGetAllTaskExportDoesNotLoadLargeTaskPayloads(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.Task{}))
@@ -87,7 +120,7 @@ func TestGetAllTaskExportDoesNotLoadLargeTaskPayloads(t *testing.T) {
 		PrivateData: model.TaskPrivateData{Key: "must-not-be-loaded"},
 	}).Error)
 
-	items, err := model.TaskGetAllTasksForExport(10, model.SyncTaskQueryParams{StartTimestamp: 100, EndTimestamp: 200})
+	items, err := model.TaskGetAllTasksForExport(10, 0, model.SyncTaskQueryParams{StartTimestamp: 100, EndTimestamp: 200})
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	assert.Empty(t, items[0].Data)

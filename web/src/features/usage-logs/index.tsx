@@ -28,6 +28,7 @@ import { useSidebarConfig } from '@/hooks/use-sidebar-config'
 
 import { UserInfoDialog } from './components/dialogs/user-info-dialog'
 import { ModelQuotaPoolSummary } from './components/model-quota-pool-summary'
+import { TaskLogsExportButton } from './components/task-logs-export-button'
 import {
   type LogsViewScope,
   UsageLogsProvider,
@@ -72,7 +73,8 @@ function UsageLogsContent() {
     affinityDialogOpen,
     setAffinityDialogOpen,
   } = useUsageLogsContext()
-  const { canManageScope, viewScope, setViewScope } = useLogsViewScope()
+  const { canManageScope, isAdminView, viewScope, setViewScope } =
+    useLogsViewScope()
   const tabNavGroups = useMemo<NavGroup[]>(
     () => [
       {
@@ -131,6 +133,9 @@ function UsageLogsContent() {
         </SectionPageLayout.Title>
         {canManageScope && (
           <SectionPageLayout.Actions>
+            {activeCategory === 'task' && isAdminView ? (
+              <TaskLogsExportButton />
+            ) : null}
             <Tabs value={viewScope} onValueChange={handleViewScopeChange}>
               <TabsList>
                 <TabsTrigger value='all'>{t('All')}</TabsTrigger>
