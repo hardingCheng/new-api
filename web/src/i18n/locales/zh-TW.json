@@ -2212,7 +2212,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "相關項目",
     "footer.defaultCopyright": "版權所有。",
-    "footer.new\u0061pi.projectAttributionSuffix": "版權所有，由項目貢獻者設計與開發。",
+    "footer.newapi.projectAttributionSuffix": "版權所有，由項目貢獻者設計與開發。",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "對於 2025 年 5 月 10 日之後新增的渠道，在部署時無需從模型名稱中移除 \".\"",
     "For private deployments, format: https://fastgpt.run/api/openapi": "對於私有部署，格式為：https://fastgpt.run/api/openapi",
     "Forbidden": "禁止",
@@ -5720,6 +5720,20 @@
     "Zero retention": "零數據保留",
     "Zhipu": "智譜",
     "Zhipu V4": "智譜 V4",
-    "Zoom": "縮放"
+    "Zoom": "縮放",
+    "{{count}} items need handling": "有 {{count}} 项需要处理",
+    "Soonest upstream to run dry": "最快见底的上游",
+    "{{d}} d": "{{d}} 天",
+    "covers {{pct}}% of revenue": "覆盖 {{pct}}% 的营收",
+    "Needs your attention": "需要你处理",
+    "Nothing needs handling right now": "当前没有需要处理的事项",
+    "Monitor data is incomplete": "监控数据不完整",
+    "Not counted: {{amount}} of revenue from upstreams with no cost data": "未计入：{{amount}} 的营收来自没有成本数据的上游",
+    "Price up": "涨价",
+    "Price down": "降价",
+    "Losing money": "亏损",
+    "Circuit breaker": "熔断",
+    "Error rate": "错误率",
+    "Collection": "采集"
   }
 }

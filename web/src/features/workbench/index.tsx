@@ -23,6 +23,11 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Table,
@@ -64,82 +69,109 @@ function formatCount(value: number | null): string {
   return value.toLocaleString()
 }
 
-function formatClock(ts: number | null): string {
-  if (!ts) return '—'
-  return new Date(ts * 1000).toLocaleString(undefined, {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 function profitTone(value: number | null): string {
   if (value == null) return ''
   if (value >= 0) return 'text-status-success'
   return 'text-destructive'
 }
 
-function alarmTone(bad: number, warn: number): string {
-  if (bad) return 'text-destructive'
-  if (warn) return 'text-status-warning'
-  return 'text-status-success'
+// 只在真出事时出现。平时这里什么都没有——常驻的「一切正常」是噪音，
+// 会让人习惯性略过，真出事那天也照样略过。
+function CriticalBanner({ alarms }: { alarms: WorkbenchAlarm[] }) {
+  const { t } = useTranslation()
+  const bad = alarms.filter((a) => a.level === 'bad')
+  if (bad.length === 0) return null
+  const top = bad[0]
+  return (
+    <Alert variant='destructive'>
+      <AlertTitle>
+        {t('{{count}} items need handling', { count: bad.length })}
+        {' · '}
+        {top.title}
+      </AlertTitle>
+      {top.detail && <AlertDescription>{top.detail}</AlertDescription>}
+    </Alert>
+  )
 }
 
-function StatusCards({ statusBar }: { statusBar: WorkbenchStatusBar }) {
-  const { t } = useTranslation()
-  const cards = [
-    {
-      label: t('Today gross profit (quota basis)'),
-      value: formatMoney(statusBar.pnl24),
-      tone: profitTone(statusBar.pnl24),
-    },
-    {
-      label: t('Alerts (urgent / watch)'),
-      value: `${statusBar.alarm_bad} / ${statusBar.alarm_warn}`,
-      tone: alarmTone(statusBar.alarm_bad, statusBar.alarm_warn),
-    },
-    {
-      label: t('Disabled channels'),
-      value: String(statusBar.disabled_channels),
-      tone: statusBar.disabled_channels ? 'text-status-warning' : '',
-    },
-    {
-      label: t('Channels tripping (last hour)'),
-      value: String(statusBar.breaking_channels),
-      tone: statusBar.breaking_channels ? 'text-status-warning' : '',
-    },
-    {
-      label: t('Low-balance upstreams'),
-      value: String(statusBar.low_balance_sites),
-      tone: statusBar.low_balance_sites ? 'text-destructive' : '',
-    },
-    {
-      label: t('Monitor data updated at'),
-      value: formatClock(statusBar.last_collect_ts),
-      tone: 'text-base',
-    },
-  ]
-
+function MetricTile({
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  label: string
+  value: string
+  hint?: string
+  tone?: string
+}) {
   return (
-    <div className='grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6'>
-      {cards.map((card) => (
-        <Card key={card.label} className='py-4'>
-          <CardContent className='px-4'>
-            <div className='text-muted-foreground truncate text-xs'>
-              {card.label}
-            </div>
-            <div
-              className={cn(
-                'mt-1 text-xl font-semibold tabular-nums',
-                card.tone
-              )}
-            >
-              {card.value}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+    <Card className='py-4'>
+      <CardContent className='px-4'>
+        <div className='text-muted-foreground truncate text-xs'>{label}</div>
+        <div className={cn('mt-1 text-2xl font-semibold tabular-nums', tone)}>
+          {value}
+        </div>
+        {hint && (
+          <div className='text-muted-foreground mt-0.5 truncate text-xs'>
+            {hint}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// 固定四格，位置不变。数量固定才形成得了肌肉记忆，每天扫同一个地方。
+// 只放「此刻的状态」和老板每天都要看的利润，累计统计一律下沉到下面的卡片。
+function NowMetrics({
+  statusBar,
+  sites,
+}: {
+  statusBar: WorkbenchStatusBar
+  sites: WorkbenchSite[]
+}) {
+  const { t } = useTranslation()
+  const soonest = sites
+    .filter((s) => s.est_days != null)
+    .sort((a, b) => (a.est_days ?? 0) - (b.est_days ?? 0))[0]
+  const coverage = statusBar.pnl24_coverage
+  return (
+    <div className='grid grid-cols-2 gap-3 xl:grid-cols-4'>
+      <MetricTile
+        label={t('Today gross profit (quota basis)')}
+        value={formatMoney(statusBar.pnl24)}
+        tone={profitTone(statusBar.pnl24)}
+        hint={
+          coverage != null && coverage < 0.999
+            ? t('covers {{pct}}% of revenue', {
+                pct: Math.round(coverage * 100),
+              })
+            : undefined
+        }
+      />
+      <MetricTile
+        label={t('Channels tripping (last hour)')}
+        value={String(statusBar.breaking_channels)}
+        tone={statusBar.breaking_channels ? 'text-destructive' : undefined}
+      />
+      <MetricTile
+        label={t('Soonest upstream to run dry')}
+        value={
+          soonest?.est_days != null ? t('{{d}} d', { d: soonest.est_days }) : '—'
+        }
+        tone={
+          soonest?.est_days != null && soonest.est_days <= 3
+            ? 'text-destructive'
+            : undefined
+        }
+        hint={soonest?.name}
+      />
+      <MetricTile
+        label={t('Disabled channels')}
+        value={String(statusBar.disabled_channels)}
+        tone={statusBar.disabled_channels ? 'text-status-warning' : undefined}
+      />
     </div>
   )
 }
@@ -152,7 +184,7 @@ function AlarmRow({ alarm }: { alarm: WorkbenchAlarm }) {
         variant={alarm.level === 'bad' ? 'danger' : 'warning'}
         className='shrink-0'
       >
-        {alarm.level === 'bad' ? t('Urgent') : t('Watch')}
+        {alarmKindLabel(alarm.kind, t)}
       </StatusBadge>
       <span className='font-medium'>{alarm.title}</span>
       {alarm.detail && (
@@ -172,27 +204,67 @@ function AlarmRow({ alarm }: { alarm: WorkbenchAlarm }) {
   )
 }
 
+// 排序即结论：要花钱的和要断服务的排在最前，纯信息类沉底。
+// 用户不该自己从一堆同色条目里找重点。
+const ALARM_KIND_ORDER: Record<string, number> = {
+  balance: 0,
+  topup: 1,
+  price_up: 2,
+  loss: 3,
+  disabled: 4,
+  breaker: 5,
+  error_rate: 6,
+  price_down: 7,
+  ratio: 8,
+  collect: 9,
+}
+
+function alarmKindLabel(kind: string, t: TFunction): string {
+  const map: Record<string, string> = {
+    balance: t('Balance'),
+    topup: t('Top-up'),
+    price_up: t('Price up'),
+    price_down: t('Price down'),
+    loss: t('Losing money'),
+    disabled: t('Disabled'),
+    breaker: t('Circuit breaker'),
+    error_rate: t('Error rate'),
+    collect: t('Collection'),
+  }
+  return map[kind] ?? kind
+}
+
+function sortAlarms(alarms: WorkbenchAlarm[]): WorkbenchAlarm[] {
+  return [...alarms].sort((a, b) => {
+    if (a.level !== b.level) return a.level === 'bad' ? -1 : 1
+    const ka = ALARM_KIND_ORDER[a.kind] ?? 99
+    const kb = ALARM_KIND_ORDER[b.kind] ?? 99
+    return ka - kb
+  })
+}
+
 function AlarmsCard({ alarms }: { alarms: WorkbenchAlarm[] }) {
   const { t } = useTranslation()
+  const sorted = sortAlarms(alarms)
   return (
-    <Card>
+    <Card className='h-full'>
       <CardHeader>
         <CardTitle className='flex items-center gap-2'>
-          {t('Alert list')}
-          {alarms.length > 0 && (
+          {t('Needs your attention')}
+          {sorted.length > 0 && (
             <span className='text-muted-foreground text-xs font-normal'>
-              {alarms.length}
+              {sorted.length}
             </span>
           )}
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {alarms.length === 0 ? (
+        {sorted.length === 0 ? (
           <p className='text-muted-foreground py-4 text-sm'>
-            {t('All clear, nothing needs attention')}
+            {t('Nothing needs handling right now')}
           </p>
         ) : (
-          alarms.map((alarm) => (
+          sorted.map((alarm) => (
             <AlarmRow
               key={`${alarm.kind}:${alarm.title}:${alarm.detail}`}
               alarm={alarm}
@@ -381,21 +453,85 @@ function SitesCard({ sites }: { sites: WorkbenchSite[] }) {
   )
 }
 
+// 利润数字必须自带口径说明：缺上游成本的站算不出利润，不说清楚的话
+// 这个数看着像全站合计、实际只是子集，反而误导决策。
+function ProfitCard({ statusBar }: { statusBar: WorkbenchStatusBar }) {
+  const { t } = useTranslation()
+  const uncovered = statusBar.pnl24_uncovered_sites ?? []
+  return (
+    <Card className='h-full'>
+      <CardHeader>
+        <CardTitle>{t('Today gross profit (quota basis)')}</CardTitle>
+      </CardHeader>
+      <CardContent className='space-y-3'>
+        <div
+          className={cn(
+            'text-3xl font-semibold tabular-nums',
+            profitTone(statusBar.pnl24)
+          )}
+        >
+          {formatMoney(statusBar.pnl24)}
+        </div>
+        {uncovered.length > 0 && (
+          <div className='space-y-1.5'>
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'Not counted: {{amount}} of revenue from upstreams with no cost data',
+                { amount: formatMoney(statusBar.pnl24_uncovered_sell) }
+              )}
+            </p>
+            <Table>
+              <TableBody>
+                {uncovered.slice(0, 5).map((u) => (
+                  <TableRow key={u.host}>
+                    <TableCell className='py-1.5 text-xs'>{u.name}</TableCell>
+                    <TableCell className='py-1.5 text-right text-xs tabular-nums'>
+                      {formatMoney(u.sell24)}
+                    </TableCell>
+                    <TableCell className='text-muted-foreground max-w-[200px] truncate py-1.5 text-xs'>
+                      {u.reason}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 function WorkbenchBody({ summary }: { summary: WorkbenchSummary }) {
+  const { t } = useTranslation()
   return (
     <div className='space-y-4'>
-      <StatusCards statusBar={summary.status_bar} />
+      <CriticalBanner alarms={summary.alarms} />
       {summary.status_bar.hub_db_error && (
-        <p className='text-destructive text-xs'>
-          {summary.status_bar.hub_db_error}
-        </p>
+        <Alert variant='destructive'>
+          <AlertTitle>{t('Monitor data is incomplete')}</AlertTitle>
+          <AlertDescription>{summary.status_bar.hub_db_error}</AlertDescription>
+        </Alert>
       )}
-      <AlarmsCard alarms={summary.alarms} />
-      <div className='grid gap-4 lg:grid-cols-2'>
-        <TrendCard daily={summary.daily} />
-        <WatermarkCard watermark={summary.watermark} />
+      <NowMetrics statusBar={summary.status_bar} sites={summary.sites} />
+      {/* 左宽右窄：左边是「要你处理的」，右边是「处理时要参考的前提」 */}
+      <div className='grid gap-4 lg:grid-cols-5'>
+        <div className='lg:col-span-3'>
+          <AlarmsCard alarms={summary.alarms} />
+        </div>
+        <div className='lg:col-span-2'>
+          <SitesCard sites={summary.sites} />
+        </div>
       </div>
-      <SitesCard sites={summary.sites} />
+      <div className='grid gap-4 lg:grid-cols-5'>
+        <div className='lg:col-span-3'>
+          <ProfitCard statusBar={summary.status_bar} />
+        </div>
+        <div className='lg:col-span-2'>
+          <WatermarkCard watermark={summary.watermark} />
+        </div>
+      </div>
+      <TrendCard daily={summary.daily} />
     </div>
   )
 }

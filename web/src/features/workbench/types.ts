@@ -17,8 +17,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
+export interface WorkbenchUncoveredSite {
+  host: string
+  name: string
+  sell24: number
+  reason: string
+}
+
 export interface WorkbenchStatusBar {
   pnl24: number | null
+  /** 盈亏覆盖了多少比例的营收(0~1)。缺上游成本的站算不出利润，
+   *  不标出来的话这个数看着像全站合计、实际只是子集。 */
+  pnl24_coverage: number | null
+  pnl24_uncovered_sell: number | null
+  pnl24_uncovered_sites: WorkbenchUncoveredSite[] | null
   alarm_bad: number
   alarm_warn: number
   disabled_channels: number
