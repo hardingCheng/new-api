@@ -128,9 +128,12 @@ func storeTaskRequest(c *gin.Context, info *RelayInfo, action string, requestObj
 }
 
 // ClassifyVideoGenerationMode determines the display mode for content-based
-// video requests. Existing images/input_reference handling takes precedence;
-// content is only a fallback for compatible requests such as Seedance.
+// video requests. Reference videos take precedence because they define the
+// generation workflow even when the request also includes reference images.
 func ClassifyVideoGenerationMode(req TaskSubmitReq) string {
+	if len(ExtractReferenceVideoURLs(req)) > 0 {
+		return constant.TaskVideoGenerationModeReferenceVideo
+	}
 	if req.HasImage() {
 		return ""
 	}

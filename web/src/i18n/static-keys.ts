@@ -22,6 +22,7 @@ export const STATIC_I18N_KEYS = [
   // Task video generation modes
   'First Frame to Video',
   'Reference Image to Video',
+  'Reference Video',
 
   // Header navigation
   'Home',

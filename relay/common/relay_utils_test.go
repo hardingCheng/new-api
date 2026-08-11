@@ -100,7 +100,7 @@ func TestValidateMultipartDirectClassifiesContentVideoGenerationMode(t *testing.
 
 	require.Nil(t, taskErr)
 	assert.Equal(t, constant.TaskActionTextGenerate, info.Action)
-	assert.Equal(t, constant.TaskVideoGenerationModeReferenceImage,
+	assert.Equal(t, constant.TaskVideoGenerationModeReferenceVideo,
 		context.GetString(string(constant.ContextKeyVideoGenerationMode)))
 }
 
@@ -111,6 +111,11 @@ func TestClassifyVideoGenerationModeFallsBackToContentRoles(t *testing.T) {
 			Role:     role,
 			ImageURL: &TaskMediaURL{URL: "https://example.com/image.jpg"},
 		}
+	}
+	referenceVideo := TaskContentItem{
+		Type:     "video_url",
+		Role:     "reference_video",
+		VideoURL: &TaskMediaURL{URL: "https://example.com/reference.mp4"},
 	}
 	tests := []struct {
 		name string
@@ -126,6 +131,23 @@ func TestClassifyVideoGenerationModeFallsBackToContentRoles(t *testing.T) {
 			name: "reference image",
 			req:  TaskSubmitReq{Content: []TaskContentItem{image("reference_image")}},
 			want: constant.TaskVideoGenerationModeReferenceImage,
+		},
+		{
+			name: "reference video",
+			req: TaskSubmitReq{Content: []TaskContentItem{
+				{Type: "text", Text: "follow the reference motion"},
+				referenceVideo,
+				{Type: "audio_url", AudioURL: &TaskMediaURL{URL: "https://example.com/sound.mp3"}},
+			}},
+			want: constant.TaskVideoGenerationModeReferenceVideo,
+		},
+		{
+			name: "reference video takes precedence over reference image",
+			req: TaskSubmitReq{Content: []TaskContentItem{
+				image("reference_image"),
+				referenceVideo,
+			}},
+			want: constant.TaskVideoGenerationModeReferenceVideo,
 		},
 		{
 			name: "first and last frames",

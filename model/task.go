@@ -600,7 +600,15 @@ func applyTaskQueryFilters(query *gorm.DB, queryParams SyncTaskQueryParams) *gor
 		query = query.Where("task_id = ?", queryParams.TaskID)
 	}
 	if queryParams.Action != "" {
-		query = query.Where("action = ?", queryParams.Action)
+		if queryParams.Action == constant.TaskActionReferenceVideo {
+			query = query.Where(
+				"(action = ? OR "+taskPropertiesLikeCondition()+")",
+				queryParams.Action,
+				`%"reference_video_seconds"%`,
+			)
+		} else {
+			query = query.Where("action = ?", queryParams.Action)
+		}
 	}
 	if queryParams.Status != "" {
 		query = query.Where("status = ?", queryParams.Status)

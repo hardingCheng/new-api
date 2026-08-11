@@ -92,7 +92,7 @@ const taskLog: TaskLog = {
     has_reference_video: true,
     reference_video_seconds: 4.126,
     video_seconds: 10,
-    video_generation_mode: 'reference_image',
+    video_generation_mode: 'reference_video',
     origin_model_name: 'public-video-model',
     upstream_model_name: 'secret-upstream-model',
   },
@@ -274,7 +274,7 @@ test('task type column shows content-derived action for all viewers', async () =
     )
     assert.equal(
       rendered.container.querySelector('[data-cell-id="action"]')?.textContent,
-      'Image to Video'
+      'Reference Video'
     )
 
     await act(async () => rendered.root.unmount())
@@ -287,7 +287,7 @@ test('mobile task card shows the task type', async () => {
   const text = rendered.container.textContent ?? ''
 
   assert.equal(text.includes('Task Type'), true)
-  assert.equal(text.includes('Image to Video'), true)
+  assert.equal(text.includes('Reference Video'), true)
 
   await act(async () => rendered.root.unmount())
   rendered.container.remove()

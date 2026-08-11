@@ -192,6 +192,7 @@ export const TASK_ACTIONS = {
   IMAGE_TO_VIDEO: 'imageToVideo',
   FIRST_FRAME: 'firstFrame',
   FIRST_AND_LAST_FRAMES: 'firstAndLastFrames',
+  REFERENCE_VIDEO: 'referenceVideo',
 } as const
 
 export const TASK_VIDEO_GENERATION_MODES = {
@@ -200,6 +201,7 @@ export const TASK_VIDEO_GENERATION_MODES = {
   FIRST_FRAME: 'first_frame',
   FIRST_LAST_FRAME: 'first_last_frame',
   REFERENCE_IMAGE: 'reference_image',
+  REFERENCE_VIDEO: 'reference_video',
 } as const
 
 /**
@@ -320,6 +322,10 @@ export const TASK_ACTION_MAPPINGS: Record<string, StatusMapping> = {
     label: 'First/Last Frame to Video',
     variant: 'blue',
   },
+  [TASK_ACTIONS.REFERENCE_VIDEO]: {
+    label: 'Reference Video',
+    variant: 'blue',
+  },
   [TASK_ACTIONS.FIRST_TAIL_GENERATE]: {
     label: 'First/Last Frame to Video',
     variant: 'blue',
@@ -356,6 +362,10 @@ export const TASK_VIDEO_GENERATION_MODE_MAPPINGS: Record<
   },
   [TASK_VIDEO_GENERATION_MODES.REFERENCE_IMAGE]: {
     label: 'Image to Video',
+    variant: 'blue',
+  },
+  [TASK_VIDEO_GENERATION_MODES.REFERENCE_VIDEO]: {
+    label: 'Reference Video',
     variant: 'blue',
   },
 }

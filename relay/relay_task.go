@@ -647,6 +647,10 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 	resultURL := taskPublicResultURL(task)
+	properties := task.Properties
+	if properties.HasReferenceVideo || properties.ReferenceVideoSeconds > 0 {
+		properties.VideoGenerationMode = constant.TaskVideoGenerationModeReferenceVideo
+	}
 	publicAction := task.Action
 	switch publicAction {
 	case constant.TaskActionTextGenerate:
@@ -658,7 +662,7 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 	case constant.TaskActionReferenceGenerate:
 		publicAction = constant.TaskActionImageToVideo
 	}
-	switch task.Properties.VideoGenerationMode {
+	switch properties.VideoGenerationMode {
 	case constant.TaskVideoGenerationModeTextToVideo:
 		publicAction = constant.TaskActionTextToVideo
 	case constant.TaskVideoGenerationModeImageToVideo:
@@ -669,6 +673,8 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		publicAction = constant.TaskActionFirstAndLastFrames
 	case constant.TaskVideoGenerationModeReferenceImage:
 		publicAction = constant.TaskActionImageToVideo
+	case constant.TaskVideoGenerationModeReferenceVideo:
+		publicAction = constant.TaskActionReferenceVideo
 	}
 	return &dto.TaskDto{
 		ID:               task.ID,
@@ -692,7 +698,7 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		StartTime:        task.StartTime,
 		FinishTime:       task.FinishTime,
 		Progress:         task.Progress,
-		Properties:       task.Properties,
+		Properties:       properties,
 		Username:         task.Username,
 		ModelName:        taskModelName(task),
 		VideoDuration:    taskVideoDuration(task),

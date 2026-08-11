@@ -23,6 +23,7 @@ const (
 	TaskActionImageToVideo       = "imageToVideo"
 	TaskActionFirstFrame         = "firstFrame"
 	TaskActionFirstAndLastFrames = "firstAndLastFrames"
+	TaskActionReferenceVideo     = "referenceVideo"
 )
 
 const (
@@ -31,6 +32,7 @@ const (
 	TaskVideoGenerationModeFirstFrame     = "first_frame"
 	TaskVideoGenerationModeFirstLastFrame = "first_last_frame"
 	TaskVideoGenerationModeReferenceImage = "reference_image"
+	TaskVideoGenerationModeReferenceVideo = "reference_video"
 )
 
 var SunoModel2Action = map[string]string{

@@ -9,6 +9,12 @@ test('content-derived video generation mode takes precedence over legacy action'
   assert.equal(label, 'Image to Video')
 })
 
+test('reference video mode has its own task type label', () => {
+  const label = getTaskActionLabelKey('textGenerate', 'reference_video')
+
+  assert.equal(label, 'Reference Video')
+})
+
 test('legacy action remains the fallback for historical tasks', () => {
   const label = getTaskActionLabelKey('textGenerate')
 

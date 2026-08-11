@@ -168,6 +168,7 @@ func TestTaskModel2PublicVideoDtoExposesContentDerivedAction(t *testing.T) {
 		{name: "first frame", mode: constant.TaskVideoGenerationModeFirstFrame, action: constant.TaskActionFirstFrame},
 		{name: "first and last frames", mode: constant.TaskVideoGenerationModeFirstLastFrame, action: constant.TaskActionFirstAndLastFrames},
 		{name: "reference image", mode: constant.TaskVideoGenerationModeReferenceImage, action: constant.TaskActionImageToVideo},
+		{name: "reference video", mode: constant.TaskVideoGenerationModeReferenceVideo, action: constant.TaskActionReferenceVideo},
 	}
 
 	for _, tt := range tests {
@@ -197,6 +198,7 @@ func TestTaskModel2DtoIncludesAdminVideoBillingMetrics(t *testing.T) {
 			HasReferenceVideo:     true,
 			ReferenceVideoSeconds: 4.126,
 			VideoSeconds:          10,
+			VideoGenerationMode:   constant.TaskVideoGenerationModeTextToVideo,
 		},
 		PrivateData: model.TaskPrivateData{RefundQuota: 25000},
 		Data:        []byte(`{}`),
@@ -213,6 +215,8 @@ func TestTaskModel2DtoIncludesAdminVideoBillingMetrics(t *testing.T) {
 	require.True(t, ok)
 	assert.True(t, properties.HasReferenceVideo)
 	assert.InDelta(t, 4.126, properties.ReferenceVideoSeconds, 0.0001)
+	assert.Equal(t, constant.TaskVideoGenerationModeReferenceVideo, properties.VideoGenerationMode)
+	assert.Equal(t, constant.TaskActionReferenceVideo, out.Action)
 }
 
 // 对齐设计示例：原价每秒 0.1 美元，生成 3 秒，参考 15 秒。
