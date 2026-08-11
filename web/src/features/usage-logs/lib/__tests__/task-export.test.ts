@@ -20,6 +20,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import type { TaskLog } from '../../types'
+import { buildSearchParams } from '../filter'
 import {
   buildTaskExportParams,
   buildTaskExportRanges,
@@ -33,6 +34,11 @@ test('task export converts current URL filters to backend parameters', () => {
     endTime: 1_786_291_200_000,
     filter: 'task_public_id',
     channel: '390',
+    channels: '390,391',
+    usernames: 'samuel0630,alice',
+    action: 'firstAndLastFrames',
+    model: 'seedance-2.0',
+    status: 'SUCCESS',
   })
 
   assert.deepEqual(params, {
@@ -40,6 +46,34 @@ test('task export converts current URL filters to backend parameters', () => {
     end_timestamp: 1_786_291_200,
     task_id: 'task_public_id',
     channel_id: '390',
+    channel_ids: '390,391',
+    usernames: 'samuel0630,alice',
+    action: 'firstAndLastFrames',
+    model_name: 'seedance-2.0',
+    status: 'SUCCESS',
+  })
+})
+
+test('task filters serialize multi-select and task fields to URL parameters', () => {
+  const params = buildSearchParams(
+    {
+      taskId: 'task_public_id',
+      usernames: ['samuel0630', 'alice'],
+      channels: ['390', '391'],
+      action: 'firstAndLastFrames',
+      model: 'seedance-2.0',
+      status: 'SUCCESS',
+    },
+    'task'
+  )
+
+  assert.deepEqual(params, {
+    filter: 'task_public_id',
+    usernames: 'samuel0630,alice',
+    channels: '390,391',
+    action: 'firstAndLastFrames',
+    model: 'seedance-2.0',
+    status: 'SUCCESS',
   })
 })
 

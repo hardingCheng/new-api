@@ -78,6 +78,15 @@ export function buildSearchParams(
       return {
         ...baseParams,
         ...(taskFilters.taskId && { filter: taskFilters.taskId }),
+        ...(taskFilters.usernames?.length && {
+          usernames: taskFilters.usernames.join(','),
+        }),
+        ...(taskFilters.channels?.length && {
+          channels: taskFilters.channels.join(','),
+        }),
+        ...(taskFilters.action && { action: taskFilters.action }),
+        ...(taskFilters.model && { model: taskFilters.model }),
+        ...(taskFilters.status && { status: taskFilters.status }),
       }
     }
     default:

@@ -15,11 +15,29 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func parseTaskChannelIDs(raw string) ([]int, bool) {
+	values := parseQueryList(raw)
+	channelIDs := make([]int, 0, len(values))
+	for _, value := range values {
+		channelID, err := strconv.Atoi(value)
+		if err != nil || channelID <= 0 {
+			return nil, false
+		}
+		channelIDs = append(channelIDs, channelID)
+	}
+	return channelIDs, true
+}
+
 func GetAllTask(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	channelIDs, validChannelIDs := parseTaskChannelIDs(c.Query("channel_ids"))
+	if !validChannelIDs {
+		common.ApiErrorMsg(c, "invalid channel_ids")
+		return
+	}
 	// 解析其他查询参数
 	queryParams := model.SyncTaskQueryParams{
 		Platform:       constant.TaskPlatform(c.Query("platform")),
@@ -30,8 +48,10 @@ func GetAllTask(c *gin.Context) {
 		StartTimestamp: startTimestamp,
 		EndTimestamp:   endTimestamp,
 		ChannelID:      c.Query("channel_id"),
+		ChannelIDs:     channelIDs,
+		Usernames:      parseQueryList(c.Query("usernames")),
 	}
-	if username := strings.TrimSpace(c.Query("username")); username != "" {
+	if username := strings.TrimSpace(c.Query("username")); username != "" && len(queryParams.Usernames) == 0 {
 		userIDs, err := model.SearchUserIDsByUsername(username, 1000)
 		if err != nil {
 			common.ApiError(c, err)
@@ -68,6 +88,8 @@ func GetUserTask(c *gin.Context) {
 		Platform:       constant.TaskPlatform(c.Query("platform")),
 		TaskID:         c.Query("task_id"),
 		Action:         c.Query("action"),
+		Status:         c.Query("status"),
+		ModelName:      strings.TrimSpace(c.Query("model_name")),
 		StartTimestamp: startTimestamp,
 		EndTimestamp:   endTimestamp,
 	}
@@ -121,6 +143,11 @@ func GetAllTaskExport(c *gin.Context) {
 			return
 		}
 	}
+	channelIDs, validChannelIDs := parseTaskChannelIDs(c.Query("channel_ids"))
+	if !validChannelIDs {
+		common.ApiErrorMsg(c, "invalid channel_ids")
+		return
+	}
 	queryParams := model.SyncTaskQueryParams{
 		Platform:       constant.TaskPlatform(c.Query("platform")),
 		TaskID:         c.Query("task_id"),
@@ -130,8 +157,10 @@ func GetAllTaskExport(c *gin.Context) {
 		StartTimestamp: startTimestamp,
 		EndTimestamp:   endTimestamp,
 		ChannelID:      c.Query("channel_id"),
+		ChannelIDs:     channelIDs,
+		Usernames:      parseQueryList(c.Query("usernames")),
 	}
-	if username := strings.TrimSpace(c.Query("username")); username != "" {
+	if username := strings.TrimSpace(c.Query("username")); username != "" && len(queryParams.Usernames) == 0 {
 		userIDs, err := model.SearchUserIDsByUsername(username, 1000)
 		if err != nil {
 			common.ApiError(c, err)

@@ -68,6 +68,11 @@ export interface DrawingLogFilters extends CommonFilters {
  */
 export interface TaskLogFilters extends CommonFilters {
   taskId?: string
+  usernames?: string[]
+  channels?: string[]
+  action?: string
+  model?: string
+  status?: string
 }
 
 /**
@@ -354,7 +359,7 @@ export interface TaskLog {
   url?: string
   video_url?: string
   properties?: TaskLogProperties
-  status: string // NOT_START, SUBMITTED, IN_PROGRESS, SUCCESS, FAILURE, QUEUED, UNKNOWN
+  status: string // NOT_START, SUBMITTING, SUBMITTED, IN_PROGRESS, SUCCESS, FAILURE, QUEUED, UNKNOWN
   other?: string
   created_at?: number
   updated_at?: number
@@ -456,14 +461,24 @@ export interface GetTaskLogsParams {
   p?: number
   page_size?: number
   channel_id?: string
+  channel_ids?: string
+  usernames?: string
   task_id?: string
+  action?: string
+  model_name?: string
+  status?: string
   start_timestamp?: number
   end_timestamp?: number
 }
 
 export interface GetTaskExportParams {
   channel_id?: string
+  channel_ids?: string
+  usernames?: string
   task_id?: string
+  action?: string
+  model_name?: string
+  status?: string
   start_timestamp: number
   end_timestamp: number
   limit?: number

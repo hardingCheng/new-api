@@ -207,6 +207,7 @@ export const TASK_VIDEO_GENERATION_MODES = {
  */
 export const TASK_STATUS = {
   NOT_START: 'NOT_START', // 未启动
+  SUBMITTING: 'SUBMITTING', // 提交中
   SUBMITTED: 'SUBMITTED', // 队列中
   IN_PROGRESS: 'IN_PROGRESS', // 执行中
   SUCCESS: 'SUCCESS', // 成功
@@ -365,6 +366,7 @@ export const TASK_VIDEO_GENERATION_MODE_MAPPINGS: Record<
 export const TASK_STATUS_MAPPINGS: Record<string, StatusMapping> = {
   [TASK_STATUS.SUCCESS]: { label: 'Success', variant: 'green' },
   [TASK_STATUS.NOT_START]: { label: 'Not Started', variant: 'neutral' },
+  [TASK_STATUS.SUBMITTING]: { label: 'Submitting', variant: 'yellow' },
   [TASK_STATUS.SUBMITTED]: { label: 'Queued', variant: 'yellow' },
   [TASK_STATUS.IN_PROGRESS]: { label: 'In Progress', variant: 'blue' },
   [TASK_STATUS.FAILURE]: { label: 'Failed', variant: 'red' },

@@ -279,7 +279,24 @@ export async function fetchLogsByCategory(
       ? { mj_id: searchParams.filter as string | undefined }
       : {}),
     ...(logCategory === 'task'
-      ? { task_id: searchParams.filter as string | undefined }
+      ? {
+          task_id: searchParams.filter as string | undefined,
+          ...(isAdmin && searchParams.usernames
+            ? { usernames: String(searchParams.usernames) }
+            : {}),
+          ...(isAdmin && searchParams.channels
+            ? { channel_ids: String(searchParams.channels) }
+            : {}),
+          ...(searchParams.action
+            ? { action: String(searchParams.action) }
+            : {}),
+          ...(searchParams.model
+            ? { model_name: String(searchParams.model) }
+            : {}),
+          ...(searchParams.status
+            ? { status: String(searchParams.status) }
+            : {}),
+        }
       : {}),
   }
 

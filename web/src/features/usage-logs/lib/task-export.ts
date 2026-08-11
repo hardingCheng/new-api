@@ -54,6 +54,15 @@ export function buildTaskExportParams(
     ...(searchParams.channel
       ? { channel_id: String(searchParams.channel) }
       : {}),
+    ...(searchParams.channels
+      ? { channel_ids: String(searchParams.channels) }
+      : {}),
+    ...(searchParams.usernames
+      ? { usernames: String(searchParams.usernames) }
+      : {}),
+    ...(searchParams.action ? { action: String(searchParams.action) } : {}),
+    ...(searchParams.model ? { model_name: String(searchParams.model) } : {}),
+    ...(searchParams.status ? { status: String(searchParams.status) } : {}),
   }
 }
 

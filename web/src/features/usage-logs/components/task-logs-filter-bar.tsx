@@ -16,12 +16,31 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQueryClient, useIsFetching } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { useNavigate, getRouteApi } from '@tanstack/react-router'
-import { type Table } from '@tanstack/react-table'
-import { useState, useEffect, useCallback } from 'react'
+import type { Table } from '@tanstack/react-table'
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useDeferredValue,
+  useMemo,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { MultiSelect } from '@/components/multi-select'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { searchChannels } from '@/features/channels/api'
+import { searchUsers } from '@/features/users/api'
+
+import { TASK_ACTION_MAPPINGS, TASK_STATUS_MAPPINGS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
 import { getDefaultTimeRange } from '../lib/utils'
 import type { DrawingLogFilters, LogCategory, TaskLogFilters } from '../types'
@@ -34,9 +53,12 @@ import {
 import { useLogsViewScope } from './usage-logs-provider'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
+const ALL_TASK_ACTIONS = '__all_task_actions__'
+const ALL_TASK_STATUSES = '__all_task_statuses__'
 
 type TaskLikeLogCategory = Extract<LogCategory, 'drawing' | 'task'>
 type TaskLogsFilters = DrawingLogFilters | TaskLogFilters
+type TaskLogsFilterKey = keyof DrawingLogFilters | keyof TaskLogFilters
 
 interface TaskLogsFilterBarProps<TData> {
   table: Table<TData>
@@ -76,6 +98,36 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
     const { start, end } = getDefaultTimeRange()
     return { startTime: start, endTime: end }
   })
+  const [usernameSearch, setUsernameSearch] = useState('')
+  const [channelSearch, setChannelSearch] = useState('')
+  const deferredUsernameSearch = useDeferredValue(usernameSearch.trim())
+  const deferredChannelSearch = useDeferredValue(channelSearch.trim())
+  const taskAdminFiltersEnabled = props.logCategory === 'task' && isAdmin
+  const { data: usernameSearchResult, isFetching: isSearchingUsers } = useQuery(
+    {
+      queryKey: ['task-logs-user-search', deferredUsernameSearch],
+      queryFn: () =>
+        searchUsers({
+          keyword: deferredUsernameSearch,
+          p: 1,
+          page_size: 20,
+        }),
+      enabled: taskAdminFiltersEnabled && deferredUsernameSearch.length > 0,
+      staleTime: 30_000,
+    }
+  )
+  const { data: channelSearchResult, isFetching: isSearchingChannels } =
+    useQuery({
+      queryKey: ['task-logs-channel-search', deferredChannelSearch],
+      queryFn: () =>
+        searchChannels({
+          keyword: deferredChannelSearch,
+          p: 1,
+          page_size: 20,
+        }),
+      enabled: taskAdminFiltersEnabled && deferredChannelSearch.length > 0,
+      staleTime: 30_000,
+    })
 
   useEffect(() => {
     const { start, end } = getDefaultTimeRange()
@@ -84,19 +136,36 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
         ? new Date(searchParams.startTime)
         : start,
       endTime: searchParams.endTime ? new Date(searchParams.endTime) : end,
-      ...(searchParams.channel
-        ? { channel: String(searchParams.channel) }
-        : {}),
     }
     const next: TaskLogsFilters =
       props.logCategory === 'drawing'
         ? {
             ...baseFilters,
+            ...(searchParams.channel
+              ? { channel: String(searchParams.channel) }
+              : {}),
             ...(searchParams.filter ? { mjId: searchParams.filter } : {}),
           }
         : {
             ...baseFilters,
             ...(searchParams.filter ? { taskId: searchParams.filter } : {}),
+            ...(searchParams.usernames
+              ? {
+                  usernames: searchParams.usernames.split(',').filter(Boolean),
+                }
+              : {}),
+            ...(searchParams.channels || searchParams.channel
+              ? {
+                  channels: String(
+                    searchParams.channels || searchParams.channel
+                  )
+                    .split(',')
+                    .filter(Boolean),
+                }
+              : {}),
+            ...(searchParams.action ? { action: searchParams.action } : {}),
+            ...(searchParams.model ? { model: searchParams.model } : {}),
+            ...(searchParams.status ? { status: searchParams.status } : {}),
           }
 
     setFilters(next)
@@ -105,11 +174,16 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
     searchParams.startTime,
     searchParams.endTime,
     searchParams.channel,
+    searchParams.channels,
     searchParams.filter,
+    searchParams.usernames,
+    searchParams.action,
+    searchParams.model,
+    searchParams.status,
   ])
 
   const handleChange = useCallback(
-    (field: keyof TaskLogsFilters, value: Date | string | undefined) => {
+    (field: TaskLogsFilterKey, value: Date | string | string[] | undefined) => {
       setFilters((prev) => ({ ...prev, [field]: value }))
     },
     []
@@ -160,11 +234,23 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
   )
 
   const filterValue = getFilterValue(filters, props.logCategory)
+  const taskFilters = filters as TaskLogFilters
   const placeholder =
     props.logCategory === 'drawing'
       ? t('Filter by MjProxy task ID')
       : t('Filter by task ID')
-  const hasAdditionalFilters = !!filterValue || !!filters.channel
+  const taskFilterValues = [
+    taskFilters.usernames?.length,
+    taskFilters.channels?.length,
+    taskFilters.action,
+    taskFilters.model,
+    taskFilters.status,
+  ]
+  const hasAdditionalFilters =
+    !!filterValue ||
+    (props.logCategory === 'drawing'
+      ? !!filters.channel
+      : taskFilterValues.some(Boolean))
   const dateRangeFilter = (
     <LogsFilterField wide>
       <CompactDateTimeRangePicker
@@ -188,16 +274,169 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
       />
     </LogsFilterField>
   )
-  const channelFilter = isAdmin ? (
-    <LogsFilterField>
-      <LogsFilterInput
-        placeholder={t('Channel ID')}
-        value={filters.channel || ''}
-        onChange={(e) => handleChange('channel', e.target.value)}
-        onKeyDown={handleKeyDown}
+  const drawingChannelFilter =
+    isAdmin && props.logCategory === 'drawing' ? (
+      <LogsFilterField>
+        <LogsFilterInput
+          placeholder={t('Channel ID')}
+          value={filters.channel || ''}
+          onChange={(e) => handleChange('channel', e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+      </LogsFilterField>
+    ) : null
+  const taskActionItems = useMemo(
+    () => [
+      { value: ALL_TASK_ACTIONS, label: t('Task Type') },
+      ...Object.entries(TASK_ACTION_MAPPINGS).map(([value, mapping]) => ({
+        value,
+        label: t(mapping.label),
+      })),
+    ],
+    [t]
+  )
+  const taskStatusItems = useMemo(
+    () => [
+      { value: ALL_TASK_STATUSES, label: t('All Status') },
+      ...Object.entries(TASK_STATUS_MAPPINGS).map(([value, mapping]) => ({
+        value,
+        label: t(mapping.label),
+      })),
+    ],
+    [t]
+  )
+  const actionValue = taskFilters.action || ALL_TASK_ACTIONS
+  const statusValue = taskFilters.status || ALL_TASK_STATUSES
+  const taskUserFilter = taskAdminFiltersEnabled ? (
+    <LogsFilterField wide>
+      <MultiSelect
+        options={(usernameSearchResult?.data?.items ?? []).map((user) => ({
+          value: user.username,
+          label: user.username,
+        }))}
+        selected={taskFilters.usernames ?? []}
+        onChange={(usernames) =>
+          handleChange('usernames', usernames.length ? usernames : undefined)
+        }
+        onSearchChange={setUsernameSearch}
+        placeholder={t('Select users')}
+        emptyText={
+          isSearchingUsers ? t('Searching...') : t('No matching users')
+        }
+        maxVisibleChips={1}
+        className='min-h-8 py-0 text-sm'
       />
     </LogsFilterField>
   ) : null
+  const taskChannelFilter = taskAdminFiltersEnabled ? (
+    <LogsFilterField wide>
+      <MultiSelect
+        options={(channelSearchResult?.data?.items ?? []).map((channel) => ({
+          value: String(channel.id),
+          label: channel.name
+            ? `${channel.name} (#${channel.id})`
+            : `#${channel.id}`,
+        }))}
+        selected={taskFilters.channels ?? []}
+        onChange={(channels) =>
+          handleChange('channels', channels.length ? channels : undefined)
+        }
+        onSearchChange={setChannelSearch}
+        placeholder={t('Search channels')}
+        emptyText={
+          isSearchingChannels ? t('Searching...') : t('No matching items')
+        }
+        maxVisibleChips={1}
+        className='min-h-8 py-0 text-sm'
+      />
+    </LogsFilterField>
+  ) : null
+  const taskActionFilter =
+    props.logCategory === 'task' ? (
+      <LogsFilterField>
+        <Select
+          items={taskActionItems}
+          value={actionValue}
+          onValueChange={(value) =>
+            handleChange(
+              'action',
+              value && value !== ALL_TASK_ACTIONS ? value : undefined
+            )
+          }
+        >
+          <SelectTrigger>
+            <SelectValue>
+              {
+                taskActionItems.find((item) => item.value === actionValue)
+                  ?.label
+              }
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false}>
+            <SelectGroup>
+              {taskActionItems.map((item) => (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </LogsFilterField>
+    ) : null
+  const taskModelFilter =
+    props.logCategory === 'task' ? (
+      <LogsFilterField>
+        <LogsFilterInput
+          placeholder={t('Model')}
+          value={taskFilters.model || ''}
+          onChange={(e) => handleChange('model', e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+      </LogsFilterField>
+    ) : null
+  const taskStatusFilter =
+    props.logCategory === 'task' ? (
+      <LogsFilterField>
+        <Select
+          items={taskStatusItems}
+          value={statusValue}
+          onValueChange={(value) =>
+            handleChange(
+              'status',
+              value && value !== ALL_TASK_STATUSES ? value : undefined
+            )
+          }
+        >
+          <SelectTrigger>
+            <SelectValue>
+              {
+                taskStatusItems.find((item) => item.value === statusValue)
+                  ?.label
+              }
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false}>
+            <SelectGroup>
+              {taskStatusItems.map((item) => (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </LogsFilterField>
+    ) : null
+  const taskFiltersContent = (
+    <>
+      {taskUserFilter}
+      {taskChannelFilter}
+      {taskActionFilter}
+      {taskModelFilter}
+      {taskStatusFilter}
+    </>
+  )
 
   return (
     <LogsFilterToolbar
@@ -206,17 +445,25 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
         <>
           {dateRangeFilter}
           {taskIdFilter}
-          {channelFilter}
+          {drawingChannelFilter}
+          {props.logCategory === 'task' ? taskFiltersContent : null}
         </>
       }
       mobilePinnedFilters={dateRangeFilter}
       mobileFilters={
         <>
           {taskIdFilter}
-          {channelFilter}
+          {drawingChannelFilter}
+          {props.logCategory === 'task' ? taskFiltersContent : null}
         </>
       }
-      mobileFilterCount={[filterValue, filters.channel].filter(Boolean).length}
+      mobileFilterCount={
+        [
+          filterValue,
+          props.logCategory === 'drawing' ? filters.channel : undefined,
+          ...(props.logCategory === 'task' ? taskFilterValues : []),
+        ].filter(Boolean).length
+      }
       hasActiveFilters={hasAdditionalFilters}
       onSearch={handleApply}
       searchLoading={fetchingLogs > 0}

@@ -38,6 +38,24 @@ func runTaskExportRequest(t *testing.T, target string) taskExportResponse {
 	return response
 }
 
+func runTaskListRequest(t *testing.T, target string, userID int) taskExportResponse {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, target, nil)
+	if userID > 0 {
+		ctx.Set("id", userID)
+		GetUserTask(ctx)
+	} else {
+		GetAllTask(ctx)
+	}
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response taskExportResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	return response
+}
+
 func TestGetAllTaskExportRequiresBoundedTimeRange(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -50,6 +68,7 @@ func TestGetAllTaskExportRequiresBoundedTimeRange(t *testing.T) {
 		{name: "over 31 days", target: "/api/task/export?start_timestamp=100&end_timestamp=2678501", message: "task export time range cannot exceed 31 days"},
 		{name: "invalid limit", target: "/api/task/export?start_timestamp=100&end_timestamp=200&limit=5001", message: "invalid export limit; must be between 1 and 5000"},
 		{name: "invalid cursor", target: "/api/task/export?start_timestamp=100&end_timestamp=200&before_id=-1", message: "invalid before_id"},
+		{name: "invalid channels", target: "/api/task/export?start_timestamp=100&end_timestamp=200&channel_ids=1,invalid", message: "invalid channel_ids"},
 	}
 
 	for _, test := range tests {
@@ -59,6 +78,54 @@ func TestGetAllTaskExportRequiresBoundedTimeRange(t *testing.T) {
 			assert.Equal(t, test.message, response.Message)
 		})
 	}
+}
+
+func TestGetAllTaskExportAppliesTaskLogFilters(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Task{}))
+
+	users := []*model.User{
+		{Username: "filter-alice", Password: "password1", AffCode: "filter-alice"},
+		{Username: "filter-bob", Password: "password1", AffCode: "filter-bob"},
+		{Username: "filter-charlie", Password: "password1", AffCode: "filter-charlie"},
+	}
+	for _, user := range users {
+		require.NoError(t, db.Create(user).Error)
+	}
+
+	tasks := []*model.Task{
+		{TaskID: "task_filter_alice", UserId: users[0].Id, ChannelId: 10, Action: "textGenerate", Status: model.TaskStatusSuccess, SubmitTime: 150, Properties: model.Properties{OriginModelName: "seedance-filter-model"}},
+		{TaskID: "task_filter_bob", UserId: users[1].Id, ChannelId: 20, Action: "textGenerate", Status: model.TaskStatusSuccess, SubmitTime: 150, Properties: model.Properties{OriginModelName: "seedance-filter-model"}},
+		{TaskID: "task_wrong_user", UserId: users[2].Id, ChannelId: 10, Action: "textGenerate", Status: model.TaskStatusSuccess, SubmitTime: 150, Properties: model.Properties{OriginModelName: "seedance-filter-model"}},
+		{TaskID: "task_wrong_channel", UserId: users[0].Id, ChannelId: 30, Action: "textGenerate", Status: model.TaskStatusSuccess, SubmitTime: 150, Properties: model.Properties{OriginModelName: "seedance-filter-model"}},
+		{TaskID: "task_wrong_action", UserId: users[0].Id, ChannelId: 10, Action: "imageToVideo", Status: model.TaskStatusSuccess, SubmitTime: 150, Properties: model.Properties{OriginModelName: "seedance-filter-model"}},
+		{TaskID: "task_wrong_status", UserId: users[0].Id, ChannelId: 10, Action: "textGenerate", Status: model.TaskStatusFailure, SubmitTime: 150, Properties: model.Properties{OriginModelName: "seedance-filter-model"}},
+		{TaskID: "task_wrong_model", UserId: users[0].Id, ChannelId: 10, Action: "textGenerate", Status: model.TaskStatusSuccess, SubmitTime: 150, Properties: model.Properties{OriginModelName: "other-model"}},
+	}
+	for _, task := range tasks {
+		require.NoError(t, db.Create(task).Error)
+	}
+
+	response := runTaskExportRequest(t, "/api/task/export?start_timestamp=100&end_timestamp=200&usernames=filter-alice,filter-bob&channel_ids=10,20&action=textGenerate&model_name=seedance-filter&status=SUCCESS")
+	require.True(t, response.Success, response.Message)
+	require.Len(t, response.Data.Items, 2)
+	assert.ElementsMatch(t, []string{"task_filter_alice", "task_filter_bob"}, []string{
+		response.Data.Items[0].TaskID,
+		response.Data.Items[1].TaskID,
+	})
+
+	listResponse := runTaskListRequest(t, "/api/task?p=1&page_size=10&start_timestamp=100&end_timestamp=200&usernames=filter-alice,filter-bob&channel_ids=10,20&action=textGenerate&model_name=seedance-filter&status=SUCCESS", 0)
+	require.True(t, listResponse.Success, listResponse.Message)
+	require.Len(t, listResponse.Data.Items, 2)
+	assert.ElementsMatch(t, []string{"task_filter_alice", "task_filter_bob"}, []string{
+		listResponse.Data.Items[0].TaskID,
+		listResponse.Data.Items[1].TaskID,
+	})
+
+	selfResponse := runTaskListRequest(t, "/api/task?p=1&page_size=10&start_timestamp=100&end_timestamp=200&action=textGenerate&model_name=other-model&status=SUCCESS", users[0].Id)
+	require.True(t, selfResponse.Success, selfResponse.Message)
+	require.Len(t, selfResponse.Data.Items, 1)
+	assert.Equal(t, "task_wrong_model", selfResponse.Data.Items[0].TaskID)
 }
 
 func TestGetAllTaskExportReturnsRowsWithinBoundedRange(t *testing.T) {

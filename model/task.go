@@ -203,8 +203,10 @@ func (p TaskPrivateData) Value() (driver.Value, error) {
 type SyncTaskQueryParams struct {
 	Platform       constant.TaskPlatform
 	ChannelID      string
+	ChannelIDs     []int
 	TaskID         string
 	UserID         string
+	Usernames      []string
 	Action         string
 	Status         string
 	ModelName      string
@@ -575,7 +577,9 @@ func TaskCountAllUserTask(userId int, queryParams SyncTaskQueryParams) int64 {
 }
 
 func applyTaskQueryFilters(query *gorm.DB, queryParams SyncTaskQueryParams) *gorm.DB {
-	if queryParams.ChannelID != "" {
+	if len(queryParams.ChannelIDs) != 0 {
+		query = query.Where("channel_id IN ?", queryParams.ChannelIDs)
+	} else if queryParams.ChannelID != "" {
 		query = query.Where("channel_id = ?", queryParams.ChannelID)
 	}
 	if queryParams.Platform != "" {
@@ -584,8 +588,13 @@ func applyTaskQueryFilters(query *gorm.DB, queryParams SyncTaskQueryParams) *gor
 	if queryParams.UserID != "" {
 		query = query.Where("user_id = ?", queryParams.UserID)
 	}
-	if len(queryParams.UserIDs) != 0 {
-		query = query.Where("user_id in (?)", queryParams.UserIDs)
+	if len(queryParams.Usernames) != 0 {
+		userIDs := DB.Model(&User{}).
+			Select("id").
+			Where("username IN ?", queryParams.Usernames)
+		query = query.Where("user_id IN (?)", userIDs)
+	} else if len(queryParams.UserIDs) != 0 {
+		query = query.Where("user_id IN ?", queryParams.UserIDs)
 	}
 	if queryParams.TaskID != "" {
 		query = query.Where("task_id = ?", queryParams.TaskID)
