@@ -77,7 +77,7 @@ type responseTask struct {
 	Seconds               string     `json:"seconds,omitempty"`
 	Size                  string     `json:"size,omitempty"`
 	RemixedFromVideoID    string     `json:"remixed_from_video_id,omitempty"`
-	ReferenceVideoSeconds int        `json:"reference_video_seconds,omitempty"`
+	ReferenceVideoSeconds float64    `json:"reference_video_seconds,omitempty"`
 	Error                 *struct {
 		Message string `json:"message"`
 		Code    string `json:"code"`
@@ -140,16 +140,18 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	if seconds <= 0 {
 		seconds = 4
 	}
+	referenceDuration := 0.0
 	referenceSeconds := 0
 	if relaycommon.IsSeedanceRelayModel(info, req.Model) {
-		referenceSeconds, err = service.SumReferenceVideoDurationSeconds(c, relaycommon.ExtractReferenceVideoURLs(req))
+		referenceDuration, referenceSeconds, err = service.SumReferenceVideoDurationSeconds(c, relaycommon.ExtractReferenceVideoURLs(req))
 		if err != nil {
 			return nil, err
 		}
 	}
 	billableSeconds := seconds + referenceSeconds
 	c.Set("generated_video_seconds", seconds)
-	c.Set("reference_video_seconds", referenceSeconds)
+	c.Set("reference_video_seconds", referenceDuration)
+	c.Set("reference_video_billing_seconds", referenceSeconds)
 	c.Set("billable_video_seconds", billableSeconds)
 
 	size := req.Size
@@ -344,7 +346,7 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	if info.OriginModelName != "" {
 		dResp.Model = info.OriginModelName
 	}
-	if referenceSeconds := c.GetInt("reference_video_seconds"); referenceSeconds > 0 {
+	if referenceSeconds := c.GetFloat64("reference_video_seconds"); referenceSeconds > 0 {
 		dResp.ReferenceVideoSeconds = referenceSeconds
 	}
 	c.JSON(http.StatusOK, dResp)

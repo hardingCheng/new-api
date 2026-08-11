@@ -26,6 +26,7 @@ export {
   getTimeColor,
   formatModelName,
   formatDuration,
+  formatReferenceVideoDuration,
   getParamOverrideActionLabel,
   parseAuditLine,
   isViolationFeeLog,

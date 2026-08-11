@@ -44,8 +44,9 @@ func TestSumReferenceVideoDurationSecondsRejectsUnreadableMetadata(t *testing.T)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest("POST", "/v1/videos", nil)
 
-	seconds, err := SumReferenceVideoDurationSeconds(ctx, []string{"data:video/mp4;base64,%%%"})
+	duration, seconds, err := SumReferenceVideoDurationSeconds(ctx, []string{"data:video/mp4;base64,%%%"})
 
 	require.Error(t, err)
+	assert.Zero(t, duration)
 	assert.Zero(t, seconds)
 }

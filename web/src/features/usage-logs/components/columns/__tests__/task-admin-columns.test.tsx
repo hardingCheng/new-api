@@ -90,7 +90,7 @@ const taskLog: TaskLog = {
   data: { state: 'failed' },
   properties: {
     has_reference_video: true,
-    reference_video_seconds: 4,
+    reference_video_seconds: 4.126,
     video_seconds: 10,
     video_generation_mode: 'reference_image',
     origin_model_name: 'public-video-model',
@@ -234,7 +234,7 @@ test('admin task columns show channel and video billing metrics', async () => {
     rendered.container.querySelector(
       '[data-cell-id="reference_video_duration"]'
     )?.textContent,
-    '4s'
+    '4.13s'
   )
 
   await act(async () => rendered.root.unmount())
@@ -363,7 +363,7 @@ test('task details keep administrator fields out of the user dialog', async () =
   const text = dialog.textContent ?? ''
   assert.match(text, /public-video-model/)
   assert.match(text, /Video Duration10s/)
-  assert.match(text, /Reference videoStatusYesDuration4s/)
+  assert.match(text, /Reference videoStatusYesDuration4\.13s/)
   for (const adminOnlyValue of [
     'Internal ID',
     'primary-video-channel',

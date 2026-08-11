@@ -147,14 +147,15 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		if generatedSeconds <= 0 {
 			generatedSeconds = 4
 		}
-		referenceSeconds, err := service.SumReferenceVideoDurationSeconds(c, relaycommon.ExtractReferenceVideoURLs(req))
+		referenceDuration, referenceSeconds, err := service.SumReferenceVideoDurationSeconds(c, relaycommon.ExtractReferenceVideoURLs(req))
 		if err != nil {
 			return nil, err
 		}
 		billableSeconds := generatedSeconds + referenceSeconds
 		if billableSeconds > 0 {
 			c.Set("generated_video_seconds", generatedSeconds)
-			c.Set("reference_video_seconds", referenceSeconds)
+			c.Set("reference_video_seconds", referenceDuration)
+			c.Set("reference_video_billing_seconds", referenceSeconds)
 			c.Set("billable_video_seconds", billableSeconds)
 			ratios["seconds"] = float64(billableSeconds)
 		}

@@ -45,6 +45,31 @@ func TestFixedVideoModelPriceDefaultsToPerSecondBilling(t *testing.T) {
 	assert.Equal(t, 15, context.GetInt("billable_video_seconds"))
 }
 
+func TestReferenceVideoDurationPreservesPrecisionWithoutChangingBillingSeconds(t *testing.T) {
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Set("generated_video_seconds", 3)
+	context.Set("reference_video_seconds", 4.126)
+	context.Set("reference_video_billing_seconds", 5)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "seedance-2.0-720p",
+		PriceData: types.PriceData{
+			UsePrice:   true,
+			ModelPrice: 0.1,
+			Quota:      50000,
+			GroupRatioInfo: types.GroupRatioInfo{
+				GroupRatio: 1,
+			},
+		},
+	}
+	info.PriceData.AddOtherRatio("seconds", 8)
+
+	applyTaskVideoBillingRatios(context, info)
+
+	assert.Equal(t, 400000, info.PriceData.Quota)
+	assert.InDelta(t, 4.126, context.GetFloat64("reference_video_seconds"), 0.0001)
+	assert.Equal(t, 8, context.GetInt("billable_video_seconds"))
+}
+
 func TestTaskModel2PublicVideoDtoHidesInternalDataForRegularUser(t *testing.T) {
 	task := &model.Task{
 		TaskID: "task_public",
@@ -170,7 +195,7 @@ func TestTaskModel2DtoIncludesAdminVideoBillingMetrics(t *testing.T) {
 		Quota:       125000,
 		Properties: model.Properties{
 			HasReferenceVideo:     true,
-			ReferenceVideoSeconds: 4,
+			ReferenceVideoSeconds: 4.126,
 			VideoSeconds:          10,
 		},
 		PrivateData: model.TaskPrivateData{RefundQuota: 25000},
@@ -187,7 +212,7 @@ func TestTaskModel2DtoIncludesAdminVideoBillingMetrics(t *testing.T) {
 	properties, ok := out.Properties.(model.Properties)
 	require.True(t, ok)
 	assert.True(t, properties.HasReferenceVideo)
-	assert.Equal(t, 4, properties.ReferenceVideoSeconds)
+	assert.InDelta(t, 4.126, properties.ReferenceVideoSeconds, 0.0001)
 }
 
 // 对齐设计示例：原价每秒 0.1 美元，生成 3 秒，参考 15 秒。

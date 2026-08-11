@@ -365,6 +365,17 @@ export function formatDuration(
   return { durationSec, variant: durationSec > 60 ? 'red' : 'green' }
 }
 
+export function formatReferenceVideoDuration(seconds?: number): string | null {
+  if (
+    typeof seconds !== 'number' ||
+    !Number.isFinite(seconds) ||
+    seconds <= 0
+  ) {
+    return null
+  }
+  return `${seconds.toFixed(2)}s`
+}
+
 /**
  * Maps a language-independent audit/login operation `action` to an i18n
  * template string (the template itself is the i18n key, with {{placeholders}}).

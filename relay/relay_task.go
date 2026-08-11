@@ -286,7 +286,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 
 func applyTaskVideoBillingRatios(c *gin.Context, info *relaycommon.RelayInfo) {
 	genSec := c.GetInt("generated_video_seconds")
-	refSec := c.GetInt("reference_video_seconds")
+	refSec := c.GetInt("reference_video_billing_seconds")
 	if genSec <= 0 && refSec <= 0 {
 		// 回退：没有 generated/reference 秒数上下文（如 remix），按 OtherRatios 连乘。
 		quotaWithRatios := info.PriceData.ApplyOtherRatiosToFloat(float64(info.PriceData.Quota))

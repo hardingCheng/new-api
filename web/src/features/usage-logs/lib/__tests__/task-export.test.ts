@@ -131,7 +131,7 @@ test('task export rows include task, billing, and status data', () => {
     status: 'FAILURE',
     properties: {
       has_reference_video: true,
-      reference_video_seconds: 4,
+      reference_video_seconds: 4.126,
       video_generation_mode: 'first_last_frame',
     },
   }
@@ -146,5 +146,6 @@ test('task export rows include task, billing, and status data', () => {
   assert.equal(rows[0]?.Status, 'Failed')
   assert.equal(rows[0]?.['Duration (s)'], 23)
   assert.equal(rows[0]?.['Reference video'], 'Yes')
+  assert.equal(rows[0]?.['Reference Duration (s)'], 4.13)
   assert.equal(rows[0]?.Details, 'generation failed')
 })

@@ -40,7 +40,7 @@ import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-import { formatDuration } from '../../lib/format'
+import { formatDuration, formatReferenceVideoDuration } from '../../lib/format'
 import {
   getTaskActionLabelKey,
   getTaskPlatformName,
@@ -152,6 +152,7 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
   )
   const properties = log.properties
   const referenceDuration = properties?.reference_video_seconds
+  const referenceDurationLabel = formatReferenceVideoDuration(referenceDuration)
   const hasReferenceVideo =
     properties?.has_reference_video === true ||
     (typeof referenceDuration === 'number' && referenceDuration > 0)
@@ -281,12 +282,10 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
             label={t('Status')}
             value={hasReferenceVideo ? t('Yes') : t('No')}
           />
-          {hasReferenceVideo &&
-          typeof referenceDuration === 'number' &&
-          referenceDuration > 0 ? (
+          {hasReferenceVideo && referenceDurationLabel ? (
             <DetailRow
               label={t('Duration')}
-              value={`${referenceDuration}s`}
+              value={referenceDurationLabel}
               mono
             />
           ) : null}

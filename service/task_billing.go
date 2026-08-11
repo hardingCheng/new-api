@@ -65,8 +65,11 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	if generatedSeconds := c.GetInt("generated_video_seconds"); generatedSeconds > 0 {
 		other["generated_video_seconds"] = generatedSeconds
 	}
-	if referenceSeconds := c.GetInt("reference_video_seconds"); referenceSeconds > 0 {
+	if referenceSeconds := c.GetFloat64("reference_video_seconds"); referenceSeconds > 0 {
 		other["reference_video_seconds"] = referenceSeconds
+	}
+	if referenceBillingSeconds := c.GetInt("reference_video_billing_seconds"); referenceBillingSeconds > 0 {
+		other["reference_video_billing_seconds"] = referenceBillingSeconds
 	}
 	if billableSeconds := c.GetInt("billable_video_seconds"); billableSeconds > 0 {
 		other["billable_video_seconds"] = billableSeconds
@@ -119,7 +122,7 @@ func EnsureTaskSubmissionRecord(c *gin.Context, info *relaycommon.RelayInfo, pla
 	task.PrivateData.NodeName = common.NodeName
 	task.PrivateData.BillingContext = taskBillingContextFromRelayInfo(info)
 	if c != nil {
-		if referenceSeconds := c.GetInt("reference_video_seconds"); referenceSeconds > 0 {
+		if referenceSeconds := c.GetFloat64("reference_video_seconds"); referenceSeconds > 0 {
 			task.Properties.HasReferenceVideo = true
 			task.Properties.ReferenceVideoSeconds = referenceSeconds
 		}
@@ -202,7 +205,7 @@ func CompleteTaskSubmissionRecord(c *gin.Context, info *relaycommon.RelayInfo, r
 		task.BillingStatus = model.TaskBillingStatusSettlementPending
 	}
 	if c != nil {
-		if referenceSeconds := c.GetInt("reference_video_seconds"); referenceSeconds > 0 {
+		if referenceSeconds := c.GetFloat64("reference_video_seconds"); referenceSeconds > 0 {
 			task.Properties.HasReferenceVideo = true
 			task.Properties.ReferenceVideoSeconds = referenceSeconds
 		}

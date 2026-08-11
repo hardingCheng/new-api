@@ -92,11 +92,11 @@ func (t *Task) GetData(v any) error {
 }
 
 type Properties struct {
-	Input                 string `json:"input"`
-	UpstreamModelName     string `json:"upstream_model_name,omitempty"`
-	OriginModelName       string `json:"origin_model_name,omitempty"`
-	HasReferenceVideo     bool   `json:"has_reference_video,omitempty"`
-	ReferenceVideoSeconds int    `json:"reference_video_seconds,omitempty"`
+	Input                 string  `json:"input"`
+	UpstreamModelName     string  `json:"upstream_model_name,omitempty"`
+	OriginModelName       string  `json:"origin_model_name,omitempty"`
+	HasReferenceVideo     bool    `json:"has_reference_video,omitempty"`
+	ReferenceVideoSeconds float64 `json:"reference_video_seconds,omitempty"`
 	// VideoSeconds 为提交时用户请求的生成视频时长（秒），便于任务创建即可展示时长，
 	// 不必等上游完成回写 duration。
 	VideoSeconds        int    `json:"video_seconds,omitempty"`

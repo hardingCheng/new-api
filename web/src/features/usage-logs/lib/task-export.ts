@@ -127,10 +127,15 @@ export function buildTaskExportRows(
       task.refund_quota || (task.status === 'FAILURE' ? task.quota || 0 : 0)
     const videoDuration =
       task.video_duration ?? task.properties?.video_seconds ?? ''
-    const referenceDuration = task.properties?.reference_video_seconds ?? ''
+    const rawReferenceDuration = task.properties?.reference_video_seconds
+    const referenceDuration =
+      typeof rawReferenceDuration === 'number' &&
+      Number.isFinite(rawReferenceDuration) &&
+      rawReferenceDuration > 0
+        ? Number(rawReferenceDuration.toFixed(2))
+        : ''
     const hasReferenceVideo =
-      task.properties?.has_reference_video === true ||
-      (typeof referenceDuration === 'number' && referenceDuration > 0)
+      task.properties?.has_reference_video === true || referenceDuration !== ''
 
     return {
       [translate('Submit Time')]: task.submit_time

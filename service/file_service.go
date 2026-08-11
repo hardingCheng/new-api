@@ -493,24 +493,26 @@ func getVideoDuration(c *gin.Context, data string) (float64, error) {
 	return duration, nil
 }
 
-func SumReferenceVideoDurationSeconds(c *gin.Context, urls []string) (int, error) {
+// SumReferenceVideoDurationSeconds returns both the measured duration and the
+// whole seconds used by the existing round-up billing rule.
+func SumReferenceVideoDurationSeconds(c *gin.Context, urls []string) (duration float64, billingSeconds int, err error) {
 	total := 0.0
 	for _, videoURL := range urls {
 		duration, err := getVideoDuration(c, videoURL)
 		if err != nil {
-			return 0, fmt.Errorf("failed to get reference video duration: %w", err)
+			return 0, 0, fmt.Errorf("failed to get reference video duration: %w", err)
 		}
 		total += duration
 	}
 	if total <= 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
 	seconds, err := videoDurationSecondsForBilling(total)
 	if err != nil {
 		logger.LogWarn(c, fmt.Sprintf("invalid total reference video duration: %v", err))
-		return 0, err
+		return 0, 0, err
 	}
-	return seconds, nil
+	return total, seconds, nil
 }
 
 func videoDurationSecondsForBilling(duration float64) (int, error) {

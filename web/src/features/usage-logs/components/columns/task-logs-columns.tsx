@@ -31,6 +31,7 @@ import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { TASK_STATUS } from '../../constants'
+import { formatReferenceVideoDuration } from '../../lib/format'
 import {
   getTaskActionLabelKey,
   taskActionMapper,
@@ -384,18 +385,16 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
         id: 'reference_video_duration',
         header: t('Reference Duration'),
         cell: ({ row }) => {
-          const seconds = row.original.properties?.reference_video_seconds
-          if (
-            typeof seconds !== 'number' ||
-            !Number.isFinite(seconds) ||
-            seconds <= 0
-          ) {
+          const duration = formatReferenceVideoDuration(
+            row.original.properties?.reference_video_seconds
+          )
+          if (!duration) {
             return <span className='text-muted-foreground/60 text-xs'>-</span>
           }
 
           return (
             <span className='font-mono text-xs font-medium tabular-nums'>
-              {seconds}s
+              {duration}
             </span>
           )
         },
