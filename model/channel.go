@@ -357,11 +357,21 @@ func (channel *Channel) Save() error {
 	return DB.Save(channel).Error
 }
 
-func (channel *Channel) SaveWithoutKey() error {
+// saveStatusState persists only the fields owned by the channel status flow.
+// Keeping this allowlist here prevents a stale channel snapshot from
+// overwriting credentials, accounting counters, or channel configuration.
+func (channel *Channel) saveStatusState() error {
 	if channel.Id == 0 {
 		return errors.New("channel ID is 0")
 	}
-	return DB.Omit("key").Save(channel).Error
+	updates := map[string]any{
+		"status":     channel.Status,
+		"other_info": channel.OtherInfo,
+	}
+	if channel.ChannelInfo.IsMultiKey {
+		updates["channel_info"] = channel.ChannelInfo
+	}
+	return DB.Model(&Channel{}).Where("id = ?", channel.Id).Updates(updates).Error
 }
 
 func GetAllChannels(startIdx int, num int, selectAll bool, idSort bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
@@ -847,6 +857,9 @@ func UpdateChannelStatusWithoutAutoRecovery(channelId int, usingKey string, stat
 func updateChannelStatus(channelId int, usingKey string, status int, reason string, disableAutoRecovery bool) bool {
 	unlock := LockChannelStatusUpdates()
 	defer unlock()
+	pollingLock := GetChannelPollingLock(channelId)
+	pollingLock.Lock()
+	defer pollingLock.Unlock()
 
 	var updatedChannel *Channel
 	statusChanged := false
@@ -854,6 +867,11 @@ func updateChannelStatus(channelId int, usingKey string, status int, reason stri
 		var channel Channel
 		if err := lockForUpdate(tx).First(&channel, channelId).Error; err != nil {
 			return err
+		}
+		if common.MemoryCacheEnabled && channel.ChannelInfo.IsMultiKey {
+			if cachedChannel, cacheErr := CacheGetChannel(channelId); cacheErr == nil && cachedChannel != nil {
+				channel.ChannelInfo.MultiKeyPollingIndex = cachedChannel.ChannelInfo.MultiKeyPollingIndex
+			}
 		}
 		beforeStatus := channel.Status
 		if channel.ChannelInfo.IsMultiKey {
@@ -871,7 +889,12 @@ func updateChannelStatus(channelId int, usingKey string, status int, reason stri
 			channel.Status = status
 			channel.ChannelInfo.AutoRecoveryDisabled = status != common.ChannelStatusEnabled && disableAutoRecovery
 		}
-		if err := tx.Omit("key").Save(&channel).Error; err != nil {
+		updates := map[string]any{
+			"status":       channel.Status,
+			"other_info":   channel.OtherInfo,
+			"channel_info": channel.ChannelInfo,
+		}
+		if err := tx.Model(&Channel{}).Where("id = ?", channel.Id).Updates(updates).Error; err != nil {
 			return err
 		}
 		statusChanged = beforeStatus != channel.Status
