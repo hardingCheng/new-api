@@ -1,7 +1,7 @@
 package setting
 
 import (
-	"encoding/json"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -21,10 +21,16 @@ type StationBrand struct {
 	Logo            string                   `json:"logo,omitempty"`
 	Footer          string                   `json:"footer,omitempty"`
 	HomePageContent string                   `json:"home_page_content,omitempty"`
+	HomePageTheme   string                   `json:"home_page_theme,omitempty"`
 	Notice          string                   `json:"notice,omitempty"`
 	About           string                   `json:"about,omitempty"`
 	Announcements   []map[string]interface{} `json:"announcements,omitempty"`
 }
+
+const (
+	HomePageThemeDefault = "default"
+	HomePageThemePrism   = "prism"
+)
 
 // StationConfig 一个分站(以域名为 key)的完整配置
 type StationConfig struct {
@@ -39,12 +45,17 @@ var stationConfigsMutex sync.RWMutex
 func UpdateStationConfigsByJsonString(jsonString string) error {
 	newConfigs := map[string]StationConfig{}
 	if strings.TrimSpace(jsonString) != "" {
-		if err := json.Unmarshal([]byte(jsonString), &newConfigs); err != nil {
+		if err := common.Unmarshal([]byte(jsonString), &newConfigs); err != nil {
 			return err
 		}
 	}
 	normalized := make(map[string]StationConfig, len(newConfigs))
 	for host, cfg := range newConfigs {
+		if theme := strings.TrimSpace(cfg.Brand.HomePageTheme); theme != "" &&
+			theme != HomePageThemeDefault && theme != HomePageThemePrism {
+			return fmt.Errorf("unsupported home page theme %q for station %q", theme, host)
+		}
+		cfg.Brand.HomePageTheme = strings.TrimSpace(cfg.Brand.HomePageTheme)
 		normalized[strings.ToLower(strings.TrimSpace(host))] = cfg
 	}
 	stationConfigsMutex.Lock()
@@ -56,12 +67,19 @@ func UpdateStationConfigsByJsonString(jsonString string) error {
 func StationConfigs2JsonString() string {
 	stationConfigsMutex.RLock()
 	defer stationConfigsMutex.RUnlock()
-	jsonBytes, err := json.Marshal(stationConfigs)
+	jsonBytes, err := common.Marshal(stationConfigs)
 	if err != nil {
 		common.SysLog("error marshalling station configs: " + err.Error())
 		return "{}"
 	}
 	return string(jsonBytes)
+}
+
+func ResolveHomePageTheme(station *StationConfig) string {
+	if station != nil && station.Brand.HomePageTheme == HomePageThemePrism {
+		return HomePageThemePrism
+	}
+	return HomePageThemeDefault
 }
 
 // GetStationByHost 按请求 Host(可含端口)返回命中的分站配置;

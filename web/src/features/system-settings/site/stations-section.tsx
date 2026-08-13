@@ -25,15 +25,6 @@ import { toast } from 'sonner'
 import * as z from 'zod'
 
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Form,
@@ -43,7 +34,20 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  HOME_PAGE_THEMES,
+  resolveHomePageTheme,
+} from '@/features/home/themes/registry'
 
 import { SettingsForm } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
@@ -83,6 +87,7 @@ const stationSchema = z.object({
   systemName: z.string(),
   logo: z.string(),
   footer: z.string(),
+  homePageTheme: z.enum(['default', 'prism']),
   homePageContent: z.string(),
   notice: z.string(),
   about: z.string(),
@@ -109,6 +114,7 @@ type RawStationConfig = {
     system_name?: string
     logo?: string
     footer?: string
+    home_page_theme?: string
     home_page_content?: string
     notice?: string
     about?: string
@@ -125,6 +131,7 @@ function emptyStation(): StationValues {
     systemName: '',
     logo: '',
     footer: '',
+    homePageTheme: 'default',
     homePageContent: '',
     notice: '',
     about: '',
@@ -156,6 +163,7 @@ function parseStations(raw: string): StationValues[] {
     systemName: config?.brand?.system_name ?? '',
     logo: config?.brand?.logo ?? '',
     footer: config?.brand?.footer ?? '',
+    homePageTheme: resolveHomePageTheme(config?.brand?.home_page_theme),
     homePageContent: config?.brand?.home_page_content ?? '',
     notice: config?.brand?.notice ?? '',
     about: config?.brand?.about ?? '',
@@ -187,6 +195,9 @@ function serializeStations(stations: StationValues[]): string {
     if (station.systemName.trim()) brand.system_name = station.systemName.trim()
     if (station.logo.trim()) brand.logo = station.logo.trim()
     if (station.footer.trim()) brand.footer = station.footer
+    if (station.homePageTheme !== 'default') {
+      brand.home_page_theme = station.homePageTheme
+    }
     if (station.homePageContent.trim()) {
       brand.home_page_content = station.homePageContent
     }
@@ -436,6 +447,37 @@ function StationCard({
             )}
           />
         </div>
+        <FormField
+          control={control}
+          name={`stations.${index}.homePageTheme`}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Homepage theme')}</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectGroup>
+                    {HOME_PAGE_THEMES.map((theme) => (
+                      <SelectItem key={theme.value} value={theme.value}>
+                        {t(theme.label)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <p className='text-muted-foreground text-xs'>
+                {t(
+                  'Custom homepage content takes priority over the selected theme.'
+                )}
+              </p>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         {textField(`stations.${index}.footer`, t('Footer'), 2)}
         {textField(
           `stations.${index}.homePageContent`,

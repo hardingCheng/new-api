@@ -64,6 +64,7 @@ func GetStatus(c *gin.Context) {
 		"telegram_oauth":              common.TelegramOAuthEnabled,
 		"telegram_bot_name":           common.TelegramBotName,
 		"theme":                       "default",
+		"home_page_theme":             setting.HomePageThemeDefault,
 		"system_name":                 common.SystemName,
 		"logo":                        common.Logo,
 		"footer_html":                 common.Footer,
@@ -128,6 +129,7 @@ func GetStatus(c *gin.Context) {
 	// 分站白牌:按请求域名覆盖 OAuth 客户端与品牌字段,未配置的域名走全局默认
 	station := setting.GetStationByHost(c.Request.Host)
 	if station != nil {
+		data["home_page_theme"] = setting.ResolveHomePageTheme(station)
 		if gh, ok := station.OAuth["github"]; ok && gh.ClientId != "" {
 			data["github_client_id"] = gh.ClientId
 		}

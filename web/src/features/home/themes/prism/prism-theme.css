@@ -1,0 +1,405 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+.prism-theme {
+  color-scheme: dark;
+  --background: #0b0d0c;
+  --foreground: #f1f3ed;
+  --card: #111411;
+  --card-foreground: #f1f3ed;
+  --popover: #171a17;
+  --popover-foreground: #f1f3ed;
+  --primary: #6f8cff;
+  --primary-foreground: #07112b;
+  --secondary: #1b1f1b;
+  --secondary-foreground: #f1f3ed;
+  --muted: #171a17;
+  --muted-foreground: #aeb4aa;
+  --accent: #242924;
+  --accent-foreground: #f1f3ed;
+  --border: rgb(241 243 237 / 12%);
+  --input: rgb(241 243 237 / 18%);
+  --ring: #6f8cff;
+  --radius: 0.75rem;
+  --prism-accent: #6f8cff;
+  --prism-accent-ink: #07112b;
+  --prism-line-strong: rgb(241 243 237 / 22%);
+}
+
+.prism-theme .prism-hero-media {
+  position: relative;
+  isolation: isolate;
+}
+
+.prism-theme .prism-hero-media::before {
+  position: absolute;
+  z-index: -1;
+  inset: 14% 8%;
+  border-radius: 999px;
+  background: rgb(111 140 255 / 11%);
+  filter: blur(64px);
+  content: '';
+}
+
+.prism-theme .prism-hero-frame {
+  overflow: hidden;
+  -webkit-mask-image:
+    linear-gradient(to right, transparent, #000 11%, #000 89%, transparent),
+    linear-gradient(to bottom, transparent, #000 13%, #000 87%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, transparent, #000 11%, #000 89%, transparent),
+    linear-gradient(to bottom, transparent, #000 13%, #000 87%, transparent);
+  mask-composite: intersect;
+}
+
+.prism-theme .prism-hero-image {
+  filter: saturate(0.82) contrast(1.04);
+}
+
+.prism-theme .prism-provider-logo {
+  filter: grayscale(1);
+  opacity: 0.72;
+  transition:
+    filter 150ms ease,
+    opacity 150ms ease;
+}
+
+.prism-theme .prism-provider-logo:hover {
+  filter: grayscale(0);
+  opacity: 1;
+}
+
+.prism-theme .prism-model-panel {
+  display: flex;
+  min-height: 17rem;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgb(241 243 237 / 10%);
+  border-radius: var(--radius);
+  padding: 1.75rem;
+  background: #111411;
+}
+
+.prism-theme .prism-model-panel--primary {
+  min-height: 35rem;
+  background:
+    radial-gradient(circle at 82% 18%, rgb(111 140 255 / 20%), transparent 32%),
+    linear-gradient(145deg, #151a1a, #0f1211 72%);
+}
+
+.prism-theme .prism-model-panel--image {
+  background:
+    linear-gradient(135deg, rgb(111 140 255 / 12%), transparent 42%), #111411;
+}
+
+.prism-theme .prism-model-panel--video {
+  background:
+    radial-gradient(
+      circle at 90% 100%,
+      rgb(111 140 255 / 16%),
+      transparent 46%
+    ),
+    #111411;
+}
+
+.prism-theme .prism-model-panel--audio {
+  min-height: auto;
+  background:
+    linear-gradient(90deg, #111411, rgb(111 140 255 / 8%), #111411), #111411;
+}
+
+.prism-theme .prism-step-line {
+  position: relative;
+}
+
+.prism-theme .prism-step {
+  position: relative;
+  padding-right: 2rem;
+}
+
+.prism-theme .prism-step-marker {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 1px solid rgb(111 140 255 / 46%);
+  border-radius: 999px;
+  background: #0e1110;
+  color: #9eb0ff;
+}
+
+.prism-theme .prism-client-row:hover svg:last-child {
+  transform: translateX(0.25rem);
+  color: var(--prism-accent);
+}
+
+.prism-theme .prism-route-map {
+  display: flex;
+  min-height: 20rem;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background:
+    radial-gradient(circle at 50% 50%, rgb(111 140 255 / 10%), transparent 42%),
+    #111411;
+}
+
+.prism-theme .prism-route-node {
+  min-width: 8.5rem;
+  border: 1px solid rgb(241 243 237 / 12%);
+  border-radius: 0.625rem;
+  padding: 1rem;
+  background: rgb(7 9 8 / 72%);
+}
+
+.prism-theme .prism-route-node span,
+.prism-theme .prism-route-node small {
+  display: block;
+}
+
+.prism-theme .prism-route-node span {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.prism-theme .prism-route-node small {
+  margin-top: 0.35rem;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+}
+
+.prism-theme .prism-route-node--accent {
+  border-color: rgb(111 140 255 / 48%);
+  box-shadow: inset 0 0 2rem rgb(111 140 255 / 8%);
+}
+
+.prism-theme .prism-route-node--compact {
+  min-width: 7.75rem;
+  padding: 0.75rem 1rem;
+}
+
+.prism-theme .prism-ecosystem-marquee {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 8%,
+    #000 92%,
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 8%,
+    #000 92%,
+    transparent
+  );
+}
+
+.prism-theme .prism-ecosystem-track {
+  display: flex;
+  width: max-content;
+  animation: prism-marquee-left 42s linear infinite;
+}
+
+.prism-theme .prism-ecosystem-track--reverse {
+  animation-name: prism-marquee-right;
+  animation-duration: 48s;
+}
+
+.prism-theme .prism-ecosystem-marquee:hover .prism-ecosystem-track {
+  animation-play-state: paused;
+}
+
+.prism-theme .prism-ecosystem-group {
+  display: flex;
+  gap: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+.prism-theme .prism-ecosystem-logo {
+  display: flex;
+  width: 15rem;
+  height: 6.5rem;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 1rem;
+  border: 1px solid rgb(241 243 237 / 10%);
+  border-radius: var(--radius);
+  padding-inline: 1.5rem;
+  background: #121513;
+  color: rgb(241 243 237 / 72%);
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.prism-theme .prism-ecosystem-logo span {
+  overflow: hidden;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prism-theme .prism-ecosystem-logo:hover {
+  border-color: rgb(111 140 255 / 36%);
+  background: #171b19;
+  color: var(--foreground);
+}
+
+@keyframes prism-marquee-left {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes prism-marquee-right {
+  from {
+    transform: translateX(-50%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (min-width: 768px) {
+  .prism-theme .prism-step-line::before {
+    position: absolute;
+    top: 1.25rem;
+    right: 12.5%;
+    left: 1.25rem;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      rgb(111 140 255 / 48%),
+      rgb(241 243 237 / 12%)
+    );
+    content: '';
+  }
+}
+
+@media (max-width: 767px) {
+  .prism-theme .prism-model-panel--primary {
+    min-height: 22rem;
+  }
+
+  .prism-theme .prism-step {
+    padding-right: 0;
+    padding-left: 3.75rem;
+  }
+
+  .prism-theme .prism-step-marker {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+
+  .prism-theme .prism-step:not(:last-child)::after {
+    position: absolute;
+    top: 2.75rem;
+    bottom: -1.75rem;
+    left: 1.25rem;
+    width: 1px;
+    background: rgb(241 243 237 / 12%);
+    content: '';
+  }
+
+  .prism-theme .prism-route-map {
+    min-height: auto;
+    flex-direction: column;
+    padding-block: 2.5rem;
+  }
+
+  .prism-theme .prism-route-map > svg {
+    transform: rotate(90deg);
+  }
+
+  .prism-theme .prism-ecosystem-logo {
+    width: 12.5rem;
+    height: 5.25rem;
+    padding-inline: 1.125rem;
+  }
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .prism-theme .prism-reveal {
+      animation: prism-rise both linear;
+      animation-range: entry 5% cover 28%;
+      animation-timeline: view();
+    }
+  }
+}
+
+@keyframes prism-rise {
+  from {
+    transform: translateY(1.25rem);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .prism-theme {
+    --muted-foreground: #d4d8d0;
+    --border: rgb(241 243 237 / 34%);
+    --prism-line-strong: rgb(241 243 237 / 52%);
+  }
+}
+
+@media (forced-colors: active) {
+  .prism-theme {
+    --prism-accent: Highlight;
+    --prism-accent-ink: HighlightText;
+  }
+
+  .prism-theme .prism-hero-image,
+  .prism-theme .prism-provider-logo {
+    filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prism-theme *,
+  .prism-theme *::before,
+  .prism-theme *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .prism-theme .prism-ecosystem-marquee {
+    overflow-x: auto;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .prism-theme .prism-ecosystem-track {
+    animation: none;
+  }
+
+  .prism-theme .prism-ecosystem-group[aria-hidden='true'] {
+    display: none;
+  }
+}

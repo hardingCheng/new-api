@@ -1,6 +1,11 @@
 package setting
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestStationConfigs(t *testing.T) {
 	err := UpdateStationConfigsByJsonString(`{
@@ -8,7 +13,7 @@ func TestStationConfigs(t *testing.T) {
 			"group": "z",
 			"oauth": {"github": {"client_id": "id-z", "client_secret": "sec-z"}},
 			"brand": {
-				"system_name": "Z站", "logo": "https://z/logo.png", "home_page_content": "<h1>z</h1>",
+				"system_name": "Z站", "logo": "https://z/logo.png", "home_page_content": "<h1>z</h1>", "home_page_theme": "prism",
 				"notice": "z 公告", "about": "z 关于",
 				"announcements": [{"content": "上新", "type": "info"}]
 			}
@@ -23,6 +28,9 @@ func TestStationConfigs(t *testing.T) {
 
 	if s := GetStationByHost("z.open-api.ai"); s == nil || s.Group != "z" || s.Brand.SystemName != "Z站" {
 		t.Fatalf("expected z station with normalized host key, got %+v", s)
+	}
+	if theme := ResolveHomePageTheme(GetStationByHost("z.open-api.ai")); theme != HomePageThemePrism {
+		t.Fatalf("expected prism home page theme, got %q", theme)
 	}
 	if s := GetStationByHost("z.open-api.ai:443"); s == nil {
 		t.Fatal("expected port to be stripped from host")
@@ -71,4 +79,24 @@ func TestStationConfigs(t *testing.T) {
 	if err := UpdateStationConfigsByJsonString("{not json"); err == nil {
 		t.Fatal("expected error for invalid json")
 	}
+}
+
+func TestHomePageThemeValidationAndFallback(t *testing.T) {
+	require.NoError(t, UpdateStationConfigsByJsonString(`{
+		"default.example.com": {"brand": {"home_page_theme": "default"}},
+		"empty.example.com": {"brand": {}}
+	}`))
+	t.Cleanup(func() {
+		require.NoError(t, UpdateStationConfigsByJsonString(""))
+	})
+
+	assert.Equal(t, HomePageThemeDefault, ResolveHomePageTheme(GetStationByHost("default.example.com")))
+	assert.Equal(t, HomePageThemeDefault, ResolveHomePageTheme(GetStationByHost("empty.example.com")))
+	assert.Equal(t, HomePageThemeDefault, ResolveHomePageTheme(nil))
+
+	err := UpdateStationConfigsByJsonString(`{
+		"invalid.example.com": {"brand": {"home_page_theme": "future"}}
+	}`)
+	require.ErrorContains(t, err, `unsupported home page theme "future"`)
+	assert.Nil(t, GetStationByHost("invalid.example.com"))
 }

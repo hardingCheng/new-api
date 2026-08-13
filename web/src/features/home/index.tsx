@@ -23,19 +23,24 @@ import { PublicLayout } from '@/components/layout'
 import { Footer } from '@/components/layout/components/footer'
 import { RichContent } from '@/components/rich-content'
 import { useTheme } from '@/context/theme-provider'
+import { useStatus } from '@/hooks/use-status'
 import { isLikelyHtml } from '@/lib/content-format'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { CTA, Features, Hero, HowItWorks, Stats } from './components'
 import { useHomePageContent } from './hooks'
+import { PrismHome } from './themes/prism'
+import { resolveHomePageTheme } from './themes/registry'
 
 export function Home() {
   const { i18n, t } = useTranslation()
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const { resolvedTheme } = useTheme()
   const { auth } = useAuthStore()
+  const { status } = useStatus()
   const isAuthenticated = !!auth.user
   const { content, isLoaded, isUrl } = useHomePageContent()
+  const homePageTheme = resolveHomePageTheme(status?.home_page_theme)
 
   const syncIframePreferences = useCallback(() => {
     try {
@@ -118,6 +123,10 @@ export function Home() {
         </div>
       </PublicLayout>
     )
+  }
+
+  if (homePageTheme === 'prism') {
+    return <PrismHome isAuthenticated={isAuthenticated} />
   }
 
   return (
