@@ -25,6 +25,7 @@ import {
   CheckCircle2,
   Circle,
   ClipboardPaste,
+  Gauge,
   HelpCircle,
   KeyRound,
   Loader2,
@@ -118,6 +119,7 @@ import {
   ADMIN_PERMISSION_RESOURCES,
   hasPermission,
 } from '@/lib/admin-permissions'
+import { api } from '@/lib/api'
 import {
   parseChannelConnectionInfo,
   type ChannelConnectionInfo,
@@ -166,6 +168,8 @@ import {
   findMissingModelsInMapping,
   validateModelMappingJson,
   hasAdvancedSettingsErrors,
+  MAX_CAPACITY_RPM,
+  MAX_CAPACITY_MAX_CONCURRENCY,
 } from '../../lib'
 import {
   collectInvalidStatusCodeEntries,
@@ -286,6 +290,8 @@ const SENSITIVE_FORM_FIELDS = [
   'proxy',
   'http_protocol',
   'http2_connection_shards',
+  'capacity_rpm',
+  'capacity_max_concurrency',
   'pass_through_body_enabled',
   'system_prompt',
   'system_prompt_override',
@@ -344,6 +350,9 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     (values.http_protocol && values.http_protocol !== 'auto') ||
     (values.http2_connection_shards != null &&
       values.http2_connection_shards > 1) ||
+    (values.capacity_rpm != null && values.capacity_rpm > 0) ||
+    (values.capacity_max_concurrency != null &&
+      values.capacity_max_concurrency > 0) ||
     values.claude_beta_query ||
     values.upstream_model_update_check_enabled ||
     values.upstream_model_update_auto_sync_enabled ||
@@ -682,6 +691,48 @@ export function ChannelMutateDrawer({
     queryFn: () => getPrefillGroups('model'),
   })
 
+  // Global capacity protection mode (read-only, options readable by root only)
+  const { data: systemOptionsData } = useQuery({
+    queryKey: ['system-options'],
+    queryFn: async () => {
+      const res = await api.get<{
+        success: boolean
+        message: string
+        data: Array<{ key: string; value: string }>
+      }>('/api/option/', { skipErrorHandler: true })
+      return res.data
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+    enabled: open && currentUser?.role === ROLE.SUPER_ADMIN,
+  })
+
+  const capacityGlobalMode = useMemo(() => {
+    const rawMode = systemOptionsData?.data?.find(
+      (option) => option.key === 'channel_capacity_setting.mode'
+    )?.value
+    const normalized = String(rawMode ?? '')
+      .trim()
+      .toLowerCase()
+    if (
+      normalized === 'off' ||
+      normalized === 'shadow' ||
+      normalized === 'enforce'
+    ) {
+      return normalized
+    }
+    return null
+  }, [systemOptionsData])
+
+  let capacityGlobalModeLabel = ''
+  if (capacityGlobalMode === 'off') {
+    capacityGlobalModeLabel = t('Off')
+  } else if (capacityGlobalMode === 'shadow') {
+    capacityGlobalModeLabel = t('Observe')
+  } else if (capacityGlobalMode === 'enforce') {
+    capacityGlobalModeLabel = t('Enforce')
+  }
+
   const { copyToClipboard } = useCopyToClipboard()
 
   const {
@@ -752,6 +803,8 @@ export function ChannelMutateDrawer({
   const currentProxy = form.watch('proxy')
   const currentHttpProtocol = form.watch('http_protocol')
   const currentHttp2ConnectionShards = form.watch('http2_connection_shards')
+  const currentCapacityRpm = form.watch('capacity_rpm')
+  const currentCapacityMaxConcurrency = form.watch('capacity_max_concurrency')
   const currentSystemPrompt = form.watch('system_prompt')
   const currentSystemPromptOverride = form.watch('system_prompt_override')
   const currentAllowServiceTier = form.watch('allow_service_tier')
@@ -1023,7 +1076,10 @@ export function ChannelMutateDrawer({
     currentSystemPrompt?.trim() ||
     currentSystemPromptOverride ||
     (currentHttpProtocol && currentHttpProtocol !== 'auto') ||
-    (currentHttp2ConnectionShards != null && currentHttp2ConnectionShards > 1)
+    (currentHttp2ConnectionShards != null &&
+      currentHttp2ConnectionShards > 1) ||
+    (currentCapacityRpm != null && currentCapacityRpm > 0) ||
+    (currentCapacityMaxConcurrency != null && currentCapacityMaxConcurrency > 0)
   )
   let fieldPassthroughConfigured = false
   if (currentType === 1 || currentType === 57) {
@@ -4314,6 +4370,95 @@ export function ChannelMutateDrawer({
                                 )
                               }}
                             />
+
+                            <div className='space-y-4'>
+                              <SubHeading
+                                title={t('Channel capacity protection')}
+                                icon={<Gauge className='h-3.5 w-3.5' />}
+                                iconTone='info'
+                              />
+                              <div className='grid gap-4 sm:grid-cols-2'>
+                                <FormField
+                                  control={form.control}
+                                  name='capacity_rpm'
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>
+                                        {t('Requests per minute limit (RPM)')}
+                                      </FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type='number'
+                                          min={0}
+                                          max={MAX_CAPACITY_RPM}
+                                          placeholder='0'
+                                          {...field}
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              Number(e.target.value)
+                                            )
+                                          }
+                                        />
+                                      </FormControl>
+                                      <FormDescription>
+                                        {t(
+                                          'Upstream requests started within any rolling 60-second window. 0 means unlimited.'
+                                        )}
+                                      </FormDescription>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+
+                                <FormField
+                                  control={form.control}
+                                  name='capacity_max_concurrency'
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>
+                                        {t('Max in-flight requests')}
+                                      </FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type='number'
+                                          min={0}
+                                          max={MAX_CAPACITY_MAX_CONCURRENCY}
+                                          placeholder='0'
+                                          {...field}
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              Number(e.target.value)
+                                            )
+                                          }
+                                        />
+                                      </FormControl>
+                                      <FormDescription>
+                                        {t(
+                                          'Streaming requests included. 0 means unlimited.'
+                                        )}
+                                      </FormDescription>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              </div>
+                              {capacityGlobalModeLabel && (
+                                <p className='text-muted-foreground text-sm'>
+                                  {t('Global mode: {{mode}}', {
+                                    mode: capacityGlobalModeLabel,
+                                  })}
+                                </p>
+                              )}
+                              {capacityGlobalMode === 'off' &&
+                                ((currentCapacityRpm ?? 0) > 0 ||
+                                  (currentCapacityMaxConcurrency ?? 0) > 0) && (
+                                  <p className='text-muted-foreground text-sm'>
+                                    {t(
+                                      'Capacity protection is globally off. Limits are saved but not applied yet.'
+                                    )}
+                                  </p>
+                                )}
+                            </div>
 
                             <FormField
                               control={form.control}

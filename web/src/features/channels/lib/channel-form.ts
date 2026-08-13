@@ -101,6 +101,24 @@ export function normalizeHttp2ConnectionShards(
   return value
 }
 
+export const MAX_CAPACITY_RPM = 60000
+export const MAX_CAPACITY_MAX_CONCURRENCY = 10000
+
+// 0 (or any invalid/legacy value) means "no limit".
+function normalizeCapacityLimit(value: unknown, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 0
+  }
+  const intValue = Math.trunc(value)
+  if (intValue <= 0) {
+    return 0
+  }
+  if (intValue > max) {
+    return max
+  }
+  return intValue
+}
+
 function parseOptionalJson(value: string | undefined): unknown {
   if (!value?.trim()) return undefined
   return JSON.parse(value)
@@ -258,6 +276,21 @@ export const channelFormSchema = z
       .refine(isOptionalProxyURL, ERROR_MESSAGES.INVALID_PROXY),
     http_protocol: z.enum(['auto', 'http1']).optional(),
     http2_connection_shards: z.number().int().optional(),
+    capacity_rpm: z
+      .number()
+      .int(ERROR_MESSAGES.INVALID_CAPACITY_RPM)
+      .min(0, ERROR_MESSAGES.INVALID_CAPACITY_RPM)
+      .max(MAX_CAPACITY_RPM, ERROR_MESSAGES.INVALID_CAPACITY_RPM)
+      .optional(),
+    capacity_max_concurrency: z
+      .number()
+      .int(ERROR_MESSAGES.INVALID_CAPACITY_MAX_CONCURRENCY)
+      .min(0, ERROR_MESSAGES.INVALID_CAPACITY_MAX_CONCURRENCY)
+      .max(
+        MAX_CAPACITY_MAX_CONCURRENCY,
+        ERROR_MESSAGES.INVALID_CAPACITY_MAX_CONCURRENCY
+      )
+      .optional(),
     pass_through_body_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
     system_prompt_override: z.boolean().optional(),
@@ -430,6 +463,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   proxy: '',
   http_protocol: HTTP_PROTOCOL_AUTO,
   http2_connection_shards: 1,
+  capacity_rpm: 0,
+  capacity_max_concurrency: 0,
   pass_through_body_enabled: false,
   system_prompt: '',
   system_prompt_override: false,
@@ -470,6 +505,8 @@ export function transformChannelToFormDefaults(
     proxy: '',
     http_protocol: HTTP_PROTOCOL_AUTO as 'auto' | 'http1',
     http2_connection_shards: 1,
+    capacity_rpm: 0,
+    capacity_max_concurrency: 0,
     pass_through_body_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
@@ -488,6 +525,14 @@ export function transformChannelToFormDefaults(
         proxy: parsed.proxy || '',
         http_protocol: protocol,
         http2_connection_shards: protocol === HTTP_PROTOCOL_HTTP1 ? 1 : shards,
+        capacity_rpm: normalizeCapacityLimit(
+          parsed.capacity?.rpm,
+          MAX_CAPACITY_RPM
+        ),
+        capacity_max_concurrency: normalizeCapacityLimit(
+          parsed.capacity?.max_concurrency,
+          MAX_CAPACITY_MAX_CONCURRENCY
+        ),
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
         system_prompt: parsed.system_prompt || '',
         system_prompt_override: parsed.system_prompt_override || false,
@@ -621,6 +666,27 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
     settingObj.http_protocol = HTTP_PROTOCOL_HTTP1
   } else if (shards > 1) {
     settingObj.http2_connection_shards = shards
+  }
+
+  // Capacity limits: omit when unlimited (0) so unchanged channels keep
+  // equivalent JSON, and omit zero-valued members inside the object too.
+  const capacityRPM = normalizeCapacityLimit(
+    formData.capacity_rpm,
+    MAX_CAPACITY_RPM
+  )
+  const capacityMaxConcurrency = normalizeCapacityLimit(
+    formData.capacity_max_concurrency,
+    MAX_CAPACITY_MAX_CONCURRENCY
+  )
+  if (capacityRPM > 0 || capacityMaxConcurrency > 0) {
+    const capacity: { rpm?: number; max_concurrency?: number } = {}
+    if (capacityRPM > 0) {
+      capacity.rpm = capacityRPM
+    }
+    if (capacityMaxConcurrency > 0) {
+      capacity.max_concurrency = capacityMaxConcurrency
+    }
+    settingObj.capacity = capacity
   }
 
   return JSON.stringify(settingObj)
