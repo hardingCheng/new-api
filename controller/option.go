@@ -254,6 +254,14 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "channel_capacity_setting.mode":
+		if !operation_setting.IsValidChannelCapacityMode(option.Value.(string)) {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("无效的渠道容量保护模式: %s", option.Value),
+			})
+			return
+		}
 	case operation_setting.ToolPriceOptionKey:
 		err = operation_setting.ValidateToolPricesJSON(option.Value.(string))
 		if err != nil {

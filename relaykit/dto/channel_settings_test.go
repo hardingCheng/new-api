@@ -578,3 +578,62 @@ func TestChannelSettingsValidateHTTPTransport(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "http2_connection_shards")
 }
+
+func TestChannelCapacitySettingsJSONRoundTrip(t *testing.T) {
+	legacy := `{"proxy":"http://127.0.0.1:8080"}`
+	var settings ChannelSettings
+	require.NoError(t, json.Unmarshal([]byte(legacy), &settings))
+	assert.Nil(t, settings.Capacity)
+	assert.False(t, settings.Capacity.HasLimit())
+
+	encoded, err := json.Marshal(settings)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encoded), "capacity")
+
+	explicit := ChannelSettings{Capacity: &ChannelCapacitySettings{RPM: 100, MaxConcurrency: 45}}
+	encoded, err = json.Marshal(explicit)
+	require.NoError(t, err)
+	assert.Contains(t, string(encoded), `"capacity":{"rpm":100,"max_concurrency":45}`)
+
+	var decoded ChannelSettings
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	require.NotNil(t, decoded.Capacity)
+	assert.Equal(t, 100, decoded.Capacity.RPM)
+	assert.Equal(t, 45, decoded.Capacity.MaxConcurrency)
+
+	fractional := `{"capacity":{"rpm":1.5}}`
+	assert.Error(t, json.Unmarshal([]byte(fractional), &ChannelSettings{}))
+
+	stringValue := `{"capacity":{"max_concurrency":"10"}}`
+	assert.Error(t, json.Unmarshal([]byte(stringValue), &ChannelSettings{}))
+}
+
+func TestChannelCapacitySettingsValidate(t *testing.T) {
+	var nilCapacity *ChannelCapacitySettings
+	require.NoError(t, nilCapacity.Validate())
+	assert.False(t, nilCapacity.HasLimit())
+
+	require.NoError(t, (&ChannelCapacitySettings{}).Validate())
+	assert.False(t, (&ChannelCapacitySettings{}).HasLimit())
+
+	require.NoError(t, (&ChannelCapacitySettings{RPM: MaxChannelCapacityRPM}).Validate())
+	require.NoError(t, (&ChannelCapacitySettings{MaxConcurrency: MaxChannelCapacityConcurrency}).Validate())
+	assert.True(t, (&ChannelCapacitySettings{RPM: 100}).HasLimit())
+	assert.True(t, (&ChannelCapacitySettings{MaxConcurrency: 45}).HasLimit())
+
+	err := (&ChannelCapacitySettings{RPM: -1}).Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "capacity.rpm")
+
+	err = (&ChannelCapacitySettings{RPM: MaxChannelCapacityRPM + 1}).Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "capacity.rpm")
+
+	err = (&ChannelCapacitySettings{MaxConcurrency: -1}).Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "capacity.max_concurrency")
+
+	err = (&ChannelCapacitySettings{MaxConcurrency: MaxChannelCapacityConcurrency + 1}).Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "capacity.max_concurrency")
+}

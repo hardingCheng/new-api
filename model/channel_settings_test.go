@@ -41,6 +41,64 @@ func TestChannelValidateSettingsRejectsInvalidHTTPTransport(t *testing.T) {
 	}
 }
 
+func TestChannelValidateSettingsCapacity(t *testing.T) {
+	tests := []struct {
+		name    string
+		setting string
+		wantErr string
+	}{
+		{
+			name:    "legacy setting without capacity is valid",
+			setting: `{"proxy":""}`,
+		},
+		{
+			name:    "zero limits are valid",
+			setting: `{"capacity":{"rpm":0,"max_concurrency":0}}`,
+		},
+		{
+			name:    "rpm only",
+			setting: `{"capacity":{"rpm":100}}`,
+		},
+		{
+			name:    "concurrency only",
+			setting: `{"capacity":{"max_concurrency":45}}`,
+		},
+		{
+			name:    "negative rpm rejected",
+			setting: `{"capacity":{"rpm":-1}}`,
+			wantErr: "capacity.rpm",
+		},
+		{
+			name:    "over-limit concurrency rejected",
+			setting: `{"capacity":{"max_concurrency":10001}}`,
+			wantErr: "capacity.max_concurrency",
+		},
+		{
+			name:    "fractional rpm rejected at parse time",
+			setting: `{"capacity":{"rpm":1.5}}`,
+			wantErr: "rpm",
+		},
+		{
+			name:    "string concurrency rejected at parse time",
+			setting: `{"capacity":{"max_concurrency":"10"}}`,
+			wantErr: "max_concurrency",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			channel := &Channel{Setting: &tt.setting}
+			err := channel.ValidateSettings()
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
 func TestAdvancedCustomChannelRequiresModelListRouteOnlyWhenUpdateChecksEnabled(t *testing.T) {
 	inferenceRoute := dto.AdvancedCustomRoute{
 		IncomingPath: "/v1/chat/completions",

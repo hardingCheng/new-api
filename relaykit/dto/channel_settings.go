@@ -23,6 +23,44 @@ type ChannelSettings struct {
 	// HTTP2ConnectionShards spreads HTTP/2 traffic across N independent transports
 	// (1-8). Zero/unset means 1. Ignored when HTTPProtocol is "http1".
 	HTTP2ConnectionShards int `json:"http2_connection_shards,omitempty"`
+	// Capacity caps how much traffic this channel may receive. Nil means unlimited.
+	Capacity *ChannelCapacitySettings `json:"capacity,omitempty"`
+}
+
+// ChannelCapacitySettings limits upstream dispatch for one channel. Limits are
+// aggregated per channel id: all models and all keys under the channel share them.
+type ChannelCapacitySettings struct {
+	// RPM caps how many upstream attempts may start within any sliding 60s
+	// window. 0 means unlimited.
+	RPM int `json:"rpm,omitempty"`
+	// MaxConcurrency caps simultaneous in-flight upstream attempts, streaming
+	// included. 0 means unlimited.
+	MaxConcurrency int `json:"max_concurrency,omitempty"`
+}
+
+const (
+	MaxChannelCapacityRPM         = 60000
+	MaxChannelCapacityConcurrency = 10000
+)
+
+// Validate rejects out-of-range values instead of silently correcting them.
+func (s *ChannelCapacitySettings) Validate() error {
+	if s == nil {
+		return nil
+	}
+	if s.RPM < 0 || s.RPM > MaxChannelCapacityRPM {
+		return fmt.Errorf("invalid capacity.rpm: %d (allowed 0-%d, 0 means unlimited)", s.RPM, MaxChannelCapacityRPM)
+	}
+	if s.MaxConcurrency < 0 || s.MaxConcurrency > MaxChannelCapacityConcurrency {
+		return fmt.Errorf("invalid capacity.max_concurrency: %d (allowed 0-%d, 0 means unlimited)", s.MaxConcurrency, MaxChannelCapacityConcurrency)
+	}
+	return nil
+}
+
+// HasLimit reports whether any capacity dimension is configured; channels
+// without limits must stay on the existing fast path with zero Redis cost.
+func (s *ChannelCapacitySettings) HasLimit() bool {
+	return s != nil && (s.RPM > 0 || s.MaxConcurrency > 0)
 }
 
 const (

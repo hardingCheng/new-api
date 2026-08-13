@@ -259,16 +259,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
 
-		switch relayFormat {
-		case types.RelayFormatOpenAIRealtime:
-			newAPIError = relay.WssHelper(c, relayInfo)
-		case types.RelayFormatClaude:
-			newAPIError = relay.ClaudeHelper(c, relayInfo)
-		case types.RelayFormatGemini:
-			newAPIError = geminiRelayHandler(c, relayInfo)
-		default:
-			newAPIError = relayHandler(c, relayInfo)
-		}
+		capacityLease := acquireChannelCapacityForAttempt(c, relayFormat, channel, retryParam.GetRetry())
+		newAPIError = runRelayAttempt(c, relayInfo, relayFormat, capacityLease)
 
 		if newAPIError == nil {
 			relayInfo.LastError = nil
@@ -303,6 +295,54 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true // 允许跨域
 	},
+}
+
+// runRelayAttempt 是一次真实上游尝试的独立作用域：handler 返回（流式响应此时已
+// 完全结束）或 panic 展开时，都先释放本次尝试的并发名额，再回到外层做错误处理
+// 和下一次选路。释放绝不能挂在整个 Relay() 上，否则重试期间旧渠道的名额会一直
+// 占到整条客户请求结束。
+func runRelayAttempt(c *gin.Context, relayInfo *relaycommon.RelayInfo, relayFormat types.RelayFormat, capacityLease service.ChannelCapacityLease) *types.NewAPIError {
+	if capacityLease != nil {
+		defer func() { _ = capacityLease.Release(c.Request.Context()) }()
+	}
+	switch relayFormat {
+	case types.RelayFormatOpenAIRealtime:
+		return relay.WssHelper(c, relayInfo)
+	case types.RelayFormatClaude:
+		return relay.ClaudeHelper(c, relayInfo)
+	case types.RelayFormatGemini:
+		return geminiRelayHandler(c, relayInfo)
+	default:
+		return relayHandler(c, relayInfo)
+	}
+}
+
+// acquireChannelCapacityForAttempt 在一次真实上游尝试的边界为目标渠道申请容量。
+//
+// Stage A（shadow 阶段）：无论全局模式是 shadow 还是 enforce，这里都只按 shadow
+// 记录真实计数并上报 would-block，绝不拒绝流量——enforce 的拒绝与换渠道语义
+// 由 Stage B 在选路层实现。Realtime WebSocket 与任务类入口生命周期不同，
+// 留待 Stage C 单独接入。
+func acquireChannelCapacityForAttempt(c *gin.Context, relayFormat types.RelayFormat, channel *model.Channel, attemptIndex int) service.ChannelCapacityLease {
+	if relayFormat == types.RelayFormatOpenAIRealtime {
+		return nil
+	}
+	if operation_setting.GetChannelCapacityMode() == operation_setting.ChannelCapacityModeOff {
+		return nil
+	}
+	capacity := channel.GetSetting().Capacity
+	if !capacity.HasLimit() {
+		return nil
+	}
+	attemptID := service.BuildChannelCapacityAttemptID(c.GetString(common.RequestIdKey), attemptIndex)
+	decision := service.TryAcquireChannelCapacity(c.Request.Context(), channel.Id, capacity, operation_setting.ChannelCapacityModeShadow, attemptID)
+	if decision.WouldBlock && service.ChannelCapacityShouldLog(channel.Id) {
+		logger.LogWarn(c, fmt.Sprintf("event=channel_capacity_shadow_block channel_id=%d reason=%s rpm_used=%d inflight_used=%d retry_after_ms=%d",
+			channel.Id, decision.Reason, decision.RPMUsed, decision.InflightUsed, decision.RetryAfterMs))
+	}
+	lease := decision.Lease
+	lease.MarkDispatched()
+	return lease
 }
 
 func addUsedChannel(c *gin.Context, channelId int) {
