@@ -19,7 +19,15 @@ For commercial licensing, please contact support@quantumnous.com
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: 'Public Sans', sans-serif;
+  /* 首个族名必须是 'Public Sans Variable' —— @fontsource-variable/public-sans
+   * 注册的就是这个名字。只写 'Public Sans' 的话字体文件照样下载,但没有任何
+   * @font-face 认领这个族名,整站会静默回退到浏览器通用 sans-serif。
+   * 后面的 CJK 栈同理不能省:缺了它 Windows 上的中文会掉到宋体系。 */
+  --font-sans:
+    'Public Sans Variable', 'Public Sans', -apple-system, BlinkMacSystemFont,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei',
+    'Noto Sans SC', 'Noto Sans CJK SC', 'Segoe UI', 'Helvetica Neue', Arial,
+    sans-serif;
   /* Editorial serif token — the body face used by the `serif` font axis
    * and by presets that opt in (currently Anthropic). Lora carries only
    * Latin glyphs, so the stack walks through CJK serifs (Noto / Source Han
