@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -241,14 +242,22 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			newAPIError = channelErr
 			break
 		}
+		// enforce 模式下选路层已预留容量；此处接管租约，派发前的任何本地失败都要撤销
+		capacityLease := service.TakeReservedChannelCapacityLease(c)
 		addUsedChannel(c, channel.Id)
 		if billingErr := service.PrepareTieredBillingForSelectedGroup(c, relayInfo); billingErr != nil {
+			if capacityLease != nil {
+				_ = capacityLease.CancelBeforeDispatch(c)
+			}
 			newAPIError = billingErr
 			break
 		}
 
 		bodyStorage, bodyErr := common.GetBodyStorage(c)
 		if bodyErr != nil {
+			if capacityLease != nil {
+				_ = capacityLease.CancelBeforeDispatch(c)
+			}
 			// Ensure consistent 413 for oversized bodies even when error occurs later (e.g., retry path)
 			if common.IsRequestBodyTooLargeError(bodyErr) || errors.Is(bodyErr, common.ErrRequestBodyTooLarge) {
 				newAPIError = types.NewErrorWithStatusCode(bodyErr, types.ErrorCodeReadRequestBodyFailed, http.StatusRequestEntityTooLarge, types.ErrOptionWithSkipRetry())
@@ -259,7 +268,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
 
-		capacityLease := acquireChannelCapacityForAttempt(c, relayFormat, channel, retryParam.GetRetry())
+		if capacityLease == nil {
+			// shadow 模式的观察采集（enforce 下由选路层负责，off 下返回 nil）
+			capacityLease = acquireChannelCapacityForAttempt(c, relayFormat, channel, retryParam.GetRetry())
+		}
 		newAPIError = runRelayAttempt(c, relayInfo, relayFormat, capacityLease)
 
 		if newAPIError == nil {
@@ -303,6 +315,8 @@ var upgrader = websocket.Upgrader{
 // 占到整条客户请求结束。
 func runRelayAttempt(c *gin.Context, relayInfo *relaycommon.RelayInfo, relayFormat types.RelayFormat, capacityLease service.ChannelCapacityLease) *types.NewAPIError {
 	if capacityLease != nil {
+		// 跨过派发边界：此后 Release 只释放并发名额，RPM 记录保留到窗口自然过期
+		capacityLease.MarkDispatched()
 		defer func() { _ = capacityLease.Release(c.Request.Context()) }()
 	}
 	switch relayFormat {
@@ -317,17 +331,15 @@ func runRelayAttempt(c *gin.Context, relayInfo *relaycommon.RelayInfo, relayForm
 	}
 }
 
-// acquireChannelCapacityForAttempt 在一次真实上游尝试的边界为目标渠道申请容量。
-//
-// Stage A（shadow 阶段）：无论全局模式是 shadow 还是 enforce，这里都只按 shadow
-// 记录真实计数并上报 would-block，绝不拒绝流量——enforce 的拒绝与换渠道语义
-// 由 Stage B 在选路层实现。Realtime WebSocket 与任务类入口生命周期不同，
+// acquireChannelCapacityForAttempt 是 shadow 模式的观察采集：在派发边界按 shadow
+// 记录真实计数并上报 would-block，绝不拒绝流量。enforce 的预留在选路层完成（本函数
+// 返回 nil），off 模式零开销。Realtime WebSocket 与任务类入口生命周期不同，
 // 留待 Stage C 单独接入。
 func acquireChannelCapacityForAttempt(c *gin.Context, relayFormat types.RelayFormat, channel *model.Channel, attemptIndex int) service.ChannelCapacityLease {
 	if relayFormat == types.RelayFormatOpenAIRealtime {
 		return nil
 	}
-	if operation_setting.GetChannelCapacityMode() == operation_setting.ChannelCapacityModeOff {
+	if operation_setting.GetChannelCapacityMode() != operation_setting.ChannelCapacityModeShadow {
 		return nil
 	}
 	capacity := channel.GetSetting().Capacity
@@ -340,9 +352,7 @@ func acquireChannelCapacityForAttempt(c *gin.Context, relayFormat types.RelayFor
 		logger.LogWarn(c, fmt.Sprintf("event=channel_capacity_shadow_block channel_id=%d reason=%s rpm_used=%d inflight_used=%d retry_after_ms=%d",
 			channel.Id, decision.Reason, decision.RPMUsed, decision.InflightUsed, decision.RetryAfterMs))
 	}
-	lease := decision.Lease
-	lease.MarkDispatched()
-	return lease
+	return decision.Lease
 }
 
 func addUsedChannel(c *gin.Context, channelId int) {
@@ -380,22 +390,91 @@ func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
 	return meta
 }
 
+// newChannelCapacityError 把"全部候选满载"转成对客户端可识别的本地回压响应：
+// 纯容量达限 → 429 + Retry-After；容量后端不可用（fail closed）→ 503。
+// 不暴露渠道 ID、名称或配置值。
+func newChannelCapacityError(c *gin.Context, capacityErr *service.ChannelCapacityExhaustedError) *types.NewAPIError {
+	if capacityErr.RedisError {
+		c.Header("Retry-After", "1")
+		return types.NewErrorWithStatusCode(
+			errors.New("capacity backend unavailable; retry later"),
+			types.ErrorCodeChannelCapacityBackendUnavailable, http.StatusServiceUnavailable,
+			types.ErrOptionWithSkipRetry())
+	}
+	seconds := (capacityErr.RetryAfterMs + 999) / 1000
+	if seconds < 1 {
+		seconds = 1
+	}
+	if seconds > 60 {
+		seconds = 60
+	}
+	c.Header("Retry-After", strconv.FormatInt(seconds, 10))
+	return types.NewErrorWithStatusCode(
+		errors.New("all eligible upstream channels are at capacity; retry later"),
+		types.ErrorCodeChannelCapacityExceeded, http.StatusTooManyRequests,
+		types.ErrOptionWithSkipRetry())
+}
+
+// tryReserveInitialChannelCapacity 为 attempt 0（distributor 已选定的渠道）补上
+// enforce 准入。返回 (decision, isFull)；预留成功时租约暂存 context 等待主循环取走。
+func tryReserveInitialChannelCapacity(c *gin.Context, channelID int, attemptIndex int) (service.ChannelCapacityDecision, bool) {
+	cached, err := model.CacheGetChannel(channelID)
+	if err != nil || cached == nil {
+		return service.ChannelCapacityDecision{Allowed: true}, false
+	}
+	capacity := cached.GetSetting().Capacity
+	if !capacity.HasLimit() {
+		return service.ChannelCapacityDecision{Allowed: true}, false
+	}
+	attemptID := service.BuildChannelCapacityAttemptID(c.GetString(common.RequestIdKey), attemptIndex)
+	decision := service.TryAcquireChannelCapacity(c, channelID, capacity, operation_setting.ChannelCapacityModeEnforce, attemptID)
+	if decision.Allowed {
+		common.SetContextKey(c, constant.ContextKeyChannelCapacityLease, decision.Lease)
+		return decision, false
+	}
+	return decision, true
+}
+
 func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service.RetryParam) (*model.Channel, *types.NewAPIError) {
+	// Realtime WebSocket 生命周期不同，容量保护留待 Stage C 接入
+	enforceCapacity := info.RelayFormat != types.RelayFormatOpenAIRealtime &&
+		operation_setting.GetChannelCapacityMode() == operation_setting.ChannelCapacityModeEnforce
 	if info.ChannelMeta == nil {
 		autoBan := c.GetBool("auto_ban")
 		autoBanInt := 1
 		if !autoBan {
 			autoBanInt = 0
 		}
-		return &model.Channel{
+		initialChannel := &model.Channel{
 			Id:      c.GetInt("channel_id"),
 			Type:    c.GetInt("channel_type"),
 			Name:    c.GetString("channel_name"),
 			AutoBan: &autoBanInt,
-		}, nil
+		}
+		if !enforceCapacity {
+			return initialChannel, nil
+		}
+		decision, isFull := tryReserveInitialChannelCapacity(c, initialChannel.Id, retryParam.GetRetry())
+		if !isFull {
+			return initialChannel, nil
+		}
+		if _, isSpecific := common.GetContextKey(c, constant.ContextKeyTokenSpecificChannelId); isSpecific {
+			// 指定渠道满载：不 fallback、不突破上限，直接本地回压
+			return nil, newChannelCapacityError(c, &service.ChannelCapacityExhaustedError{
+				RetryAfterMs: decision.RetryAfterMs,
+				RedisError:   decision.Reason == service.ChannelCapacityReasonRedisError,
+			})
+		}
+		// 初选渠道满载：落入下方加权重选，同一逻辑尝试内换渠道，不消耗 retry
+		logger.LogDebug(c, "initial channel #%d at capacity, reselecting", initialChannel.Id)
 	}
+	retryParam.ReserveCapacity = enforceCapacity
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 	if err != nil {
+		var capacityErr *service.ChannelCapacityExhaustedError
+		if errors.As(err, &capacityErr) {
+			return nil, newChannelCapacityError(c, capacityErr)
+		}
 		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 	if channel == nil {
@@ -408,6 +487,10 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 
 	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, retryParam.ModelName)
 	if newAPIError != nil {
+		// 渠道上下文装配失败，请求未派发：撤销选路层的容量预留（RPM 与并发都回退）
+		if lease := service.TakeReservedChannelCapacityLease(c); lease != nil {
+			_ = lease.CancelBeforeDispatch(c)
+		}
 		return nil, newAPIError
 	}
 	if retryParam.ModelName != info.OriginModelName {

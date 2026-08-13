@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
@@ -97,16 +98,48 @@ func TestAcquireChannelCapacityForAttempt(t *testing.T) {
 		assert.Equal(t, int64(1), rpm, "RPM 记录保留到窗口自然过期")
 	})
 
-	t.Run("enforce 在 Stage B 前仍按 shadow 记录且不拒绝", func(t *testing.T) {
+	t.Run("enforce 模式下派发边采集让位给选路层预留", func(t *testing.T) {
 		setChannelCapacityModeForTest(t, "enforce")
 		tight := &dto.ChannelCapacitySettings{RPM: 1}
-		for i := 0; i < 3; i++ {
-			c := newTestContext()
-			lease := acquireChannelCapacityForAttempt(c, types.RelayFormatOpenAI, newCapacityTestChannel(205, tight), i)
-			require.NotNil(t, lease, "Stage A 不允许出现任何拒绝路径")
-			_ = lease.Release(c.Request.Context())
-		}
+		lease := acquireChannelCapacityForAttempt(newTestContext(), types.RelayFormatOpenAI, newCapacityTestChannel(205, tight), 0)
+		assert.Nil(t, lease, "enforce 的容量预留在选路层完成，派发边不得重复记账")
 		rpm := common.RDB.ZCard(context.Background(), "new-api:channel-capacity:v1:{channel:205}:rpm").Val()
-		assert.Equal(t, int64(3), rpm)
+		assert.Zero(t, rpm)
+	})
+}
+
+func TestNewChannelCapacityErrorMapping(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("容量达限映射为 429 且 Retry-After 向上取整", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		apiErr := newChannelCapacityError(c, &service.ChannelCapacityExhaustedError{RetryAfterMs: 2300})
+		require.NotNil(t, apiErr)
+		assert.Equal(t, 429, apiErr.StatusCode)
+		assert.Equal(t, types.ErrorCodeChannelCapacityExceeded, apiErr.GetErrorCode())
+		assert.Equal(t, "3", recorder.Header().Get("Retry-After"))
+	})
+
+	t.Run("Retry-After 下限 1 秒上限 60 秒", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		_ = newChannelCapacityError(c, &service.ChannelCapacityExhaustedError{RetryAfterMs: 0})
+		assert.Equal(t, "1", recorder.Header().Get("Retry-After"))
+
+		recorder = httptest.NewRecorder()
+		c, _ = gin.CreateTestContext(recorder)
+		_ = newChannelCapacityError(c, &service.ChannelCapacityExhaustedError{RetryAfterMs: 300_000})
+		assert.Equal(t, "60", recorder.Header().Get("Retry-After"))
+	})
+
+	t.Run("容量后端不可用 fail closed 映射为 503", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		apiErr := newChannelCapacityError(c, &service.ChannelCapacityExhaustedError{RedisError: true})
+		require.NotNil(t, apiErr)
+		assert.Equal(t, 503, apiErr.StatusCode)
+		assert.Equal(t, types.ErrorCodeChannelCapacityBackendUnavailable, apiErr.GetErrorCode())
+		assert.Equal(t, "1", recorder.Header().Get("Retry-After"))
 	})
 }

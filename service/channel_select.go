@@ -10,17 +10,46 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/model_setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
 )
 
 type RetryParam struct {
-	Ctx          *gin.Context
-	TokenGroup   string
-	ModelName    string
-	RequestPath  string
-	Retry        *int
-	resetNextTry bool
+	Ctx         *gin.Context
+	TokenGroup  string
+	ModelName   string
+	RequestPath string
+	Retry       *int
+	// ReserveCapacity 只由 relay 的真实 attempt 选路置 true：enforce 模式下选中
+	// 渠道时原子预留容量，满载渠道在本次选择内被排除并同层重选。distributor
+	// 初选与其他调用方保持 false，不产生任何容量副作用。
+	ReserveCapacity bool
+	resetNextTry    bool
+}
+
+// ChannelCapacityExhaustedError 表示本次选择的全部候选渠道都因容量达限被排除。
+// 它不代表渠道故障；调用方应转换为本地 429 + Retry-After，而不是当作上游错误。
+// RedisError 为 true 表示存在因容量后端不可用而被 fail closed 排除的候选，
+// 按 spec §7.4 应对外返回 503 而非 429。
+type ChannelCapacityExhaustedError struct {
+	RetryAfterMs int64
+	RedisError   bool
+}
+
+func (e *ChannelCapacityExhaustedError) Error() string {
+	return fmt.Sprintf("all eligible upstream channels are at capacity (retry after %dms)", e.RetryAfterMs)
+}
+
+// TakeReservedChannelCapacityLease 取走选路层预留的容量租约（取走即删，所有权转移）。
+func TakeReservedChannelCapacityLease(c *gin.Context) ChannelCapacityLease {
+	value, exists := common.GetContextKey(c, constant.ContextKeyChannelCapacityLease)
+	if !exists {
+		return nil
+	}
+	common.SetContextKey(c, constant.ContextKeyChannelCapacityLease, nil)
+	lease, _ := value.(ChannelCapacityLease)
+	return lease
 }
 
 func (p *RetryParam) GetRetry() int {
@@ -89,6 +118,8 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	var err error
 	selectGroup := param.TokenGroup
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
+	// auto 跨分组时，某组全因容量满不该终止扫组；记住容量错误，全部组都无渠道时再上抛
+	var pendingCapacityErr *ChannelCapacityExhaustedError
 
 	if param.TokenGroup == "auto" {
 		autoGroups := GetRequestAutoGroups(param.Ctx, userGroup)
@@ -121,7 +152,22 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 
 			channel, err = getRandomSatisfiedChannelByBreaker(param, autoGroup, priorityRetry)
 			if err != nil {
-				return nil, autoGroup, err
+				var capacityErr *ChannelCapacityExhaustedError
+				if !errors.As(err, &capacityErr) {
+					return nil, autoGroup, err
+				}
+				// 本组全因容量满：视同无渠道，继续尝试下一组；取各组最小 Retry-After
+				if pendingCapacityErr == nil {
+					pendingCapacityErr = capacityErr
+				} else {
+					if capacityErr.RetryAfterMs > 0 &&
+						(pendingCapacityErr.RetryAfterMs <= 0 || capacityErr.RetryAfterMs < pendingCapacityErr.RetryAfterMs) {
+						pendingCapacityErr.RetryAfterMs = capacityErr.RetryAfterMs
+					}
+					pendingCapacityErr.RedisError = pendingCapacityErr.RedisError || capacityErr.RedisError
+				}
+				err = nil
+				channel = nil
 			}
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
@@ -165,13 +211,24 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			return nil, param.TokenGroup, err
 		}
 	}
+	if channel == nil && pendingCapacityErr != nil {
+		return nil, selectGroup, pendingCapacityErr
+	}
 	return channel, selectGroup, nil
 }
 
 func getRandomSatisfiedChannelByBreaker(param *RetryParam, group string, priorityRetry int) (*model.Channel, error) {
 	decision := resolveUserChannelRouting(param.Ctx, group, param.ModelName)
 	channel, err := getRandomSatisfiedChannelByBreakerAndRouting(param, group, priorityRetry, decision)
-	if channel != nil || err != nil || !decision.Matched || decision.Match.Rule.Fallback != model_setting.UserChannelRoutingFallbackDefault {
+	var assignedCapacityErr *ChannelCapacityExhaustedError
+	if err != nil && !errors.As(err, &assignedCapacityErr) {
+		return channel, err
+	}
+	if channel != nil || !decision.Matched || decision.Match.Rule.Fallback != model_setting.UserChannelRoutingFallbackDefault {
+		// 指定池全因容量满且不允许默认回退：本地回压，不突破上限
+		if channel == nil && assignedCapacityErr != nil {
+			return nil, assignedCapacityErr
+		}
 		return channel, err
 	}
 
@@ -188,36 +245,93 @@ func getRandomSatisfiedChannelByBreakerAndRouting(param *RetryParam, group strin
 	if maxAttempts < 1 {
 		maxAttempts = 1
 	}
+	enforceCapacity := param.ReserveCapacity &&
+		operation_setting.GetChannelCapacityMode() == operation_setting.ChannelCapacityModeEnforce
+	// 容量排除集只在本次选择调用内有效：重试之间租约会释放、窗口会滑动，不能跨调用记忆。
+	var capacityExcluded map[int]bool
+	var capacityRetryAfterMs int64
+	capacityRedisError := false
 	var lastErr error
+outer:
 	for offset := 0; decision.Matched || offset < maxAttempts; offset++ {
-		channel, exhausted, err := model.GetRandomSatisfiedChannelWithFilters(group, param.ModelName, priorityRetry+offset, param.RequestPath, userChannelRoutingCandidateFilter(decision), func(channel *model.Channel) bool {
-			allowed := CanUseChannelByBreaker(param.Ctx, typesChannelError(channel))
-			if !allowed {
-				logger.LogWarn(param.Ctx, fmt.Sprintf("channel breaker skipped channel #%d", channel.Id))
+		// 同层重选：满载渠道仅移出本层候选重新加权抽取，不消耗降层机会。
+		// 每轮排除集严格增大，循环必然收敛。
+		for {
+			channel, exhausted, err := model.GetRandomSatisfiedChannelWithFilters(group, param.ModelName, priorityRetry+offset, param.RequestPath, userChannelRoutingCandidateFilter(decision), func(channel *model.Channel) bool {
+				if capacityExcluded[channel.Id] {
+					return false
+				}
+				allowed := CanUseChannelByBreaker(param.Ctx, typesChannelError(channel))
+				if !allowed {
+					logger.LogWarn(param.Ctx, fmt.Sprintf("channel breaker skipped channel #%d", channel.Id))
+				}
+				return allowed
+			})
+			if exhausted {
+				break outer
 			}
-			return allowed
-		})
-		if exhausted {
-			break
-		}
-		if err != nil {
-			lastErr = err
+			if err != nil {
+				lastErr = err
+				if decision.Matched {
+					break outer
+				}
+				continue outer
+			}
+			if channel == nil {
+				continue outer
+			}
+
+			// 容量准入先于有副作用的 probe 获取（spec §6.2）；满载只写排除集，无副作用
+			var capacityLease ChannelCapacityLease
+			if enforceCapacity {
+				capacity := channel.GetSetting().Capacity
+				if capacity.HasLimit() {
+					attemptID := BuildChannelCapacityAttemptID(param.Ctx.GetString(common.RequestIdKey), param.GetRetry())
+					capacityDecision := TryAcquireChannelCapacity(param.Ctx, channel.Id, capacity, operation_setting.ChannelCapacityModeEnforce, attemptID)
+					if !capacityDecision.Allowed {
+						if capacityExcluded == nil {
+							capacityExcluded = make(map[int]bool)
+						}
+						capacityExcluded[channel.Id] = true
+						if capacityDecision.Reason == ChannelCapacityReasonRedisError {
+							capacityRedisError = true
+						} else if capacityDecision.RetryAfterMs > 0 &&
+							(capacityRetryAfterMs == 0 || capacityDecision.RetryAfterMs < capacityRetryAfterMs) {
+							capacityRetryAfterMs = capacityDecision.RetryAfterMs
+						}
+						// 单个候选满载不打 warn，避免饱和时日志风暴；精确计数在容量 stats 里
+						logger.LogDebug(param.Ctx, "channel capacity skipped channel #%d (%s)", channel.Id, capacityDecision.Reason)
+						continue
+					}
+					capacityLease = capacityDecision.Lease
+				}
+			}
+
+			if !channel.ChannelInfo.IsMultiKey && !AcquireChannelBreakerProbe(param.Ctx, typesChannelError(channel)) {
+				logger.LogWarn(param.Ctx, fmt.Sprintf("channel breaker probe limit reached for channel #%d", channel.Id))
+				// probe 不放行时撤销已预留的容量（尚未派发，RPM 与并发都回退），沿用现状降层
+				if capacityLease != nil {
+					_ = capacityLease.CancelBeforeDispatch(param.Ctx)
+				}
+				continue outer
+			}
 			if decision.Matched {
-				break
+				setUserChannelRoutingLogInfo(param.Ctx, decision, group, param.ModelName, channel.Id, false, "")
 			}
-			continue
+			if capacityLease != nil {
+				common.SetContextKey(param.Ctx, constant.ContextKeyChannelCapacityLease, capacityLease)
+			}
+			return channel, nil
 		}
-		if channel == nil {
-			continue
+	}
+	// 容量错误优先于普通"无可用渠道"：候选被容量排除后 model 层会报 no channel
+	// found，那只是排除的结果；对客户可行动的信息是 Retry-After。
+	if len(capacityExcluded) > 0 {
+		retryAfterMs := capacityRetryAfterMs
+		if retryAfterMs <= 0 {
+			retryAfterMs = 1000
 		}
-		if !channel.ChannelInfo.IsMultiKey && !AcquireChannelBreakerProbe(param.Ctx, typesChannelError(channel)) {
-			logger.LogWarn(param.Ctx, fmt.Sprintf("channel breaker probe limit reached for channel #%d", channel.Id))
-			continue
-		}
-		if decision.Matched {
-			setUserChannelRoutingLogInfo(param.Ctx, decision, group, param.ModelName, channel.Id, false, "")
-		}
-		return channel, nil
+		return nil, &ChannelCapacityExhaustedError{RetryAfterMs: retryAfterMs, RedisError: capacityRedisError}
 	}
 	if lastErr != nil {
 		return nil, lastErr

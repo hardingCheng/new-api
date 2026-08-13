@@ -49,6 +49,10 @@ const (
 	ErrorCodeJsonMarshalFailed  ErrorCode = "json_marshal_failed"
 	ErrorCodeDoRequestFailed    ErrorCode = "do_request_failed"
 	ErrorCodeGetChannelFailed   ErrorCode = "get_channel_failed"
+	// 本地容量保护：全部候选渠道达到配置上限（非上游故障，客户端应按 Retry-After 重试）
+	ErrorCodeChannelCapacityExceeded ErrorCode = "channel_capacity_exceeded"
+	// 本地容量保护：容量后端不可用，enforce 模式下 fail closed
+	ErrorCodeChannelCapacityBackendUnavailable ErrorCode = "channel_capacity_backend_unavailable"
 	ErrorCodeGenRelayInfoFailed ErrorCode = "gen_relay_info_failed"
 
 	// channel error
