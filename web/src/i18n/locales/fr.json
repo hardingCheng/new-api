@@ -4737,6 +4737,8 @@
     "Stream tokens via Server-Sent Events": "Diffuser les jetons via Server-Sent Events",
     "Streaming": "Streaming",
     "Streaming requests included. 0 means unlimited.": "Requêtes en streaming incluses. 0 signifie illimité.",
+    "{{value}} RPM": "{{value}} RPM",
+    "{{value}} concurrent": "{{value}} simultanés",
     "Strict failure": "Échec strict",
     "Strict protection": "Protection stricte",
     "String Replace": "Remplacement de texte",

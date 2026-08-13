@@ -4737,6 +4737,8 @@
     "Stream tokens via Server-Sent Events": "Стримить токены через Server-Sent Events",
     "Streaming": "Стриминг",
     "Streaming requests included. 0 means unlimited.": "Включая потоковые запросы. 0 — без ограничений.",
+    "{{value}} RPM": "{{value}} RPM",
+    "{{value}} concurrent": "{{value}} одновременных",
     "Strict failure": "Строгий отказ",
     "Strict protection": "Строгая защита",
     "String Replace": "Замена строки",

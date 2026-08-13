@@ -4737,6 +4737,8 @@
     "Stream tokens via Server-Sent Events": "Server-Sent Events でトークンをストリーミング",
     "Streaming": "ストリーミング",
     "Streaming requests included. 0 means unlimited.": "ストリーミングリクエストを含みます。0 は無制限です。",
+    "{{value}} RPM": "{{value}} RPM",
+    "{{value}} concurrent": "同時 {{value}}",
     "Strict failure": "厳格な失敗",
     "Strict protection": "厳格な保護",
     "String Replace": "文字列置換",

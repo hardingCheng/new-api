@@ -24,7 +24,7 @@ import { GroupBadge } from '@/components/group-badge'
 import { cn } from '@/lib/utils'
 
 import { CHANNEL_STATUS } from '../constants'
-import { isTagAggregateRow, parseGroupsList } from '../lib'
+import { isTagAggregateRow, parseChannelSettings, parseGroupsList } from '../lib'
 import type { Channel } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
 import { useChannels } from './channels-provider'
@@ -66,6 +66,22 @@ function ChannelCardComponent({
   }
 
   const groups = parseGroupsList(row.original.group ?? '')
+
+  const capacity = isTagRow
+    ? undefined
+    : parseChannelSettings(row.original.setting).capacity
+  const capacityParts: string[] = []
+  if (typeof capacity?.rpm === 'number' && capacity.rpm > 0) {
+    capacityParts.push(t('{{value}} RPM', { value: Math.trunc(capacity.rpm) }))
+  }
+  if (
+    typeof capacity?.max_concurrency === 'number' &&
+    capacity.max_concurrency > 0
+  ) {
+    capacityParts.push(
+      t('{{value}} concurrent', { value: Math.trunc(capacity.max_concurrency) })
+    )
+  }
 
   const selectCell = renderCell('select')
   const typeCell = renderCell('type')
@@ -155,6 +171,13 @@ function ChannelCardComponent({
             </div>
           </div>
         </div>
+
+        {/* Capacity limits, only when configured on the channel */}
+        {capacityParts.length > 0 && (
+          <div className='text-muted-foreground text-xs'>
+            {capacityParts.join(' · ')}
+          </div>
+        )}
 
         {/* Last row: groups span the full width, showing every group (no label) */}
         <div className='min-w-0'>

@@ -4737,6 +4737,8 @@
     "Stream tokens via Server-Sent Events": "通过 SSE 流式返回 token",
     "Streaming": "流式输出",
     "Streaming requests included. 0 means unlimited.": "包含流式请求；0 表示不限",
+    "{{value}} RPM": "{{value}} RPM",
+    "{{value}} concurrent": "{{value}} 并发",
     "Strict failure": "严格失败",
     "Strict protection": "严格保护",
     "String Replace": "字符串替换",

@@ -4737,6 +4737,8 @@
     "Stream tokens via Server-Sent Events": "Stream tokens via Server-Sent Events",
     "Streaming": "Streaming",
     "Streaming requests included. 0 means unlimited.": "Streaming requests included. 0 means unlimited.",
+    "{{value}} RPM": "{{value}} RPM",
+    "{{value}} concurrent": "{{value}} concurrent",
     "Strict failure": "Strict failure",
     "Strict protection": "Strict protection",
     "String Replace": "String Replace",

@@ -4737,6 +4737,8 @@
     "Stream tokens via Server-Sent Events": "Truyền token qua Server-Sent Events",
     "Streaming": "Truyền liên tục",
     "Streaming requests included. 0 means unlimited.": "Bao gồm yêu cầu streaming. 0 nghĩa là không giới hạn.",
+    "{{value}} RPM": "{{value}} RPM",
+    "{{value}} concurrent": "{{value}} đồng thời",
     "Strict failure": "Lỗi nghiêm ngặt",
     "Strict protection": "Bảo vệ nghiêm ngặt",
     "String Replace": "Thay thế chuỗi",
