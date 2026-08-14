@@ -28,7 +28,6 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 
 	"github.com/samber/lo"
@@ -55,13 +54,10 @@ func (r testResult) successful() bool {
 	return r.context != nil && r.localErr == nil && r.newAPIError == nil
 }
 
-func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointType string) string {
+func normalizeChannelTestEndpoint(channel *model.Channel, endpointType string) string {
 	normalized := strings.TrimSpace(endpointType)
 	if normalized != "" {
 		return normalized
-	}
-	if strings.HasSuffix(modelName, ratio_setting.CompactModelSuffix) {
-		return string(constant.EndpointTypeOpenAIResponseCompact)
 	}
 	if channel != nil && channel.Type == constant.ChannelTypeCodex {
 		return string(constant.EndpointTypeOpenAIResponse)
@@ -128,7 +124,7 @@ func testChannelWithOptions(ctx context.Context, channel *model.Channel, testUse
 		}
 	}
 
-	endpointType = normalizeChannelTestEndpoint(channel, testModel, endpointType)
+	endpointType = normalizeChannelTestEndpoint(channel, endpointType)
 
 	requestPath := "/v1/chat/completions"
 
@@ -163,20 +159,12 @@ func testChannelWithOptions(ctx context.Context, channel *model.Channel, testUse
 			requestPath = "/v1/responses"
 		}
 
-		// responses compaction models (must use /v1/responses/compact)
-		if strings.HasSuffix(testModel, ratio_setting.CompactModelSuffix) {
-			requestPath = "/v1/responses/compact"
-		}
 	}
 	// Gemini 原生流式通过 URL action（:streamGenerateContent）表达而非请求体字段，
 	// GeminiChatRequest.IsStream 依据请求 URL 判定，合成请求路径需与生产入口保持一致
 	if isStream && constant.EndpointType(endpointType) == constant.EndpointTypeGemini {
 		requestPath = strings.Replace(requestPath, ":generateContent", ":streamGenerateContent", 1)
 	}
-	if strings.HasPrefix(requestPath, "/v1/responses/compact") {
-		testModel = ratio_setting.WithCompactModelSuffix(testModel)
-	}
-
 	c.Request = httptest.NewRequestWithContext(ctx, http.MethodPost, requestPath, nil)
 
 	cache, err := model.GetUserCache(testUserID)
@@ -302,7 +290,7 @@ func testChannelWithOptions(ctx context.Context, channel *model.Channel, testUse
 
 	apiType, _ := common.ChannelType2APIType(channel.Type)
 	if info.RelayMode == relayconstant.RelayModeResponsesCompact &&
-		!common.IsResponsesCompactAPIType(apiType) {
+		!common.SupportsResponsesCompact(channel.Type, apiType) {
 		return testResult{
 			context:     c,
 			localErr:    fmt.Errorf("responses compaction test is not supported for api type %d", apiType),
@@ -831,14 +819,6 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 		}
 	}
 
-	// Responses compaction models (must use /v1/responses/compact)
-	if strings.HasSuffix(model, ratio_setting.CompactModelSuffix) {
-		return &dto.OpenAIResponsesCompactionRequest{
-			Model: model,
-			Input: testResponsesInput,
-		}
-	}
-
 	// Responses-only models (e.g. codex series)
 	if strings.Contains(strings.ToLower(model), "codex") {
 		return &dto.OpenAIResponsesRequest{
@@ -1076,6 +1056,9 @@ func selectChannelsForAutomaticTest(channels []*model.Channel, mode string) []*m
 			continue
 		}
 		if channel.Status == common.ChannelStatusManuallyDisabled {
+			continue
+		}
+		if mode == operation_setting.ChannelTestModeAutoBanOnly && !channel.GetAutoBan() {
 			continue
 		}
 		if mode == operation_setting.ChannelTestModePassiveRecovery && channel.Status != common.ChannelStatusAutoDisabled {

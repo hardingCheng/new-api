@@ -56,6 +56,7 @@ import {
   isViolationFeeLog,
   getFirstResponseTimeColor,
   getResponseTimeColor,
+  getReasoningEffortVariant,
   renderAuditContent,
 } from '../../lib/format'
 import {
@@ -602,12 +603,9 @@ export function DetailsDialog(props: DetailsDialogProps) {
   } else if (other?.video_billing_mode === 'per_second') {
     videoBillingModeLabel = t('Per second')
   }
-  let reasoningEffortVariant: StatusBadgeProps['variant'] = 'green'
-  if (other?.reasoning_effort === 'high') {
-    reasoningEffortVariant = 'orange'
-  } else if (other?.reasoning_effort === 'medium') {
-    reasoningEffortVariant = 'yellow'
-  }
+  const reasoningEffortVariant = getReasoningEffortVariant(
+    other?.reasoning_effort
+  )
 
   return (
     <Dialog
@@ -1123,6 +1121,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
               compact
               billingExpr={decodeBillingExprB64(other.expr_b64)}
               matchedTierLabel={other.matched_tier}
+              requestRules={other.request_rules}
               hideCacheColumns={!hasAnyCacheTokens(other)}
             />
           </DetailSection>

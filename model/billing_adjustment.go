@@ -409,7 +409,7 @@ func refreshBillingReservationCaches(userID int, tokenKey string, fundingSource 
 		}
 	}
 	if strings.TrimSpace(tokenKey) != "" {
-		if err := cacheDeleteToken(tokenKey); err != nil {
+		if err := invalidateTokenCacheForMutation(tokenKey); err != nil {
 			common.SysLog("failed to invalidate billing reservation token cache: " + err.Error())
 		}
 	}
@@ -653,7 +653,7 @@ func refreshBillingAdjustmentCaches(adjustment BillingAdjustment) error {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			err = nil
 		} else if err == nil {
-			err = cacheDeleteToken(token.Key)
+			err = invalidateTokenCacheForMutation(token.Key)
 		}
 		if err != nil {
 			cacheErr = errors.Join(cacheErr, fmt.Errorf("invalidate token quota cache: %w", err))

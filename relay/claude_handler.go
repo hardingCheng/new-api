@@ -107,6 +107,11 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 		info.UpstreamModelName = request.Model
 	}
+	if !model_setting.GetGlobalSettings().PassThroughRequestEnabled && !info.ChannelSetting.PassThroughBodyEnabled {
+		if effort := request.GetEfforts(); effort != "" {
+			info.SetReasoningEffort(effort)
+		}
+	}
 
 	// chatdump：根据上游模型名判定是否抓取
 	dumpSession := chatdump.NewSession(request.Model)
