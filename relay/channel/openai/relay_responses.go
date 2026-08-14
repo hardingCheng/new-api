@@ -34,6 +34,19 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
 
+	// model 回填客户请求名:多上游池的自报名会随路由跳变。仅在不一致时用 map 重写,
+	// 保留上游 body 的未知字段,也不给一致的直通增加开销
+	if info != nil && info.OriginModelName != "" && responsesResponse.Model != "" && responsesResponse.Model != info.OriginModelName {
+		var bodyMap map[string]interface{}
+		if mapErr := common.Unmarshal(responseBody, &bodyMap); mapErr == nil {
+			bodyMap["model"] = info.OriginModelName
+			if newBody, marshalErr := common.Marshal(bodyMap); marshalErr == nil {
+				responseBody = newBody
+			}
+		}
+	}
+
+
 	// 写入新的 response body
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 

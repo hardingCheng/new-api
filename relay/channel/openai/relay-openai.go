@@ -300,13 +300,24 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 
 	switch info.RelayFormat {
 	case types.RelayFormatOpenAI:
-		if usageModified {
+		// model 回填客户请求名:多上游池的自报名会随路由跳变。仅在不一致时触发重写,
+		// 一致时保持零开销直通
+		modelMismatch := info.OriginModelName != "" && simpleResponse.Model != "" && simpleResponse.Model != info.OriginModelName
+		if modelMismatch {
+			simpleResponse.Model = info.OriginModelName
+		}
+		if usageModified || modelMismatch {
 			var bodyMap map[string]interface{}
 			err = common.Unmarshal(responseBody, &bodyMap)
 			if err != nil {
 				return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 			}
-			bodyMap["usage"] = simpleResponse.Usage
+			if usageModified {
+				bodyMap["usage"] = simpleResponse.Usage
+			}
+			if modelMismatch {
+				bodyMap["model"] = info.OriginModelName
+			}
 			responseBody, _ = common.Marshal(bodyMap)
 		}
 		if forceFormat {
