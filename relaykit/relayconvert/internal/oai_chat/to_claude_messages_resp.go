@@ -133,7 +133,7 @@ func StreamResponseOpenAI2Claude(openAIResponse *dto.ChatCompletionsStreamRespon
 	if info.GetSendResponseCount() == 1 {
 		msg := &dto.ClaudeMediaMessage{
 			Id:    openAIResponse.Id,
-			Model: openAIResponse.Model,
+			Model: claudeResponseModelName(openAIResponse.Model, info),
 			Type:  "message",
 			Role:  "assistant",
 			Usage: &dto.ClaudeUsage{
@@ -474,12 +474,20 @@ func ResponseOpenAI2Claude(openAIResponse *dto.OpenAITextResponse, info convmeta
 		Id:    openAIResponse.Id,
 		Type:  "message",
 		Role:  "assistant",
-		Model: openAIResponse.Model,
+		Model: claudeResponseModelName(openAIResponse.Model, info),
 	}
 	for _, choice := range openAIResponse.Choices {
 		stopReason = stopReasonOpenAI2Claude(choice.FinishReason)
 		textContent := choice.Message.StringContent()
 		toolCalls := choice.Message.ParseToolCalls()
+		// 流式路径会把 reasoning 翻成 thinking 块,非流式必须对齐,否则同一请求换个
+		// stream 开关 thinking 就消失
+		if reasoning := choice.Message.GetReasoningContent(); reasoning != "" {
+			claudeContent := dto.ClaudeMediaMessage{}
+			claudeContent.Type = "thinking"
+			claudeContent.Thinking = &reasoning
+			contents = append(contents, claudeContent)
+		}
 		if textContent != "" || len(toolCalls) == 0 {
 			claudeContent := dto.ClaudeMediaMessage{}
 			claudeContent.Type = "text"
@@ -511,4 +519,15 @@ func ResponseOpenAI2Claude(openAIResponse *dto.OpenAITextResponse, info convmeta
 
 func stopReasonOpenAI2Claude(reason string) string {
 	return reasonmap.OpenAIFinishReasonToClaudeStopReason(reason)
+}
+
+// claudeResponseModelName 回填客户请求的模型名:多上游池里各上游对同一模型的自报名
+// 互不一致(如 k3 / kimi-k3),透传会让响应 model 字段随路由跳变。
+func claudeResponseModelName(upstreamModel string, info convmeta.Meta) string {
+	if info != nil {
+		if origin := info.GetOriginModelName(); origin != "" {
+			return origin
+		}
+	}
+	return upstreamModel
 }

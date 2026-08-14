@@ -3,6 +3,8 @@ package common
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 )
 
@@ -20,6 +22,28 @@ func DecodeJson(reader io.Reader, v any) error {
 
 func Marshal(v any) ([]byte, error) {
 	return json.Marshal(v)
+}
+
+// FriendlyJSONError rewrites encoding/json decode errors into messages safe to
+// return to API callers: the raw errors leak Go struct and type names
+// (e.g. `json: cannot unmarshal number -1 into Go struct field
+// GeneralOpenAIRequest.max_tokens of type uint`). Non-decode errors pass through.
+func FriendlyJSONError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) {
+		if typeErr.Field == "" {
+			return fmt.Errorf("invalid request body: unexpected %s", typeErr.Value)
+		}
+		return fmt.Errorf("invalid value for field %q (got %s)", typeErr.Field, typeErr.Value)
+	}
+	var syntaxErr *json.SyntaxError
+	if errors.As(err, &syntaxErr) {
+		return fmt.Errorf("request body is not valid JSON (syntax error at offset %d)", syntaxErr.Offset)
+	}
+	return err
 }
 
 func GetJsonType(data json.RawMessage) string {

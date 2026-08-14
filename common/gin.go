@@ -120,7 +120,7 @@ func UnmarshalBodyReusable(c *gin.Context, v any) error {
 			return seekErr
 		}
 		if err := DecodeJson(storage, v); err != nil {
-			return err
+			return FriendlyJSONError(err)
 		}
 		if _, seekErr := storage.Seek(0, io.SeekStart); seekErr != nil {
 			return seekErr
@@ -144,7 +144,7 @@ func UnmarshalBodyReusable(c *gin.Context, v any) error {
 		// TODO: someday non json request have variant model, we will need to implementation this
 	}
 	if err != nil {
-		return err
+		return FriendlyJSONError(err)
 	}
 	// Reset request body
 	if _, seekErr := storage.Seek(0, io.SeekStart); seekErr != nil {

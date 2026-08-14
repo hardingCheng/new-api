@@ -217,3 +217,42 @@ func TestNormalizeCacheCreationSplit(t *testing.T) {
 func ptr[T any](value T) *T {
 	return &value
 }
+
+func TestResponseOpenAI2ClaudeThinkingBlockAndModelBackfill(t *testing.T) {
+	reasoning := "chain of thought"
+	resp := ResponseOpenAI2Claude(&dto.OpenAITextResponse{
+		Id:    "chatcmpl_1",
+		Model: "k3",
+		Choices: []dto.OpenAITextResponseChoice{
+			{
+				Message:      dto.Message{Role: "assistant", Content: "final answer", ReasoningContent: &reasoning},
+				FinishReason: "stop",
+			},
+		},
+	}, &convmeta.Values{OriginModelName: "kimi-k3"})
+
+	// model 回填客户请求名,不透传上游自报名
+	assert.Equal(t, "kimi-k3", resp.Model)
+	// 非流式必须与流式一致:reasoning 翻成 thinking 块,且在 text 之前
+	require.Len(t, resp.Content, 2)
+	assert.Equal(t, "thinking", resp.Content[0].Type)
+	require.NotNil(t, resp.Content[0].Thinking)
+	assert.Equal(t, "chain of thought", *resp.Content[0].Thinking)
+	assert.Equal(t, "text", resp.Content[1].Type)
+	assert.Equal(t, "end_turn", resp.StopReason)
+}
+
+func TestResponseOpenAI2ClaudeWithoutReasoningKeepsUpstreamModel(t *testing.T) {
+	resp := ResponseOpenAI2Claude(&dto.OpenAITextResponse{
+		Id:    "chatcmpl_1",
+		Model: "k3",
+		Choices: []dto.OpenAITextResponseChoice{
+			{Message: dto.Message{Role: "assistant", Content: "hi"}, FinishReason: "stop"},
+		},
+	}, nil)
+
+	// 无 reasoning 不产生 thinking 块;无 Meta 时保留上游名兜底
+	require.Len(t, resp.Content, 1)
+	assert.Equal(t, "text", resp.Content[0].Type)
+	assert.Equal(t, "k3", resp.Model)
+}

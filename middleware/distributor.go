@@ -175,11 +175,11 @@ func Distribute() func(c *gin.Context) {
 						//	common.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
 						//	message = "数据库一致性已被破坏，请联系管理员"
 						//}
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, types.ErrorCodeModelNotFound)
+						abortWithOpenAiMessage(c, noChannelStatusCode(usingGroup, modelRequest.Model), message, types.ErrorCodeModelNotFound)
 						return
 					}
 					if channel == nil {
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+						abortWithOpenAiMessage(c, noChannelStatusCode(usingGroup, modelRequest.Model), i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
 						return
 					}
 				}
@@ -208,6 +208,21 @@ func Distribute() func(c *gin.Context) {
 // channelSupportsRequestPath reports whether a channel can serve the request path.
 // Only Advanced Custom (type 58) channels are path-checked; all other channel types
 // always pass. A type-58 channel is usable only when one of its routes matches.
+// noChannelStatusCode 区分"选不到渠道"的两种语义:模型在该分组的可用列表(与 /v1/models 同口径)
+// 里根本不存在 → 404(客户端传错模型名,SDK 不应重试);存在但当前没有可用渠道 → 503(服务端容量问题)。
+func noChannelStatusCode(group string, modelName string) int {
+	var enabledModels []string
+	if group == "auto" {
+		enabledModels = model.GetEnabledModels()
+	} else {
+		enabledModels = model.GetGroupEnabledModels(group)
+	}
+	if slices.Contains(enabledModels, modelName) {
+		return http.StatusServiceUnavailable
+	}
+	return http.StatusNotFound
+}
+
 func channelSupportsRequestPath(channel *model.Channel, requestPath string, requestModel string) bool {
 	if channel == nil {
 		return false
