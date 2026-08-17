@@ -26,6 +26,10 @@ type RetryParam struct {
 	// 初选与其他调用方保持 false，不产生任何容量副作用。
 	ReserveCapacity bool
 	resetNextTry    bool
+	// ExcludeChannelIds 是本次请求中已经失败过的渠道，重试选路时在同优先级层内把它们
+	// 移出候选。与 capacity 排除集不同，它必须跨重试保持：一条渠道这次已经证明不行，
+	// 本请求就不该再抽回它。调用方（controller）在排除后无候选时负责放开排除集兜底。
+	ExcludeChannelIds map[int]bool
 }
 
 // ChannelCapacityExhaustedError 表示本次选择的全部候选渠道都因容量达限被排除。
@@ -258,6 +262,10 @@ outer:
 		// 每轮排除集严格增大，循环必然收敛。
 		for {
 			channel, exhausted, err := model.GetRandomSatisfiedChannelWithFilters(group, param.ModelName, priorityRetry+offset, param.RequestPath, userChannelRoutingCandidateFilter(decision), func(channel *model.Channel) bool {
+				if param.ExcludeChannelIds[channel.Id] {
+					logger.LogDebug(param.Ctx, "channel #%d already failed in this request, excluded from reselection", channel.Id)
+					return false
+				}
 				if capacityExcluded[channel.Id] {
 					return false
 				}

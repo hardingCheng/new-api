@@ -227,11 +227,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 
 	retryParam := &service.RetryParam{
-		Ctx:         c,
-		TokenGroup:  relayInfo.TokenGroup,
-		ModelName:   relayInfo.EffectiveRoutingModelName(),
-		RequestPath: c.Request.URL.Path,
-		Retry:       common.GetPointer(0),
+		Ctx:               c,
+		TokenGroup:        relayInfo.TokenGroup,
+		ModelName:         relayInfo.EffectiveRoutingModelName(),
+		RequestPath:       c.Request.URL.Path,
+		Retry:             common.GetPointer(0),
+		ExcludeChannelIds: map[int]bool{},
 	}
 	relayInfo.RetryIndex = 0
 	relayInfo.LastError = nil
@@ -284,6 +285,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
+		// 这一条本次已经失败，重试选路时同层排除它，避免加权随机又抽回来
+		retryParam.ExcludeChannelIds[channel.Id] = true
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan(), common.IsChannelBreakerExemptChannel(channel.Id)), newAPIError)
 
@@ -472,6 +475,15 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	}
 	retryParam.ReserveCapacity = enforceCapacity
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
+	if channel == nil && len(retryParam.ExcludeChannelIds) > 0 {
+		// 已失败渠道被排除后没有候选了：放开排除集再选一次。宁可重打同一条，
+		// 也不能因为排除本身把「还能重试一次」退化成直接失败。
+		// 选路未成功时不会残留容量租约（租约只在选中渠道时写入 context），二次选路安全。
+		excluded := retryParam.ExcludeChannelIds
+		retryParam.ExcludeChannelIds = nil
+		channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(retryParam)
+		retryParam.ExcludeChannelIds = excluded
+	}
 	if err != nil {
 		var capacityErr *service.ChannelCapacityExhaustedError
 		if errors.As(err, &capacityErr) {
@@ -771,11 +783,12 @@ func RelayTask(c *gin.Context) {
 	}()
 
 	retryParam := &service.RetryParam{
-		Ctx:         c,
-		TokenGroup:  relayInfo.TokenGroup,
-		ModelName:   relayInfo.EffectiveRoutingModelName(),
-		RequestPath: c.Request.URL.Path,
-		Retry:       common.GetPointer(0),
+		Ctx:               c,
+		TokenGroup:        relayInfo.TokenGroup,
+		ModelName:         relayInfo.EffectiveRoutingModelName(),
+		RequestPath:       c.Request.URL.Path,
+		Retry:             common.GetPointer(0),
+		ExcludeChannelIds: map[int]bool{},
 	}
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
@@ -827,6 +840,9 @@ func RelayTask(c *gin.Context) {
 			service.RecordChannelBreakerSuccess(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan(), common.IsChannelBreakerExemptChannel(channel.Id)))
 			break
 		}
+
+		// 这一条本次已经失败，重试选路时同层排除它，避免加权随机又抽回来
+		retryParam.ExcludeChannelIds[channel.Id] = true
 
 		if !taskErr.LocalError {
 			processChannelError(c,

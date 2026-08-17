@@ -17,28 +17,26 @@ type StatusCodeRange struct {
 
 var defaultAutomaticDisableStatusCodeRanges = []StatusCodeRange{{Start: 401, End: 401}}
 
-// Default behavior matches legacy hardcoded retry rules in controller/relay.go shouldRetry:
-// retry for 1xx, 3xx, 4xx(except 400/408), 5xx(except 504/524), and no retry for 2xx.
+// retry for 1xx, 3xx, 4xx(except 400/408), 5xx, and no retry for 2xx.
+// 超时类状态码（504/524）也重试：多渠道池里超时上限是渠道属性而不是请求属性，
+// 同一个请求换一条上限更高的渠道往往能正常完成，不重试等于把某条渠道的链路上限
+// 直接暴露成客户可见的失败。
 var defaultAutomaticRetryStatusCodeRanges = []StatusCodeRange{
 	{Start: 100, End: 199},
 	{Start: 300, End: 399},
 	{Start: 401, End: 407},
 	{Start: 409, End: 499},
-	{Start: 500, End: 503},
-	{Start: 505, End: 523},
-	{Start: 525, End: 599},
+	{Start: 500, End: 599},
 }
 
 // 熔断失败状态码：专供熔断失败计数使用，与自动重试、自动禁用状态码完全解耦，单独维护。
-// 默认值与重试默认串一致。
+// 默认值与重试默认串一致：反复超时的渠道应当被熔断暂时移出轮询，而不是每次都拖满一次超时。
 var defaultChannelBreakerFailureStatusCodeRanges = []StatusCodeRange{
 	{Start: 100, End: 199},
 	{Start: 300, End: 399},
 	{Start: 401, End: 407},
 	{Start: 409, End: 499},
-	{Start: 500, End: 503},
-	{Start: 505, End: 523},
-	{Start: 525, End: 599},
+	{Start: 500, End: 599},
 }
 
 var (
@@ -53,10 +51,11 @@ func init() {
 	SetChannelBreakerFailureStatusCodeRanges(defaultChannelBreakerFailureStatusCodeRanges)
 }
 
-var alwaysSkipRetryStatusCodes = map[int]struct{}{
-	504: {},
-	524: {},
-}
+// 状态码维度不再硬编码禁止重试：是否重试完全由 AutomaticRetryStatusCodes 配置决定，
+// 这样部署方能按自己的渠道池情况调整，而不是被一份写死的名单挡住。
+// 流式已经开始推送之后的失败仍由 alwaysSkipRetryCodes（bad_response_body）拦住，
+// 不会出现客户端收到两段响应体的情况。
+var alwaysSkipRetryStatusCodes = map[int]struct{}{}
 
 var alwaysSkipRetryCodes = map[types.ErrorCode]struct{}{
 	types.ErrorCodeBadResponseBody: {},
