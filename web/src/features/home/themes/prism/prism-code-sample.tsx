@@ -99,7 +99,7 @@ export function PrismCodeSample() {
             </h3>
             <div className='mt-6 overflow-x-auto border-l-2 border-[var(--prism-accent)] bg-white/[0.025] px-5 py-4 font-mono text-xs leading-6 text-[#c9cec5]'>
               base_url=
-              <span className='text-[#9eb0ff]'>
+              <span className='text-[#7ee6b1]'>
                 &quot;{stationOrigin}/v1&quot;
               </span>
             </div>

@@ -27,7 +27,8 @@ export const THEME_PRESETS = [
   {
     value: 'default',
     name: 'Default',
-    swatches: ['oklch(0.72 0.18 250)', 'oklch(0.7 0.12 280)'],
+    // 巴西站默认色:verde + ouro
+    swatches: ['oklch(0.72 0.17 158)', 'oklch(0.82 0.15 90)'],
   },
   {
     // Inspired by Anthropic's official brand language: warm cream canvas

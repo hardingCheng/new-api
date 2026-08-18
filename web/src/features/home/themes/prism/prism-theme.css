@@ -24,8 +24,8 @@ For commercial licensing, please contact support@quantumnous.com
   --card-foreground: #f1f3ed;
   --popover: #171a17;
   --popover-foreground: #f1f3ed;
-  --primary: #6f8cff;
-  --primary-foreground: #07112b;
+  --primary: #35d98c;
+  --primary-foreground: #052018;
   --secondary: #1b1f1b;
   --secondary-foreground: #f1f3ed;
   --muted: #171a17;
@@ -34,10 +34,10 @@ For commercial licensing, please contact support@quantumnous.com
   --accent-foreground: #f1f3ed;
   --border: rgb(241 243 237 / 12%);
   --input: rgb(241 243 237 / 18%);
-  --ring: #6f8cff;
+  --ring: #35d98c;
   --radius: 0.75rem;
-  --prism-accent: #6f8cff;
-  --prism-accent-ink: #07112b;
+  --prism-accent: #35d98c;
+  --prism-accent-ink: #052018;
   --prism-line-strong: rgb(241 243 237 / 22%);
 }
 
@@ -51,7 +51,7 @@ For commercial licensing, please contact support@quantumnous.com
   z-index: -1;
   inset: 14% 8%;
   border-radius: 999px;
-  background: rgb(111 140 255 / 11%);
+  background: rgb(53 217 140 / 11%);
   filter: blur(64px);
   content: '';
 }
@@ -99,20 +99,20 @@ For commercial licensing, please contact support@quantumnous.com
 .prism-theme .prism-model-panel--primary {
   min-height: 35rem;
   background:
-    radial-gradient(circle at 82% 18%, rgb(111 140 255 / 20%), transparent 32%),
+    radial-gradient(circle at 82% 18%, rgb(53 217 140 / 20%), transparent 32%),
     linear-gradient(145deg, #151a1a, #0f1211 72%);
 }
 
 .prism-theme .prism-model-panel--image {
   background:
-    linear-gradient(135deg, rgb(111 140 255 / 12%), transparent 42%), #111411;
+    linear-gradient(135deg, rgb(53 217 140 / 12%), transparent 42%), #111411;
 }
 
 .prism-theme .prism-model-panel--video {
   background:
     radial-gradient(
       circle at 90% 100%,
-      rgb(111 140 255 / 16%),
+      rgb(53 217 140 / 16%),
       transparent 46%
     ),
     #111411;
@@ -121,7 +121,7 @@ For commercial licensing, please contact support@quantumnous.com
 .prism-theme .prism-model-panel--audio {
   min-height: auto;
   background:
-    linear-gradient(90deg, #111411, rgb(111 140 255 / 8%), #111411), #111411;
+    linear-gradient(90deg, #111411, rgb(53 217 140 / 8%), #111411), #111411;
 }
 
 .prism-theme .prism-step-line {
@@ -138,7 +138,7 @@ For commercial licensing, please contact support@quantumnous.com
   width: 2.5rem;
   height: 2.5rem;
   place-items: center;
-  border: 1px solid rgb(111 140 255 / 46%);
+  border: 1px solid rgb(53 217 140 / 46%);
   border-radius: 999px;
   background: #0e1110;
   color: #9eb0ff;
@@ -156,7 +156,7 @@ For commercial licensing, please contact support@quantumnous.com
   justify-content: center;
   gap: 1rem;
   background:
-    radial-gradient(circle at 50% 50%, rgb(111 140 255 / 10%), transparent 42%),
+    radial-gradient(circle at 50% 50%, rgb(53 217 140 / 10%), transparent 42%),
     #111411;
 }
 
@@ -185,8 +185,8 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 .prism-theme .prism-route-node--accent {
-  border-color: rgb(111 140 255 / 48%);
-  box-shadow: inset 0 0 2rem rgb(111 140 255 / 8%);
+  border-color: rgb(53 217 140 / 48%);
+  box-shadow: inset 0 0 2rem rgb(53 217 140 / 8%);
 }
 
 .prism-theme .prism-route-node--compact {
@@ -259,7 +259,7 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 .prism-theme .prism-ecosystem-logo:hover {
-  border-color: rgb(111 140 255 / 36%);
+  border-color: rgb(53 217 140 / 36%);
   background: #171b19;
   color: var(--foreground);
 }
@@ -289,7 +289,7 @@ For commercial licensing, please contact support@quantumnous.com
     height: 1px;
     background: linear-gradient(
       90deg,
-      rgb(111 140 255 / 48%),
+      rgb(53 217 140 / 48%),
       rgb(241 243 237 / 12%)
     );
     content: '';
