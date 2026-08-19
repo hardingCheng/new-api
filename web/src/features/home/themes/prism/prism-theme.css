@@ -403,3 +403,248 @@ For commercial licensing, please contact support@quantumnous.com
     display: none;
   }
 }
+
+/* ============ 首页动效(参考稿本地化:紫青粉 → verde 绿青) ============ */
+
+/* ---- 方案 C:底部升起的巨型圆环(hero 背景层) ---- */
+.prism-rise-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.prism-rise {
+  --d: 150vmax;
+  --show: clamp(150px, 24vh, 260px);
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--show) - var(--d));
+  width: var(--d);
+  height: var(--d);
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 0%,
+    rgb(53 217 140 / 14%),
+    rgb(8 14 11 / 55%) 34%,
+    rgb(5 8 7 / 90%) 62%
+  );
+  border: 1px solid rgb(53 217 140 / 30%);
+  box-shadow:
+    0 0 90px rgb(53 217 140 / 25%),
+    inset 0 26px 90px -30px rgb(76 217 255 / 35%);
+}
+
+.prism-rise::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0 42%,
+    rgb(76 217 255 / 75%) 49%,
+    rgb(255 255 255 / 95%) 50%,
+    rgb(53 217 140 / 85%) 51%,
+    transparent 58%
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 2px));
+  filter: drop-shadow(0 0 12px rgb(53 217 140 / 85%));
+  animation: prism-orbit 14s linear infinite;
+}
+
+.prism-rise-glow {
+  position: absolute;
+  left: 50%;
+  bottom: calc(clamp(150px, 24vh, 260px) - 60px);
+  width: min(900px, 90vw);
+  height: 180px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at 50% 100%, rgb(76 217 255 / 22%), transparent 70%);
+  filter: blur(26px);
+}
+
+@keyframes prism-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- 方案 D:单环模型转盘(替换 hero 静态图) ---- */
+.prism-dial {
+  position: relative;
+  width: min(520px, 88vw);
+  aspect-ratio: 1;
+  margin: 0 auto;
+}
+
+.prism-dial-ring {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  border: 1px solid rgb(255 255 255 / 10%);
+}
+
+.prism-dial-ring.inner {
+  inset: 27%;
+  border-style: dashed;
+  border-color: rgb(255 255 255 / 6%);
+}
+
+.prism-dial-arc {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0 72%,
+    rgb(53 217 140 / 85%) 92%,
+    rgb(76 217 255 / 95%) 99%,
+    transparent 100%
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 1.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 1.5px));
+  filter: drop-shadow(0 0 9px rgb(53 217 140 / 85%));
+  animation: prism-orbit 11s linear infinite;
+}
+
+.prism-d-hold {
+  position: absolute;
+  inset: 8%;
+  transform: rotate(var(--a));
+  animation: prism-orbit var(--t) linear infinite;
+  animation-delay: var(--hold-delay, 0s);
+}
+
+.prism-d-sat {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(calc(var(--a) * -1));
+  animation: prism-orbit-rev var(--t) linear infinite;
+  animation-delay: var(--hold-delay, 0s);
+}
+
+@keyframes prism-orbit-rev {
+  to {
+    transform: translate(-50%, -50%) rotate(calc(var(--a) * -1 - 360deg));
+  }
+}
+
+.prism-d-tile {
+  display: grid;
+  place-items: center;
+  min-width: 72px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgb(255 255 255 / 13%);
+  background: rgb(10 14 12 / 85%);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 14px 34px -16px rgb(0 0 0 / 90%);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #d7ddd8;
+  white-space: nowrap;
+  animation: prism-tile-spot var(--t) linear infinite;
+  animation-delay: calc(var(--t) * -1 * var(--i) / var(--n));
+}
+
+@keyframes prism-tile-spot {
+  0% {
+    scale: 1.3;
+    border-color: rgb(53 217 140 / 85%);
+    box-shadow: 0 0 30px -4px rgb(53 217 140 / 70%);
+    color: #f2f4f0;
+  }
+  12% {
+    scale: 1;
+    border-color: rgb(255 255 255 / 13%);
+    box-shadow: 0 14px 34px -16px rgb(0 0 0 / 90%);
+    color: #d7ddd8;
+  }
+  88% {
+    scale: 1;
+    border-color: rgb(255 255 255 / 13%);
+  }
+  100% {
+    scale: 1.3;
+    border-color: rgb(53 217 140 / 85%);
+    box-shadow: 0 0 30px -4px rgb(53 217 140 / 70%);
+    color: #f2f4f0;
+  }
+}
+
+.prism-dial-core {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.prism-dial-disc {
+  width: 168px;
+  height: 168px;
+  border-radius: 50%;
+  position: relative;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  background: radial-gradient(circle at 34% 26%, #10231a, #050c09 74%);
+  box-shadow:
+    0 0 80px rgb(53 217 140 / 28%),
+    inset 0 0 40px rgb(53 217 140 / 12%);
+}
+
+.prism-dial-disc::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 50%;
+  padding: 1px;
+  background: conic-gradient(
+    from 0deg,
+    rgb(53 217 140 / 90%),
+    rgb(76 217 255 / 90%),
+    rgb(53 217 140 / 90%)
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: prism-orbit 7s linear infinite;
+}
+
+.prism-dial-disc small {
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  color: #7f8a82;
+}
+
+.prism-dial-disc b {
+  display: block;
+  margin-top: 5px;
+  font-family: var(--font-mono, monospace);
+  font-size: 14px;
+  font-weight: 700;
+  color: #f2f4f0;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prism-rise::after,
+  .prism-dial-arc,
+  .prism-d-hold,
+  .prism-d-sat,
+  .prism-d-tile,
+  .prism-dial-disc::before {
+    animation: none;
+  }
+}
