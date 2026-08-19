@@ -189,21 +189,21 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 .dark {
-  /* OpenAI-like dark mode with a crisp charcoal canvas. */
-  --background: oklch(0.235 0 0);
-  --foreground: oklch(0.965 0 0);
-  --card: oklch(0.285 0 0);
-  --card-foreground: oklch(0.965 0 0);
-  --popover: oklch(0.305 0 0);
-  --popover-foreground: oklch(0.965 0 0);
-  --primary: oklch(0.72 0.17 158);
-  --primary-foreground: oklch(0.16 0.03 160);
-  --secondary: oklch(0.335 0 0);
-  --secondary-foreground: oklch(0.9 0.05 155);
-  --muted: oklch(0.305 0 0);
-  --muted-foreground: oklch(0.78 0 0);
-  --accent: color-mix(in oklch, var(--primary) 20%, var(--background));
-  --accent-foreground: oklch(0.985 0 0);
+  /* Prism 画布:近黑绿底(值对齐 features/home/themes/prism/prism-theme.css)。 */
+  --background: #0b0d0c;
+  --foreground: #f1f3ed;
+  --card: #111411;
+  --card-foreground: #f1f3ed;
+  --popover: #171a17;
+  --popover-foreground: #f1f3ed;
+  --primary: #35d98c;
+  --primary-foreground: #052018;
+  --secondary: #1b1f1b;
+  --secondary-foreground: #f1f3ed;
+  --muted: #171a17;
+  --muted-foreground: #aeb4aa;
+  --accent: #242924;
+  --accent-foreground: #f1f3ed;
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.985 0 0);
   --success: oklch(0.696 0.17 162.48);
@@ -214,24 +214,24 @@ For commercial licensing, please contact support@quantumnous.com
   --info-foreground: oklch(0.145 0 0);
   --neutral: oklch(0.76 0 0);
   --neutral-foreground: oklch(0.155 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 17%);
-  --ring: oklch(0.7 0.16 158);
+  --border: rgb(241 243 237 / 12%);
+  --input: rgb(241 243 237 / 18%);
+  --ring: #35d98c;
   --chart-1: oklch(0.75 0.16 158);
   --chart-2: oklch(0.82 0.15 90);
   --chart-3: oklch(0.72 0.12 200);
   --chart-4: oklch(0.75 0.16 325);
   --chart-5: oklch(0.68 0.13 120);
-  --sidebar: oklch(0.225 0 0);
-  --sidebar-foreground: oklch(0.95 0 0);
-  --sidebar-primary: oklch(0.7 0.15 158);
-  --sidebar-primary-foreground: oklch(0.16 0.03 160);
-  --sidebar-accent: color-mix(in oklch, var(--primary) 20%, var(--background));
-  --sidebar-accent-foreground: oklch(0.9 0.05 155);
-  --sidebar-border: oklch(1 0 0 / 11%);
-  --sidebar-ring: oklch(0.7 0.16 158);
-  --skeleton-base: oklch(0.335 0 0);
-  --skeleton-highlight: oklch(0.44 0 0);
+  --sidebar: #0d100e;
+  --sidebar-foreground: #f1f3ed;
+  --sidebar-primary: #35d98c;
+  --sidebar-primary-foreground: #052018;
+  --sidebar-accent: #1b201c;
+  --sidebar-accent-foreground: #d9efe2;
+  --sidebar-border: rgb(241 243 237 / 10%);
+  --sidebar-ring: #35d98c;
+  --skeleton-base: #1b1f1b;
+  --skeleton-highlight: #242924;
   --table-row: var(--background);
   --table-header: color-mix(in oklch, var(--foreground) 6%, var(--background));
   --table-header-hover: color-mix(
