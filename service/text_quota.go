@@ -76,6 +76,43 @@ func (s *textQuotaSummary) hasBillableUsage() bool {
 	return s.TotalTokens > 0 || !s.ToolCallSurchargeQuota.IsZero()
 }
 
+// shouldWaiveZeroCompletionQuota 判定「零完成不计费」：生成类请求、零补全、无工具附加费，
+// 且故障在上游侧——流式 = 非正常结束且非客户端断开；非流式 = 上游未返回 usage
+//（现状是按估算 prompt 收费）。客户端主动断开不免，防止大 prompt 秒断白嫖上游成本。
+func shouldWaiveZeroCompletionQuota(relayInfo *relaycommon.RelayInfo, summary *textQuotaSummary, originUsage *dto.Usage) bool {
+	if !common.IsZeroCompletionNoChargeEnabled() {
+		return false
+	}
+	if relayInfo == nil || summary.CompletionTokens != 0 || !summary.ToolCallSurchargeQuota.IsZero() {
+		return false
+	}
+	if !isGenerationRelay(relayInfo) {
+		return false
+	}
+	if relayInfo.IsStream {
+		status := relayInfo.StreamStatus
+		return status != nil && !status.IsNormalEnd() && status.EndReason != relaycommon.StreamEndReasonClientGone
+	}
+	return originUsage == nil
+}
+
+// isGenerationRelay 白名单圈定「期望产生补全输出」的请求形态；
+// embeddings / rerank / 审核 / 转写天然零补全，绝不能进豁免。
+func isGenerationRelay(relayInfo *relaycommon.RelayInfo) bool {
+	switch relayInfo.RelayMode {
+	case relayconstant.RelayModeChatCompletions, relayconstant.RelayModeCompletions, relayconstant.RelayModeResponses:
+		return true
+	}
+	switch relayInfo.RelayFormat {
+	case types.RelayFormatClaude:
+		return true
+	case types.RelayFormatGemini:
+		// Gemini 生成与向量共用 relay 形态，按请求路径剔除 embedContent / batchEmbedContents
+		return !strings.Contains(relayInfo.RequestURLPath, "mbedContent")
+	}
+	return false
+}
+
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
 	if summary.CacheCreationTokens5m > 0 || summary.CacheCreationTokens1h > 0 {
 		splitCacheWriteTokens := summary.CacheCreationTokens5m + summary.CacheCreationTokens1h
@@ -424,6 +461,14 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		}
 	}
 
+	// 零完成不计费：置 0 后 SettleBilling 按差额自动退回预扣费
+	zeroCompletionWaivedQuota := -1
+	if shouldWaiveZeroCompletionQuota(relayInfo, &summary, originUsage) {
+		zeroCompletionWaivedQuota = summary.Quota
+		summary.Quota = 0
+		extraContent = append(extraContent, "本次请求未产生输出，已免除费用")
+	}
+
 	for _, item := range summary.ToolSurchargeItems {
 		q := decimal.NewFromFloat(item.Price).
 			Mul(decimal.NewFromInt(int64(item.Count))).
@@ -531,6 +576,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	}
 
 	attachQuotaSaturation(ctx, relayInfo, other)
+	if zeroCompletionWaivedQuota >= 0 {
+		attachZeroCompletionWaiver(other, zeroCompletionWaivedQuota)
+	}
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,

@@ -35,6 +35,21 @@ func attachQuotaSaturationToOther(other map[string]interface{}, clamp *common.Qu
 	adminInfo["quota_saturation"] = clamp.AuditMap()
 }
 
+// attachZeroCompletionWaiver 在消费日志 other.admin_info 下记录零完成免除标记与
+// 被免除的原始额度，供管理端审计自吃成本；非管理员视图会整体剥离 admin_info。
+func attachZeroCompletionWaiver(other map[string]interface{}, waivedQuota int) {
+	if other == nil {
+		return
+	}
+	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	if !ok || adminInfo == nil {
+		adminInfo = map[string]interface{}{}
+		other["admin_info"] = adminInfo
+	}
+	adminInfo["zero_completion_no_charge"] = true
+	adminInfo["zero_completion_waived_quota"] = waivedQuota
+}
+
 // attachQuotaSaturation records the request's quota clamp (if any) onto the
 // consume log's other.admin_info and emits a request-correlated backend audit
 // line. Called right before RecordConsumeLog on the text/audio/wss paths.

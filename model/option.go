@@ -72,6 +72,7 @@ func InitOptionMap() {
 	common.OptionMap["ChannelBreakerBackoffMultipliers"] = common.ChannelBreakerBackoffMultipliersToString()
 	common.OptionMap["ChannelBreakerBackoffMaxCooldownSeconds"] = strconv.Itoa(common.GetChannelBreakerBackoffMaxCooldownSeconds())
 	common.OptionMap["ChannelBreakerBackoffDecaySeconds"] = strconv.Itoa(common.GetChannelBreakerBackoffDecaySeconds())
+	common.OptionMap["ZeroCompletionNoChargeEnabled"] = strconv.FormatBool(common.IsZeroCompletionNoChargeEnabled())
 	common.OptionMap["EmailDomainRestrictionEnabled"] = strconv.FormatBool(common.EmailDomainRestrictionEnabled)
 	common.OptionMap["EmailAliasRestrictionEnabled"] = strconv.FormatBool(common.EmailAliasRestrictionEnabled)
 	common.OptionMap["EmailDomainWhitelist"] = strings.Join(common.EmailDomainWhitelist, ",")
@@ -364,6 +365,8 @@ func updateOptionMap(key string, value string) (err error) {
 			common.SetChannelBreakerPenaltyOfflineEnabled(boolValue)
 		case "ChannelBreakerBackoffEnabled":
 			common.SetChannelBreakerBackoffEnabled(boolValue)
+		case "ZeroCompletionNoChargeEnabled":
+			common.SetZeroCompletionNoChargeEnabled(boolValue)
 		case "LogConsumeEnabled":
 			common.LogConsumeEnabled = boolValue
 		case "DisplayInCurrencyEnabled":
