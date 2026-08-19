@@ -54,7 +54,7 @@ export function PrismHero(props: PrismHeroProps) {
           </h1>
           <p className='text-muted-foreground mt-6 max-w-xl text-base leading-7 sm:text-lg'>
             {t(
-              'Keep the SDK you know. Change the Base URL to connect text, image, and video models.'
+              'AI infrastructure with automatic routing, multi-provider failover, and transparent per-token billing.'
             )}
           </p>
           <div className='mt-8 flex flex-wrap gap-3'>
@@ -89,6 +89,23 @@ export function PrismHero(props: PrismHeroProps) {
               {t('View integration guide')}
             </Button>
           </div>
+
+          <dl className='mt-10 grid max-w-xl grid-cols-2 gap-x-8 gap-y-5 sm:grid-cols-4'>
+            {[
+              { v: '40+', k: t('Frontier models') },
+              { v: '3', k: 'Anthropic · OpenAI · Google' },
+              { v: '1M', k: t('Token context') },
+              { v: '<5 min', k: t('To integrate') },
+            ].map((s) => (
+              <div key={s.k}>
+                <dt className='sr-only'>{s.k}</dt>
+                <dd className='font-mono text-xl font-semibold tracking-tight'>
+                  {s.v}
+                </dd>
+                <dd className='text-muted-foreground mt-0.5 text-xs'>{s.k}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
 
         <PrismDial />

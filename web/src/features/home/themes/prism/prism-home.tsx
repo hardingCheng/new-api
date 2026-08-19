@@ -28,6 +28,7 @@ import {
   PrismOnboarding,
 } from './prism-details'
 import { PrismHero } from './prism-hero'
+import { PrismTrust } from './prism-trust'
 import {
   PrismCapabilities,
   PrismFinalCTA,
@@ -59,6 +60,7 @@ export function PrismHome(props: PrismHomeProps) {
             docsUrl={docsUrl}
           />
           <PrismProviderBand />
+          <PrismTrust />
           <PrismModelShowcase />
           <PrismCodeSample />
           <PrismCapabilities />
