@@ -215,8 +215,8 @@ For commercial licensing, please contact support@quantumnous.com
   --info-foreground: oklch(0.145 0 0);
   --neutral: oklch(0.76 0 0);
   --neutral-foreground: oklch(0.155 0 0);
-  --border: rgb(255 255 255 / 8%);
-  --input: rgb(255 255 255 / 12%);
+  --border: rgb(255 255 255 / 13%);
+  --input: rgb(255 255 255 / 17%);
   --ring: rgb(255 255 255 / 40%);
   --chart-1: oklch(0.75 0.16 158);
   --chart-2: oklch(0.82 0.15 90);
@@ -229,7 +229,7 @@ For commercial licensing, please contact support@quantumnous.com
   --sidebar-primary-foreground: #0a0a0a;
   --sidebar-accent: #161717;
   --sidebar-accent-foreground: #f5f5f4;
-  --sidebar-border: rgb(255 255 255 / 7%);
+  --sidebar-border: rgb(255 255 255 / 10%);
   --sidebar-ring: rgb(255 255 255 / 40%);
   --skeleton-base: #141515;
   --skeleton-highlight: #1d1e1e;

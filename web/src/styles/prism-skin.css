@@ -17,7 +17,7 @@
 }
 
 .dark [data-slot='card']:hover {
-  border-color: rgb(255 255 255 / 16%);
+  border-color: rgb(255 255 255 / 22%);
 }
 
 /* ---- 表格:表头小型大写宽字距(prism 标签语言),数字等宽对齐 ---- */
