@@ -190,20 +190,21 @@ For commercial licensing, please contact support@quantumnous.com
 
 .dark {
   /* Prism 画布:近黑绿底(值对齐 features/home/themes/prism/prism-theme.css)。 */
-  --background: #0b0d0c;
-  --foreground: #f1f3ed;
-  --card: #111411;
-  --card-foreground: #f1f3ed;
-  --popover: #171a17;
-  --popover-foreground: #f1f3ed;
-  --primary: #35d98c;
-  --primary-foreground: #052018;
-  --secondary: #1b1f1b;
-  --secondary-foreground: #f1f3ed;
-  --muted: #171a17;
-  --muted-foreground: #aeb4aa;
-  --accent: #242924;
-  --accent-foreground: #f1f3ed;
+  --background: #0a0c0b;
+  --foreground: #f2f4f0;
+  --card: #171b18;
+  --card-foreground: #f2f4f0;
+  --popover: #212623;
+  --popover-foreground: #f2f4f0;
+  /* 控制台用沉稳翡翠绿(7.85:1 对深字);荧光绿只留给首页 prism 主题。 */
+  --primary: #1fbf77;
+  --primary-foreground: #04150d;
+  --secondary: #232825;
+  --secondary-foreground: #f2f4f0;
+  --muted: #1b201c;
+  --muted-foreground: #b4bdb4;
+  --accent: #242a26;
+  --accent-foreground: #f2f4f0;
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.985 0 0);
   --success: oklch(0.696 0.17 162.48);
@@ -214,24 +215,24 @@ For commercial licensing, please contact support@quantumnous.com
   --info-foreground: oklch(0.145 0 0);
   --neutral: oklch(0.76 0 0);
   --neutral-foreground: oklch(0.155 0 0);
-  --border: rgb(241 243 237 / 12%);
-  --input: rgb(241 243 237 / 18%);
-  --ring: #35d98c;
+  --border: rgb(242 244 240 / 15%);
+  --input: rgb(242 244 240 / 20%);
+  --ring: #1fbf77;
   --chart-1: oklch(0.75 0.16 158);
   --chart-2: oklch(0.82 0.15 90);
   --chart-3: oklch(0.72 0.12 200);
   --chart-4: oklch(0.75 0.16 325);
   --chart-5: oklch(0.68 0.13 120);
-  --sidebar: #0d100e;
-  --sidebar-foreground: #f1f3ed;
-  --sidebar-primary: #35d98c;
-  --sidebar-primary-foreground: #052018;
-  --sidebar-accent: #1b201c;
-  --sidebar-accent-foreground: #d9efe2;
-  --sidebar-border: rgb(241 243 237 / 10%);
-  --sidebar-ring: #35d98c;
-  --skeleton-base: #1b1f1b;
-  --skeleton-highlight: #242924;
+  --sidebar: #0c0e0d;
+  --sidebar-foreground: #f2f4f0;
+  --sidebar-primary: #1fbf77;
+  --sidebar-primary-foreground: #04150d;
+  --sidebar-accent: #1c211d;
+  --sidebar-accent-foreground: #dcefe3;
+  --sidebar-border: rgb(242 244 240 / 12%);
+  --sidebar-ring: #1fbf77;
+  --skeleton-base: #1b201c;
+  --skeleton-highlight: #262b27;
   --table-row: var(--background);
   --table-header: color-mix(in oklch, var(--foreground) 6%, var(--background));
   --table-header-hover: color-mix(
