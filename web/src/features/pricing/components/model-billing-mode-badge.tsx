@@ -32,14 +32,15 @@ interface ModelBillingModeBadgeProps {
 export function ModelBillingModeBadge(props: ModelBillingModeBadgeProps) {
   const { t } = useTranslation()
   let label = t('Per Request')
-  let variant: StatusVariant = 'purple'
+  // 巴西站:计费方式是元数据不是状态,统一素灰(prismix 去彩原则)。
+  let variant: StatusVariant = 'neutral'
 
   if (isDynamicPricingModel(props.model)) {
     label = t('Dynamic Pricing')
-    variant = 'warning'
+    variant = 'neutral'
   } else if (isTokenBasedModel(props.model)) {
     label = t('Token-based')
-    variant = 'info'
+    variant = 'neutral'
   }
 
   return (
