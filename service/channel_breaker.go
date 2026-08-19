@@ -754,7 +754,7 @@ func openBreakerAt(state *channelBreakerState, now time.Time, rule channelBreake
 }
 
 // applyChannelBreakerBackoff 计算连续打开后的冷却并写入 state.CooldownSecs
-//（stateCooldown 优先读 state，读取侧零改动）。以规则冷却为基准乘阶梯取绝对值，
+// （stateCooldown 优先读 state，读取侧零改动）。以规则冷却为基准乘阶梯取绝对值，
 // 不做复利 —— applyChannelBreakerRuleContext 每次失败都会把 CooldownSecs
 // 重置为规则值，复利会被它随机打断。探测通过关断即删状态，连击自然清零。
 func applyChannelBreakerBackoff(state *channelBreakerState, now time.Time, rule channelBreakerRuntimeRule) {

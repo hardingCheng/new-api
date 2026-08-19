@@ -78,7 +78,7 @@ func (s *textQuotaSummary) hasBillableUsage() bool {
 
 // shouldWaiveZeroCompletionQuota 判定「零完成不计费」：生成类请求、零补全、无工具附加费，
 // 且故障在上游侧——流式 = 非正常结束且非客户端断开；非流式 = 上游未返回 usage
-//（现状是按估算 prompt 收费）。客户端主动断开不免，防止大 prompt 秒断白嫖上游成本。
+// （现状是按估算 prompt 收费）。客户端主动断开不免，防止大 prompt 秒断白嫖上游成本。
 func shouldWaiveZeroCompletionQuota(relayInfo *relaycommon.RelayInfo, summary *textQuotaSummary, originUsage *dto.Usage) bool {
 	if !common.IsZeroCompletionNoChargeEnabled() {
 		return false
