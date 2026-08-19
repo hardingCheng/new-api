@@ -97,12 +97,8 @@ const ThemeCustomizationContext =
 export function ThemeCustomizationProvider(props: {
   children: React.ReactNode
 }) {
-  const [preset, _setPreset] = useState<ThemePreset>(() =>
-    readCookie<ThemePreset>(
-      THEME_COOKIE_KEYS.preset,
-      THEME_PRESET_VALUES,
-      DEFAULT_THEME_CUSTOMIZATION.preset
-    )
+  const [preset, _setPreset] = useState<ThemePreset>(
+    () => DEFAULT_THEME_CUSTOMIZATION.preset
   )
   const [font, _setFont] = useState<ThemeFont>(() =>
     readCookie<ThemeFont>(

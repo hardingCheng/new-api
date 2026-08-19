@@ -67,8 +67,9 @@ function getSystemTheme(): ResolvedTheme {
     : 'light'
 }
 
-function resolveTheme(theme: Theme): ResolvedTheme {
-  return theme === 'system' ? getSystemTheme() : theme
+function resolveTheme(_theme: Theme): ResolvedTheme {
+  // 巴西站:prism 是 dark-only 语言,站点只有一个面孔(owner 2026-08-19 拍板锁死)。
+  return 'dark'
 }
 
 function getStoredTheme(storageKey: string, fallback: Theme): Theme {

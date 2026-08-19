@@ -7,7 +7,7 @@
 
 /* ---- 圆角体系:prism 用更大的 0.75rem ---- */
 .dark {
-  --radius: 0.75rem;
+  --radius: 0.625rem;
 }
 
 /* ---- 卡片:深底渐变 + 低透明度描边 + hover 微辉光 ---- */
@@ -17,7 +17,7 @@
 }
 
 .dark [data-slot='card']:hover {
-  border-color: rgb(31 191 119 / 32%);
+  border-color: rgb(255 255 255 / 16%);
 }
 
 /* ---- 表格:表头小型大写宽字距(prism 标签语言),数字等宽对齐 ---- */
@@ -75,8 +75,8 @@
 
 /* ---- 文本选区:签名绿 ---- */
 .dark ::selection {
-  background: rgb(31 191 119 / 30%);
-  color: #f2f4f0;
+  background: rgb(46 224 138 / 24%);
+  color: #f5f5f4;
 }
 
 /* ---- 动效尊重系统偏好 ---- */

@@ -31,6 +31,10 @@ import { useTheme } from '@/context/theme-provider'
 import { cn } from '@/lib/utils'
 
 export function ThemeSwitch() {
+  // 巴西站锁死 dark(owner 拍板),不提供明暗切换入口。
+  // eslint-disable-next-line no-constant-condition
+  if (true) return null
+
   const { t } = useTranslation()
   const { theme, setTheme } = useTheme()
 
