@@ -55,6 +55,10 @@ type channelBreakerState struct {
 	CooldownSecs   int
 	RuleProbeCount int
 	RuleProbeNeed  int
+	// 冷却退避的跨熔断周期记忆，openBreakerAt 不得清零；
+	// 旧版持久化状态缺这两个字段时按零值处理，天然向后兼容
+	ConsecutiveOpens int
+	LastOpenAt       time.Time
 }
 
 type ChannelBreakerProbe struct {
@@ -191,7 +195,7 @@ func AcquireChannelBreakerProbe(c *gin.Context, channelError types.ChannelError)
 		var event *channelBreakerOpenEvent
 		if isStaleHalfOpen(state, rule, now) {
 			event = newChannelBreakerOpenEvent(key, state, fmt.Sprintf("channel breaker probe timed out (%d/%d successes, %d/%d completed)", state.ProbeSuccess, stateProbeSuccessCount(state, rule), state.ProbeTotal, stateProbeCount(state, rule)))
-			openBreakerAt(state, now)
+			openBreakerAt(state, now, rule)
 		}
 		if state.State == ChannelBreakerStateOpen {
 			if now.Sub(state.OpenedAt) < stateCooldown(state, rule) {
@@ -281,7 +285,7 @@ func RecordChannelBreakerFailure(c *gin.Context, channelError types.ChannelError
 			return channelBreakerMutation{Action: channelBreakerMutationSave, State: state, Value: channelBreakerRecordResult{Message: message}}
 		}
 		event := newChannelBreakerOpenEvent(key, state, model.ChannelBreakerLogReasonOpened)
-		openBreakerAt(state, now)
+		openBreakerAt(state, now, rule)
 		return channelBreakerMutation{Action: channelBreakerMutationSave, State: state, Value: channelBreakerRecordResult{Opened: true, Message: model.ChannelBreakerLogReasonOpened}, Event: event}
 	})
 	if err != nil {
@@ -618,7 +622,7 @@ func ListChannelBreakerStatuses() []ChannelBreakerStatus {
 			}
 			reason := fmt.Sprintf("channel breaker probe timed out (%d/%d successes, %d/%d completed)", state.ProbeSuccess, stateProbeSuccessCount(state, rule), state.ProbeTotal, stateProbeCount(state, rule))
 			event := newChannelBreakerOpenEvent(key, state, reason)
-			openBreakerAt(state, now)
+			openBreakerAt(state, now, rule)
 			return channelBreakerMutation{Action: channelBreakerMutationSave, State: state, Value: cloneChannelBreakerState(state), Event: event}
 		})
 		if err != nil {
@@ -671,7 +675,7 @@ func evaluateProbeMutation(key string, state *channelBreakerState, rule channelB
 	}
 	message := fmt.Sprintf("channel breaker remains open after probe (%d/%d successes)", state.ProbeSuccess, state.ProbeTotal)
 	event := newChannelBreakerOpenEvent(key, state, message)
-	openBreakerAt(state, now)
+	openBreakerAt(state, now, rule)
 	return channelBreakerMutation{Action: channelBreakerMutationSave, State: state, Value: channelBreakerRecordResult{Opened: true, Message: message}, Event: event}
 }
 
@@ -735,7 +739,10 @@ func recordChannelBreakerMutationEvent(event *channelBreakerOpenEvent) {
 	recordChannelBreakerOpenLog(event.Key, &event.State, event.Reason)
 }
 
-func openBreakerAt(state *channelBreakerState, now time.Time) {
+func openBreakerAt(state *channelBreakerState, now time.Time, rule channelBreakerRuntimeRule) {
+	if common.IsChannelBreakerBackoffEnabled() {
+		applyChannelBreakerBackoff(state, now, rule)
+	}
 	state.State = ChannelBreakerStateOpen
 	state.Generation++
 	state.Failures = 0
@@ -744,6 +751,43 @@ func openBreakerAt(state *channelBreakerState, now time.Time) {
 	state.ProbeInFlight = 0
 	state.ProbeTotal = 0
 	state.ProbeSuccess = 0
+}
+
+// applyChannelBreakerBackoff 计算连续打开后的冷却并写入 state.CooldownSecs
+//（stateCooldown 优先读 state，读取侧零改动）。以规则冷却为基准乘阶梯取绝对值，
+// 不做复利 —— applyChannelBreakerRuleContext 每次失败都会把 CooldownSecs
+// 重置为规则值，复利会被它随机打断。探测通过关断即删状态，连击自然清零。
+func applyChannelBreakerBackoff(state *channelBreakerState, now time.Time, rule channelBreakerRuntimeRule) {
+	if !state.LastOpenAt.IsZero() && now.Sub(state.LastOpenAt) >= channelBreakerBackoffDecay() {
+		state.ConsecutiveOpens = 0
+	}
+	state.ConsecutiveOpens++
+	state.LastOpenAt = now
+	state.CooldownSecs = channelBreakerBackoffCooldownSecs(rule, state.ConsecutiveOpens)
+}
+
+func channelBreakerBackoffDecay() time.Duration {
+	return time.Duration(common.GetChannelBreakerBackoffDecaySeconds()) * time.Second
+}
+
+func channelBreakerBackoffCooldownSecs(rule channelBreakerRuntimeRule, consecutiveOpens int) int {
+	multipliers := common.GetChannelBreakerBackoffMultipliers()
+	idx := consecutiveOpens - 1
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(multipliers) {
+		idx = len(multipliers) - 1
+	}
+	base := int(rule.Cooldown.Seconds())
+	if base <= 0 {
+		base = common.GetChannelBreakerCooldownSeconds()
+	}
+	secs := base * multipliers[idx]
+	if maxSecs := common.GetChannelBreakerBackoffMaxCooldownSeconds(); maxSecs > 0 && secs > maxSecs {
+		secs = maxSecs
+	}
+	return secs
 }
 
 func channelBreakerProbeFromContext(c *gin.Context, key string) (ChannelBreakerProbe, bool) {

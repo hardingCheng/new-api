@@ -68,6 +68,10 @@ func InitOptionMap() {
 	common.OptionMap["ChannelBreakerPenaltyAlertOpensPerHour"] = strconv.Itoa(common.GetChannelBreakerPenaltyAlertOpensPerHour())
 	common.OptionMap["ChannelBreakerPenaltyOfflineConsecutiveHours"] = strconv.Itoa(common.GetChannelBreakerPenaltyOfflineConsecutiveHours())
 	common.OptionMap["ChannelBreakerPenaltyMinPoolSize"] = strconv.Itoa(common.GetChannelBreakerPenaltyMinPoolSize())
+	common.OptionMap["ChannelBreakerBackoffEnabled"] = strconv.FormatBool(common.IsChannelBreakerBackoffEnabled())
+	common.OptionMap["ChannelBreakerBackoffMultipliers"] = common.ChannelBreakerBackoffMultipliersToString()
+	common.OptionMap["ChannelBreakerBackoffMaxCooldownSeconds"] = strconv.Itoa(common.GetChannelBreakerBackoffMaxCooldownSeconds())
+	common.OptionMap["ChannelBreakerBackoffDecaySeconds"] = strconv.Itoa(common.GetChannelBreakerBackoffDecaySeconds())
 	common.OptionMap["EmailDomainRestrictionEnabled"] = strconv.FormatBool(common.EmailDomainRestrictionEnabled)
 	common.OptionMap["EmailAliasRestrictionEnabled"] = strconv.FormatBool(common.EmailAliasRestrictionEnabled)
 	common.OptionMap["EmailDomainWhitelist"] = strings.Join(common.EmailDomainWhitelist, ",")
@@ -358,6 +362,8 @@ func updateOptionMap(key string, value string) (err error) {
 			common.SetChannelBreakerPenaltyEnabled(boolValue)
 		case "ChannelBreakerPenaltyOfflineEnabled":
 			common.SetChannelBreakerPenaltyOfflineEnabled(boolValue)
+		case "ChannelBreakerBackoffEnabled":
+			common.SetChannelBreakerBackoffEnabled(boolValue)
 		case "LogConsumeEnabled":
 			common.LogConsumeEnabled = boolValue
 		case "DisplayInCurrencyEnabled":
@@ -644,6 +650,14 @@ func updateOptionMap(key string, value string) (err error) {
 	case "ChannelBreakerPenaltyMinPoolSize":
 		size, _ := strconv.Atoi(value)
 		common.SetChannelBreakerPenaltyMinPoolSize(size)
+	case "ChannelBreakerBackoffMultipliers":
+		common.SetChannelBreakerBackoffMultipliers(value)
+	case "ChannelBreakerBackoffMaxCooldownSeconds":
+		seconds, _ := strconv.Atoi(value)
+		common.SetChannelBreakerBackoffMaxCooldownSeconds(seconds)
+	case "ChannelBreakerBackoffDecaySeconds":
+		seconds, _ := strconv.Atoi(value)
+		common.SetChannelBreakerBackoffDecaySeconds(seconds)
 	case "QuotaPerUnit":
 		common.QuotaPerUnit, _ = strconv.ParseFloat(value, 64)
 	case "SensitiveWords":

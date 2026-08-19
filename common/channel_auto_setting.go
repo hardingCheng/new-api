@@ -56,6 +56,11 @@ var (
 	channelBreakerPenaltyAlertOpens   atomic.Int64
 	channelBreakerPenaltyOfflineHours atomic.Int64
 	channelBreakerPenaltyMinPoolSize  atomic.Int64
+
+	channelBreakerBackoffEnabledFlag atomic.Bool
+	channelBreakerBackoffMultiplier  atomic.Value // []int：连续熔断的冷却倍率阶梯
+	channelBreakerBackoffMaxCooldown atomic.Int64
+	channelBreakerBackoffDecaySecs   atomic.Int64
 )
 
 func init() {
@@ -75,6 +80,10 @@ func init() {
 	SetChannelBreakerPenaltyAlertOpensPerHour(10)
 	SetChannelBreakerPenaltyOfflineConsecutiveHours(2)
 	SetChannelBreakerPenaltyMinPoolSize(2)
+	SetChannelBreakerBackoffEnabled(false)
+	SetChannelBreakerBackoffMultipliers("1,2,5,15,60")
+	SetChannelBreakerBackoffMaxCooldownSeconds(3600)
+	SetChannelBreakerBackoffDecaySeconds(600)
 }
 
 func GetChannelDisableThreshold() float64 {
@@ -306,6 +315,76 @@ func SetChannelBreakerPenaltyMinPoolSize(value int) {
 		value = 2
 	}
 	channelBreakerPenaltyMinPoolSize.Store(int64(value))
+}
+
+// ---- 冷却退避：连续熔断冷却按倍率阶梯递增，稳定超过衰减窗后回到初值 ----
+
+var defaultChannelBreakerBackoffMultipliers = []int{1, 2, 5, 15, 60}
+
+func IsChannelBreakerBackoffEnabled() bool {
+	return channelBreakerBackoffEnabledFlag.Load()
+}
+
+func SetChannelBreakerBackoffEnabled(enabled bool) {
+	channelBreakerBackoffEnabledFlag.Store(enabled)
+}
+
+func GetChannelBreakerBackoffMultipliers() []int {
+	multipliers, ok := channelBreakerBackoffMultiplier.Load().([]int)
+	if !ok || len(multipliers) == 0 {
+		return append([]int(nil), defaultChannelBreakerBackoffMultipliers...)
+	}
+	return append([]int(nil), multipliers...)
+}
+
+// SetChannelBreakerBackoffMultipliers 解析逗号/换行分隔的正整数阶梯；
+// 任一项非法即整体回退默认阶梯，避免半套配置生效。
+func SetChannelBreakerBackoffMultipliers(value string) {
+	parts := ParseChannelBreakerList(value)
+	multipliers := make([]int, 0, len(parts))
+	for _, part := range parts {
+		n, err := strconv.Atoi(part)
+		if err != nil || n <= 0 {
+			multipliers = nil
+			break
+		}
+		multipliers = append(multipliers, n)
+	}
+	if len(multipliers) == 0 {
+		multipliers = append([]int(nil), defaultChannelBreakerBackoffMultipliers...)
+	}
+	channelBreakerBackoffMultiplier.Store(multipliers)
+}
+
+func ChannelBreakerBackoffMultipliersToString() string {
+	multipliers := GetChannelBreakerBackoffMultipliers()
+	parts := make([]string, 0, len(multipliers))
+	for _, m := range multipliers {
+		parts = append(parts, strconv.Itoa(m))
+	}
+	return strings.Join(parts, ",")
+}
+
+func GetChannelBreakerBackoffMaxCooldownSeconds() int {
+	return int(channelBreakerBackoffMaxCooldown.Load())
+}
+
+func SetChannelBreakerBackoffMaxCooldownSeconds(value int) {
+	if value <= 0 {
+		value = 3600
+	}
+	channelBreakerBackoffMaxCooldown.Store(int64(value))
+}
+
+func GetChannelBreakerBackoffDecaySeconds() int {
+	return int(channelBreakerBackoffDecaySecs.Load())
+}
+
+func SetChannelBreakerBackoffDecaySeconds(value int) {
+	if value <= 0 {
+		value = 600
+	}
+	channelBreakerBackoffDecaySecs.Store(int64(value))
 }
 
 // ---- 熔断豁免渠道：集中名单（报错不触发熔断与自动禁用，余额不足仍会禁用）----
