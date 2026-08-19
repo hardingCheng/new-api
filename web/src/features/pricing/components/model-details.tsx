@@ -1246,12 +1246,12 @@ export function ModelDetailsDrawer(props: ModelDetailsDrawerProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* 巴西站:详情用居中弹窗而非全屏侧滑(owner 拍板)。 */}
-      <DialogContent className='w-[calc(100vw-0.75rem)] max-w-none gap-0 overflow-hidden p-0 sm:w-[min(92vw,60rem)]'>
+      <DialogContent className='h-[min(52rem,88vh)] w-[calc(100vw-0.75rem)] max-w-[calc(100vw-0.75rem)] gap-0 overflow-hidden p-0 sm:w-[min(94vw,64rem)] sm:max-w-[min(94vw,64rem)]'>
         <DialogHeader className='sr-only'>
           <DialogTitle>{props.model.model_name}</DialogTitle>
           <DialogDescription>{t('Model details')}</DialogDescription>
         </DialogHeader>
-        <div className='max-h-[85vh] overflow-y-auto px-4 pt-10 pb-5 sm:px-6 sm:pb-6'>
+        <div className='h-full min-h-0 overflow-y-auto px-4 pt-10 pb-5 sm:px-6 sm:pb-6'>
           <ModelDetailsContent {...contentProps} />
         </div>
       </DialogContent>
