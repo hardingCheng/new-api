@@ -6,6 +6,10 @@ import (
 	"github.com/bytedance/gopkg/util/gopool"
 )
 
+// ChannelBreakerLogReasonOpened 失败计数触发打开时的 reason。
+// 熔断惩罚只统计这一种（probe 重开/超时不计），与阈值校准口径一致（CHANNEL_BREAKER_SPEC.md §6）。
+const ChannelBreakerLogReasonOpened = "channel breaker opened"
+
 // ChannelBreakerLog 记录每一次熔断器打开（OPEN）的历史，便于管理员排查。
 type ChannelBreakerLog struct {
 	Id           int    `json:"id"`
@@ -33,6 +37,20 @@ func RecordChannelBreakerLog(log *ChannelBreakerLog) {
 	gopool.Go(func() {
 		_ = DB.Create(log).Error
 	})
+}
+
+// CountChannelBreakerOpens 统计渠道在 [from, to) 秒级时间窗内因失败计数打开熔断的次数。
+// keyHash 非空时只统计该 Key（多 Key 渠道按 Key 惩罚，比按渠道聚合更宽松）。
+func CountChannelBreakerOpens(channelId int, keyHash string, from int64, to int64) (int64, error) {
+	query := DB.Model(&ChannelBreakerLog{}).
+		Where("channel_id = ? AND reason = ? AND created_at >= ? AND created_at < ?",
+			channelId, ChannelBreakerLogReasonOpened, from, to)
+	if keyHash != "" {
+		query = query.Where("key_hash = ?", keyHash)
+	}
+	var count int64
+	err := query.Count(&count).Error
+	return count, err
 }
 
 // GetChannelBreakerLogs 分页获取熔断历史，按时间倒序，并回填渠道名称。

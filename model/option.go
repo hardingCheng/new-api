@@ -63,6 +63,11 @@ func InitOptionMap() {
 	common.OptionMap["ChannelBreakerExcludePaths"] = strings.Join(common.GetChannelBreakerExcludePaths(), "\n")
 	common.OptionMap["ChannelBreakerRules"] = common.ChannelBreakerRulesToJSONString()
 	common.OptionMap["ChannelBreakerExemptChannels"] = common.ChannelBreakerExemptChannelsToJSONString()
+	common.OptionMap["ChannelBreakerPenaltyEnabled"] = strconv.FormatBool(common.IsChannelBreakerPenaltyEnabled())
+	common.OptionMap["ChannelBreakerPenaltyOfflineEnabled"] = strconv.FormatBool(common.IsChannelBreakerPenaltyOfflineEnabled())
+	common.OptionMap["ChannelBreakerPenaltyAlertOpensPerHour"] = strconv.Itoa(common.GetChannelBreakerPenaltyAlertOpensPerHour())
+	common.OptionMap["ChannelBreakerPenaltyOfflineConsecutiveHours"] = strconv.Itoa(common.GetChannelBreakerPenaltyOfflineConsecutiveHours())
+	common.OptionMap["ChannelBreakerPenaltyMinPoolSize"] = strconv.Itoa(common.GetChannelBreakerPenaltyMinPoolSize())
 	common.OptionMap["EmailDomainRestrictionEnabled"] = strconv.FormatBool(common.EmailDomainRestrictionEnabled)
 	common.OptionMap["EmailAliasRestrictionEnabled"] = strconv.FormatBool(common.EmailAliasRestrictionEnabled)
 	common.OptionMap["EmailDomainWhitelist"] = strings.Join(common.EmailDomainWhitelist, ",")
@@ -349,6 +354,10 @@ func updateOptionMap(key string, value string) (err error) {
 			common.SetAutomaticEnableChannelEnabled(boolValue)
 		case "ChannelBreakerEnabled":
 			common.SetChannelBreakerEnabled(boolValue)
+		case "ChannelBreakerPenaltyEnabled":
+			common.SetChannelBreakerPenaltyEnabled(boolValue)
+		case "ChannelBreakerPenaltyOfflineEnabled":
+			common.SetChannelBreakerPenaltyOfflineEnabled(boolValue)
 		case "LogConsumeEnabled":
 			common.LogConsumeEnabled = boolValue
 		case "DisplayInCurrencyEnabled":
@@ -626,6 +635,15 @@ func updateOptionMap(key string, value string) (err error) {
 		err = common.UpdateChannelBreakerRulesByJSONString(value)
 	case "ChannelBreakerExemptChannels":
 		err = common.UpdateChannelBreakerExemptChannelsByJSONString(value)
+	case "ChannelBreakerPenaltyAlertOpensPerHour":
+		opens, _ := strconv.Atoi(value)
+		common.SetChannelBreakerPenaltyAlertOpensPerHour(opens)
+	case "ChannelBreakerPenaltyOfflineConsecutiveHours":
+		hours, _ := strconv.Atoi(value)
+		common.SetChannelBreakerPenaltyOfflineConsecutiveHours(hours)
+	case "ChannelBreakerPenaltyMinPoolSize":
+		size, _ := strconv.Atoi(value)
+		common.SetChannelBreakerPenaltyMinPoolSize(size)
 	case "QuotaPerUnit":
 		common.QuotaPerUnit, _ = strconv.ParseFloat(value, 64)
 	case "SensitiveWords":

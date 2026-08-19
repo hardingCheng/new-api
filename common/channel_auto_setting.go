@@ -50,6 +50,12 @@ var (
 	channelBreakerExcludePaths  atomic.Value
 	channelBreakerRules         atomic.Value
 	channelBreakerExemptChannel atomic.Value // map[int]struct{}：报错不触发熔断与自动禁用的渠道
+
+	channelBreakerPenaltyEnabledFlag  atomic.Bool
+	channelBreakerPenaltyOfflineFlag  atomic.Bool
+	channelBreakerPenaltyAlertOpens   atomic.Int64
+	channelBreakerPenaltyOfflineHours atomic.Int64
+	channelBreakerPenaltyMinPoolSize  atomic.Int64
 )
 
 func init() {
@@ -64,6 +70,11 @@ func init() {
 	SetChannelBreakerExcludePaths("/v1/videos")
 	SetChannelBreakerRules(nil)
 	SetChannelBreakerExemptChannels(nil)
+	SetChannelBreakerPenaltyEnabled(false)
+	SetChannelBreakerPenaltyOfflineEnabled(false)
+	SetChannelBreakerPenaltyAlertOpensPerHour(10)
+	SetChannelBreakerPenaltyOfflineConsecutiveHours(2)
+	SetChannelBreakerPenaltyMinPoolSize(2)
 }
 
 func GetChannelDisableThreshold() float64 {
@@ -242,6 +253,59 @@ func NormalizeChannelBreakerRule(rule ChannelBreakerRule) ChannelBreakerRule {
 		rule.ProbeSuccessCount = rule.ProbeCount
 	}
 	return rule
+}
+
+// ---- 熔断惩罚：反复熔断 → 告警 / 自动下线。判据是打开频次，不是错误文本；
+// 阈值默认值来自 30 天生产数据校准（CHANNEL_BREAKER_SPEC.md §6），调参前先复跑校准 SQL ----
+
+func IsChannelBreakerPenaltyEnabled() bool {
+	return channelBreakerPenaltyEnabledFlag.Load()
+}
+
+func SetChannelBreakerPenaltyEnabled(enabled bool) {
+	channelBreakerPenaltyEnabledFlag.Store(enabled)
+}
+
+func IsChannelBreakerPenaltyOfflineEnabled() bool {
+	return channelBreakerPenaltyOfflineFlag.Load()
+}
+
+func SetChannelBreakerPenaltyOfflineEnabled(enabled bool) {
+	channelBreakerPenaltyOfflineFlag.Store(enabled)
+}
+
+func GetChannelBreakerPenaltyAlertOpensPerHour() int {
+	return int(channelBreakerPenaltyAlertOpens.Load())
+}
+
+func SetChannelBreakerPenaltyAlertOpensPerHour(value int) {
+	if value <= 0 {
+		value = 10
+	}
+	channelBreakerPenaltyAlertOpens.Store(int64(value))
+}
+
+func GetChannelBreakerPenaltyOfflineConsecutiveHours() int {
+	return int(channelBreakerPenaltyOfflineHours.Load())
+}
+
+func SetChannelBreakerPenaltyOfflineConsecutiveHours(value int) {
+	if value <= 0 {
+		value = 2
+	}
+	channelBreakerPenaltyOfflineHours.Store(int64(value))
+}
+
+func GetChannelBreakerPenaltyMinPoolSize() int {
+	return int(channelBreakerPenaltyMinPoolSize.Load())
+}
+
+// SetChannelBreakerPenaltyMinPoolSize 0 表示关闭池保护，负值视为未配置回退默认值。
+func SetChannelBreakerPenaltyMinPoolSize(value int) {
+	if value < 0 {
+		value = 2
+	}
+	channelBreakerPenaltyMinPoolSize.Store(int64(value))
 }
 
 // ---- 熔断豁免渠道：集中名单（报错不触发熔断与自动禁用，余额不足仍会禁用）----

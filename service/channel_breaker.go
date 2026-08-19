@@ -280,9 +280,9 @@ func RecordChannelBreakerFailure(c *gin.Context, channelError types.ChannelError
 			message := fmt.Sprintf("channel breaker pending (failures: %d/%d)", state.Failures, rule.FailureLimit)
 			return channelBreakerMutation{Action: channelBreakerMutationSave, State: state, Value: channelBreakerRecordResult{Message: message}}
 		}
-		event := newChannelBreakerOpenEvent(key, state, "channel breaker opened")
+		event := newChannelBreakerOpenEvent(key, state, model.ChannelBreakerLogReasonOpened)
 		openBreakerAt(state, now)
-		return channelBreakerMutation{Action: channelBreakerMutationSave, State: state, Value: channelBreakerRecordResult{Opened: true, Message: "channel breaker opened"}, Event: event}
+		return channelBreakerMutation{Action: channelBreakerMutationSave, State: state, Value: channelBreakerRecordResult{Opened: true, Message: model.ChannelBreakerLogReasonOpened}, Event: event}
 	})
 	if err != nil {
 		logChannelBreakerRedisFailure("record failure", key, err)
@@ -290,6 +290,9 @@ func RecordChannelBreakerFailure(c *gin.Context, channelError types.ChannelError
 	}
 	recordChannelBreakerMutationEvent(mutation.Event)
 	result, _ := mutation.Value.(channelBreakerRecordResult)
+	if result.Opened {
+		EvaluateChannelBreakerPenaltyAsync(c, channelError)
+	}
 	return result.Opened, result.Message
 }
 

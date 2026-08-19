@@ -61,6 +61,18 @@ func GetAllEnableAbilities() []Ability {
 	return abilities
 }
 
+// CountEnabledChannelsForGroupModel 返回 (group, model) 下启用渠道数，
+// 供熔断惩罚自动下线前的池保护判断（池太小只告警不下线）。
+// map 条件由 dialector 处理保留字引号，不依赖 initCol 的列名初始化。
+func CountEnabledChannelsForGroupModel(group string, model string) (int64, error) {
+	var count int64
+	err := DB.Model(&Ability{}).
+		Where(map[string]interface{}{"group": group, "model": model, "enabled": true}).
+		Distinct("channel_id").
+		Count(&count).Error
+	return count, err
+}
+
 func getPriority(group string, model string, retry int) (int, error) {
 
 	var priorities []int
