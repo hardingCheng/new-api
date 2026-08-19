@@ -44,8 +44,8 @@ type PrismHomeProps = {
 
 export function PrismHome(props: PrismHomeProps) {
   const { status } = useStatus()
-  const docsUrl =
-    (status?.docs_link as string | undefined) || 'https://docs.newapi.pro'
+  // 巴西站:未配置 DocsLink 时回退站内教程中心,绝不落到上游官方文档(品牌泄露)。
+  const docsUrl = (status?.docs_link as string | undefined) || '/tutorials'
 
   return (
     <div className='prism-theme dark'>

@@ -216,10 +216,10 @@ export function PrismOnboarding() {
 }
 
 const CLIENTS = [
-  { name: 'OpenAI SDK', icon: Code2 },
-  { name: 'Claude Code', icon: Terminal },
-  { name: 'Codex', icon: Terminal },
-  { name: 'Cherry Studio', icon: MessageSquare },
+  { name: 'OpenAI SDK', icon: Code2, slug: 'quick-start' },
+  { name: 'Claude Code', icon: Terminal, slug: 'claude-code' },
+  { name: 'Codex', icon: Terminal, slug: 'codex' },
+  { name: 'Cherry Studio', icon: MessageSquare, slug: 'quick-start' },
 ] as const
 
 export function PrismEcosystem(props: { docsUrl: string }) {
@@ -261,9 +261,11 @@ export function PrismEcosystem(props: { docsUrl: string }) {
           {CLIENTS.map((client) => {
             const Icon = client.icon
             return (
-              <div
+              <Link
                 key={client.name}
-                className='prism-client-row prism-reveal grid grid-cols-[auto_1fr_auto] items-center gap-5 border-b border-white/10 py-6 sm:py-7'
+                to='/tutorials/$slug'
+                params={{ slug: client.slug }}
+                className='prism-client-row prism-reveal grid grid-cols-[auto_1fr_auto] items-center gap-5 border-b border-white/10 py-6 transition-colors hover:bg-white/[0.03] sm:py-7'
               >
                 <Icon
                   aria-hidden='true'
@@ -278,9 +280,9 @@ export function PrismEcosystem(props: { docsUrl: string }) {
                 </div>
                 <ArrowRight
                   aria-hidden='true'
-                  className='size-4 text-white/35 transition-transform'
+                  className='size-4 text-white/35 transition-transform group-hover:translate-x-0.5'
                 />
-              </div>
+              </Link>
             )
           })}
         </div>
