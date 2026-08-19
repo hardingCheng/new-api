@@ -468,8 +468,12 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 @keyframes prism-orbit {
+  from {
+    transform: rotate(var(--a, 0deg));
+  }
+
   to {
-    transform: rotate(360deg);
+    transform: rotate(calc(var(--a, 0deg) + 360deg));
   }
 }
 
@@ -529,8 +533,12 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 @keyframes prism-orbit-rev {
+  from {
+    transform: translate(-50%, -50%) rotate(calc(var(--a, 0deg) * -1));
+  }
+
   to {
-    transform: translate(-50%, -50%) rotate(calc(var(--a) * -1 - 360deg));
+    transform: translate(-50%, -50%) rotate(calc(var(--a, 0deg) * -1 - 360deg));
   }
 }
 
