@@ -60,13 +60,6 @@ const initialState: ThemeProviderState = {
 
 const ThemeContext = createContext<ThemeProviderState>(initialState)
 
-function getSystemTheme(): ResolvedTheme {
-  if (typeof window === 'undefined') return 'light'
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'dark'
-    : 'light'
-}
-
 function resolveTheme(_theme: Theme): ResolvedTheme {
   // 巴西站:prism 是 dark-only 语言,站点只有一个面孔(owner 2026-08-19 拍板锁死)。
   return 'dark'
@@ -95,7 +88,8 @@ export function ThemeProvider({
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
 
     const applyTheme = () => {
-      const nextResolvedTheme = theme === 'system' ? getSystemTheme() : theme
+      // 必须走 resolveTheme(站点锁 dark 的单一事实源)—— 此前内联重算导致存量 light cookie 绕过锁。
+      const nextResolvedTheme = resolveTheme(theme)
       root.classList.remove('light', 'dark')
       root.classList.add(nextResolvedTheme)
       setResolvedTheme(nextResolvedTheme)
