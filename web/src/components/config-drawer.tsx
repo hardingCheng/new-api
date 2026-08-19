@@ -67,6 +67,10 @@ import { useSidebar } from './ui/sidebar'
 const Item = RadioPrimitive.Root
 
 export function ConfigDrawer() {
+  // 巴西站锁死主题(owner 拍板),外观定制入口隐藏。
+  // eslint-disable-next-line no-constant-condition
+  if (true) return null
+
   const { t } = useTranslation()
   const { setOpen } = useSidebar()
   const { resetDir } = useDirection()

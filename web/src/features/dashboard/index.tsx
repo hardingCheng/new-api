@@ -37,7 +37,8 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { ModelsChartPreferences } from './components/models/models-chart-preferences'
 import { ModelsFilter } from './components/models/models-filter-dialog'
-import { OverviewDashboard } from './components/overview/overview-dashboard'
+// 巴西站:overview 用 prism 平行变体(BR_PRISM_UI_SPEC §4 Stage 6a,偏离点 D8)。
+import { OverviewDashboard } from './components/overview/prism-overview'
 import { DEFAULT_TIME_GRANULARITY } from './constants'
 import {
   buildDefaultDashboardFilters,
