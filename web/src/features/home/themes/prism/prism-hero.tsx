@@ -92,8 +92,8 @@ export function PrismHero(props: PrismHeroProps) {
 
           <dl className='mt-10 grid max-w-xl grid-cols-2 gap-x-8 gap-y-5 sm:grid-cols-4'>
             {[
-              { v: '40+', k: t('Frontier models') },
-              { v: '3', k: 'Anthropic · OpenAI · Google' },
+              { v: '60+', k: t('Frontier models') },
+              { v: '6+', k: t('Providers') },
               { v: '1M', k: t('Token context') },
               { v: '<5 min', k: t('To integrate') },
             ].map((s) => (

@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { useSystemConfig } from '@/hooks/use-system-config'
 
 type UseKeyDialogProps = {
   open: boolean
@@ -51,6 +52,7 @@ function CodeBlock({ label, code }: { label: string; code: string }) {
 
 export function UseKeyDialog({ open, onOpenChange, tokenKey }: UseKeyDialogProps) {
   const { t } = useTranslation()
+  const { systemName } = useSystemConfig()
   const origin = window.location.origin
   const key = tokenKey ?? 'sk-...'
 
@@ -75,7 +77,7 @@ export function UseKeyDialog({ open, onOpenChange, tokenKey }: UseKeyDialogProps
       blocks: [
         {
           label: '~/.codex/config.toml',
-          code: `model_provider = "station"\nmodel = "gpt-5.6"\nmodel_reasoning_effort = "high"\n\n[model_providers.station]\nname = "TokenHub"\nbase_url = "${origin}/v1"\nrequires_openai_auth = true\nwire_api = "responses"`,
+          code: `model_provider = "station"\nmodel = "gpt-5.6"\nmodel_reasoning_effort = "high"\n\n[model_providers.station]\nname = "${systemName}"\nbase_url = "${origin}/v1"\nrequires_openai_auth = true\nwire_api = "responses"`,
         },
         {
           label: 'macOS / Linux',

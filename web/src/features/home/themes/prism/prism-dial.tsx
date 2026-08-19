@@ -5,22 +5,25 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useSystemConfig } from '@/hooks/use-system-config'
+
 // 挂牌代表模型(与站内 pricing 一致的真实名字,纯展示无请求)
 const DIAL_MODELS = [
+  'claude-fable-5',
+  'gpt-5.6-sol',
+  'gemini-3-pro-preview',
   'claude-opus-5',
   'gpt-5.6',
-  'gemini-3.1-pro-preview',
-  'claude-sonnet-5',
-  'gpt-5.5',
   'gemini-3.6-flash',
-  'claude-haiku-4-5',
-  'gpt-5.4-mini',
+  'claude-sonnet-4-6',
+  'gpt-5.5',
 ]
 
 const ROTATION_SECONDS = 24
 
 export function PrismDial() {
   const { t } = useTranslation()
+  const { systemName } = useSystemConfig()
   const n = DIAL_MODELS.length
   const [active, setActive] = useState(0)
 
@@ -64,7 +67,7 @@ export function PrismDial() {
       ))}
       <div className='prism-dial-core'>
         <div className='prism-dial-disc'>
-          <small>TOKENHUB</small>
+          <small className='uppercase'>{systemName}</small>
           <b>{DIAL_MODELS[active]}</b>
           <small>{t('One account, more models')}</small>
         </div>

@@ -4,12 +4,12 @@
 不写不可验证的空话(SLA 百分比、客户数一律不写)。
 */
 import {
-  Banknote,
-  Coins,
-  Languages,
   Layers,
   ReceiptText,
   RefreshCcw,
+  Rocket,
+  SquareTerminal,
+  Wallet,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -59,23 +59,23 @@ export function PrismTrust() {
     },
   ]
 
-  const brazil = [
+  const localCards = [
     {
-      icon: Languages,
-      title: t('100% in Portuguese'),
-      body: t('Interface and API error messages in Portuguese — end to end.'),
+      icon: Wallet,
+      title: t('Top up online, credited instantly'),
+      body: t('Alipay and WeChat Pay supported — quota arrives in seconds.'),
     },
     {
-      icon: Coins,
-      title: t('Pay with USDT'),
-      body: t('No international credit card, no IOF, credited in minutes.'),
-    },
-    {
-      icon: Banknote,
-      title: t('Dollar pricing, no hidden markup'),
+      icon: SquareTerminal,
+      title: t('Coding CLIs ready in minutes'),
       body: t(
-        'You pay in dollars at the listed rate. What you see on the pricing page is what you pay.'
+        'Claude Code, Codex and Gemini CLI with step-by-step guides and one-click key setup.'
       ),
+    },
+    {
+      icon: Rocket,
+      title: t('New models listed as they launch'),
+      body: t('Frontier models go live here right after official release.'),
     },
   ]
 
@@ -94,10 +94,10 @@ export function PrismTrust() {
         </div>
         <div>
           <div className='text-muted-foreground text-[11px] font-medium tracking-[0.22em] uppercase'>
-            {t('Built for Brazilian developers')}
+            {t('Built for developers here')}
           </div>
           <div className='mt-5 grid gap-4 md:grid-cols-3'>
-            {brazil.map((c) => (
+            {localCards.map((c) => (
               <TrustCard key={c.title} {...c} />
             ))}
           </div>
