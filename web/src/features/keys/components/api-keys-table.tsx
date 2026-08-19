@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
+import { Copy } from 'lucide-react'
 import { getRouteApi } from '@tanstack/react-router'
 import type { Table as TanstackTable } from '@tanstack/react-table'
 import { Database } from 'lucide-react'
@@ -44,6 +45,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
+
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 
 import { getApiKeys, searchApiKeys } from '../api'
 import {
@@ -294,7 +297,9 @@ export function ApiKeysTable() {
   })
 
   return (
-    <DataTablePage
+    <>
+      <KeysKpiBar total={data?.total || 0} items={apiKeys} />
+      <DataTablePage
       table={table}
       columns={columns}
       isLoading={isLoading}
@@ -332,5 +337,57 @@ export function ApiKeysTable() {
       }
       bulkActions={<DataTableBulkActions table={table} />}
     />
+    </>
+  )
+}
+
+function KeysKpiBar({
+  total,
+  items,
+}: {
+  total: number
+  items: { status?: number; group?: string | null }[]
+}) {
+  const { t } = useTranslation()
+  const { copyToClipboard } = useCopyToClipboard()
+  const origin = window.location.origin
+  const enabled = items.filter((k) => k.status === 1).length
+  const groups = new Set(
+    items.flatMap((k) => (k.group ? k.group.split(',') : []))
+  ).size
+
+  const cells: { label: string; value: string; copy?: string }[] = [
+    { label: t('Total'), value: String(total) },
+    { label: t('Enabled'), value: String(enabled) },
+    { label: t('Groups'), value: String(groups) },
+    { label: t('API address'), value: origin.replace(/^https?:\/\//, ''), copy: origin },
+  ]
+
+  return (
+    <div className='mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4'>
+      {cells.map((c) => (
+        <button
+          key={c.label}
+          type='button'
+          disabled={!c.copy}
+          onClick={async () => {
+            if (!c.copy) return
+            const ok = await copyToClipboard(c.copy)
+            if (ok) toast.success(t('Copied to clipboard'))
+          }}
+          className='bg-card group flex flex-col items-start rounded-lg border px-3.5 py-2.5 text-left disabled:cursor-default'
+        >
+          <span className='text-muted-foreground text-[10px] font-medium tracking-[0.08em] uppercase'>
+            {c.label}
+          </span>
+          <span className='mt-1 flex items-center gap-1.5 font-mono text-sm font-semibold'>
+            {c.value}
+            {c.copy && (
+              <Copy className='text-muted-foreground size-3 opacity-0 transition-opacity group-hover:opacity-100' />
+            )}
+          </span>
+        </button>
+      ))}
+    </div>
   )
 }
