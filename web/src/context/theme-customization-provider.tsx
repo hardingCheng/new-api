@@ -33,7 +33,6 @@ import {
   resolveThemeFont,
   THEME_COOKIE_KEYS,
   THEME_FONT_VALUES,
-  THEME_PRESET_VALUES,
   THEME_RADIUS_VALUES,
   THEME_SCALE_VALUES,
   type ThemeCustomization,
