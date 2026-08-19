@@ -213,7 +213,7 @@ function OverviewSummaryGrid(props: { model: PricingModel }) {
       : 0
 
   return (
-    <div className='bg-muted/20 grid overflow-hidden rounded-lg border sm:grid-cols-3 sm:divide-x'>
+    <div className='bg-muted/20 grid divide-y overflow-hidden rounded-lg border sm:grid-cols-3 sm:divide-x sm:divide-y-0'>
       <OverviewMetric
         icon={Timer}
         label='TPS'
@@ -1177,7 +1177,9 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
                 className='h-8 min-w-0 gap-1.5 rounded-md px-3 text-xs sm:text-sm'
               >
                 <Icon className='size-3.5' />
-                <span className='truncate'>{t(TAB_META[value].labelKey)}</span>
+                <span className='hidden truncate sm:inline'>
+                  {t(TAB_META[value].labelKey)}
+                </span>
               </TabsTrigger>
             )
           })}
@@ -1244,7 +1246,7 @@ export function ModelDetailsDrawer(props: ModelDetailsDrawerProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* 巴西站:详情用居中弹窗而非全屏侧滑(owner 拍板)。 */}
-      <DialogContent className='w-[min(96vw,60rem)] max-w-none gap-0 overflow-hidden p-0'>
+      <DialogContent className='w-[calc(100vw-0.75rem)] max-w-none gap-0 overflow-hidden p-0 sm:w-[min(92vw,60rem)]'>
         <DialogHeader className='sr-only'>
           <DialogTitle>{props.model.model_name}</DialogTitle>
           <DialogDescription>{t('Model details')}</DialogDescription>

@@ -46,11 +46,9 @@ type FilterState = {
   rechargePrice?: boolean
 }
 
-function normalizeViewMode(value: unknown): ViewMode {
-  if (value === VIEW_MODES.TABLE) {
-    return VIEW_MODES.TABLE
-  }
-  return VIEW_MODES.CARD
+function normalizeViewMode(_value: unknown): ViewMode {
+  // 巴西站:只用列表模式(owner 2026-08-19 拍板,卡片视图弃用)。
+  return VIEW_MODES.TABLE
 }
 
 export function useFilters(models: PricingModel[]) {
