@@ -49,6 +49,19 @@
   border-color: rgb(242 244 240 / 12%);
 }
 
+/* ---- 侧栏分组标题:弱化为小型宽字距灰标(prismix 语言) ---- */
+.dark [data-slot='sidebar-group-label'] {
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgb(245 245 244 / 38%);
+}
+
+/* ---- 表格行 hover:极轻提亮 ---- */
+.dark [data-slot='table-row']:hover {
+  background: rgb(255 255 255 / 3%);
+}
+
 /* ---- 滚动条:细、低对比、hover 提亮 ---- */
 .dark ::-webkit-scrollbar {
   width: 8px;

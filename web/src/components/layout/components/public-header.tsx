@@ -70,7 +70,8 @@ export function PublicHeader(props: PublicHeaderProps) {
     siteName: customSiteName,
     homeUrl = '/',
     showAuthButtons = true,
-    showNotifications = true,
+    // 巴西站:公开页不放通知铃铛(BR_PRISM_UI_SPEC 8.4)。
+    showNotifications = false,
   } = props
 
   const { t } = useTranslation()

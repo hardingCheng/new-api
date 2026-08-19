@@ -331,12 +331,14 @@ export function Wallet(props: WalletProps) {
                 />
               </div>
 
-              <SubscriptionPlansCard
-                topupInfo={topupInfo}
-                onAvailabilityChange={handleSubscriptionAvailabilityChange}
-                userQuota={user?.quota}
-                onPurchaseSuccess={fetchUser}
-              />
+              {showSubscriptionPanel && (
+                <SubscriptionPlansCard
+                  topupInfo={topupInfo}
+                  onAvailabilityChange={handleSubscriptionAvailabilityChange}
+                  userQuota={user?.quota}
+                  onPurchaseSuccess={fetchUser}
+                />
+              )}
             </div>
 
             <AffiliateRewardsCard

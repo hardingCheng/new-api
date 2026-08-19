@@ -91,7 +91,7 @@ export function CommonLogsStats() {
       <StatBadge
         label={t('Usage')}
         value={sensitiveVisible ? formatLogQuota(stats?.quota || 0) : '••••'}
-        accent='bg-sky-500/70'
+        accent='bg-foreground/35'
       />
       <StatBadge
         label={t('Refund')}
@@ -108,7 +108,7 @@ export function CommonLogsStats() {
       <StatBadge
         label={t('TPM')}
         value={stats?.tpm || 0}
-        accent='bg-slate-400/70'
+        accent='bg-foreground/25'
       />
     </div>
   )
