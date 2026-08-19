@@ -219,7 +219,7 @@ const CLIENTS = [
   { name: 'OpenAI SDK', icon: Code2, slug: 'quick-start' },
   { name: 'Claude Code', icon: Terminal, slug: 'claude-code' },
   { name: 'Codex', icon: Terminal, slug: 'codex' },
-  { name: 'Cherry Studio', icon: MessageSquare, slug: 'quick-start' },
+  { name: 'Gemini CLI', icon: Terminal, slug: 'gemini-cli' },
 ] as const
 
 export function PrismEcosystem(props: { docsUrl: string }) {
