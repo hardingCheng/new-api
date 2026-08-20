@@ -56,9 +56,12 @@ type channelBreakerState struct {
 	RuleProbeCount int
 	RuleProbeNeed  int
 	// 冷却退避的跨熔断周期记忆，openBreakerAt 不得清零；
-	// 旧版持久化状态缺这两个字段时按零值处理，天然向后兼容
+	// 旧版持久化状态缺这些字段时按零值处理，天然向后兼容。
+	// LastCooldownSecs 单独存：CooldownSecs 每次失败都会被规则值重置，
+	// 衰减判定需要的是上一次打开时实际生效的冷却
 	ConsecutiveOpens int
 	LastOpenAt       time.Time
+	LastCooldownSecs int
 }
 
 type ChannelBreakerProbe struct {
@@ -194,7 +197,7 @@ func AcquireChannelBreakerProbe(c *gin.Context, channelError types.ChannelError)
 		}
 		var event *channelBreakerOpenEvent
 		if isStaleHalfOpen(state, rule, now) {
-			event = newChannelBreakerOpenEvent(key, state, fmt.Sprintf("channel breaker probe timed out (%d/%d successes, %d/%d completed)", state.ProbeSuccess, stateProbeSuccessCount(state, rule), state.ProbeTotal, stateProbeCount(state, rule)))
+			event = newChannelBreakerOpenEvent(key, state, fmt.Sprintf(model.ChannelBreakerLogReasonProbeTimeoutPrefix+" (%d/%d successes, %d/%d completed)", state.ProbeSuccess, stateProbeSuccessCount(state, rule), state.ProbeTotal, stateProbeCount(state, rule)))
 			openBreakerAt(state, now, rule)
 		}
 		if state.State == ChannelBreakerStateOpen {
@@ -620,7 +623,7 @@ func ListChannelBreakerStatuses() []ChannelBreakerStatus {
 			if !isStaleHalfOpen(state, rule, now) {
 				return channelBreakerMutation{Action: channelBreakerMutationNone, Value: cloneChannelBreakerState(state)}
 			}
-			reason := fmt.Sprintf("channel breaker probe timed out (%d/%d successes, %d/%d completed)", state.ProbeSuccess, stateProbeSuccessCount(state, rule), state.ProbeTotal, stateProbeCount(state, rule))
+			reason := fmt.Sprintf(model.ChannelBreakerLogReasonProbeTimeoutPrefix+" (%d/%d successes, %d/%d completed)", state.ProbeSuccess, stateProbeSuccessCount(state, rule), state.ProbeTotal, stateProbeCount(state, rule))
 			event := newChannelBreakerOpenEvent(key, state, reason)
 			openBreakerAt(state, now, rule)
 			return channelBreakerMutation{Action: channelBreakerMutationSave, State: state, Value: cloneChannelBreakerState(state), Event: event}
@@ -673,7 +676,7 @@ func evaluateProbeMutation(key string, state *channelBreakerState, rule channelB
 	if state.ProbeSuccess >= probeSuccesses {
 		return channelBreakerMutation{Action: channelBreakerMutationDelete, Value: channelBreakerRecordResult{Message: "channel breaker closed after probe"}}
 	}
-	message := fmt.Sprintf("channel breaker remains open after probe (%d/%d successes)", state.ProbeSuccess, state.ProbeTotal)
+	message := fmt.Sprintf(model.ChannelBreakerLogReasonReopenedPrefix+" (%d/%d successes)", state.ProbeSuccess, state.ProbeTotal)
 	event := newChannelBreakerOpenEvent(key, state, message)
 	openBreakerAt(state, now, rule)
 	return channelBreakerMutation{Action: channelBreakerMutationSave, State: state, Value: channelBreakerRecordResult{Opened: true, Message: message}, Event: event}
@@ -757,13 +760,21 @@ func openBreakerAt(state *channelBreakerState, now time.Time, rule channelBreake
 // （stateCooldown 优先读 state，读取侧零改动）。以规则冷却为基准乘阶梯取绝对值，
 // 不做复利 —— applyChannelBreakerRuleContext 每次失败都会把 CooldownSecs
 // 重置为规则值，复利会被它随机打断。探测通过关断即删状态，连击自然清零。
+//
+// 衰减锚定「上次解除时刻」（上次打开 + 当时冷却），不是上次打开时刻：
+// 高档位冷却本身就超过衰减窗，锚定打开时刻会让每次解除后必然衰减、
+// 阶梯永远到不了高档。安静时间只从渠道重新可用之后起算。
 func applyChannelBreakerBackoff(state *channelBreakerState, now time.Time, rule channelBreakerRuntimeRule) {
-	if !state.LastOpenAt.IsZero() && now.Sub(state.LastOpenAt) >= channelBreakerBackoffDecay() {
-		state.ConsecutiveOpens = 0
+	if !state.LastOpenAt.IsZero() {
+		lastReleasedAt := state.LastOpenAt.Add(time.Duration(state.LastCooldownSecs) * time.Second)
+		if now.Sub(lastReleasedAt) >= channelBreakerBackoffDecay() {
+			state.ConsecutiveOpens = 0
+		}
 	}
 	state.ConsecutiveOpens++
 	state.LastOpenAt = now
 	state.CooldownSecs = channelBreakerBackoffCooldownSecs(rule, state.ConsecutiveOpens)
+	state.LastCooldownSecs = state.CooldownSecs
 }
 
 func channelBreakerBackoffDecay() time.Duration {

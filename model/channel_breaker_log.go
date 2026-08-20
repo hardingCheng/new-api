@@ -6,9 +6,14 @@ import (
 	"github.com/bytedance/gopkg/util/gopool"
 )
 
-// ChannelBreakerLogReasonOpened 失败计数触发打开时的 reason。
-// 熔断惩罚只统计这一种（probe 重开/超时不计），与阈值校准口径一致（CHANNEL_BREAKER_SPEC.md §6）。
-const ChannelBreakerLogReasonOpened = "channel breaker opened"
+// 熔断打开事件的三类 reason。惩罚计数覆盖全部三类：慢性坏渠道的状态机长期
+// 停留在 open↔half-open 循环里，打开事件多以探测失败/超时重开的形式出现，
+// 只数第一类会永久漏计（立即禁用的日志行 reason 不同，天然不计入）。
+const (
+	ChannelBreakerLogReasonOpened             = "channel breaker opened"
+	ChannelBreakerLogReasonReopenedPrefix     = "channel breaker remains open after probe"
+	ChannelBreakerLogReasonProbeTimeoutPrefix = "channel breaker probe timed out"
+)
 
 // ChannelBreakerLog 记录每一次熔断器打开（OPEN）的历史，便于管理员排查。
 type ChannelBreakerLog struct {
@@ -39,12 +44,16 @@ func RecordChannelBreakerLog(log *ChannelBreakerLog) {
 	})
 }
 
-// CountChannelBreakerOpens 统计渠道在 [from, to) 秒级时间窗内因失败计数打开熔断的次数。
-// keyHash 非空时只统计该 Key（多 Key 渠道按 Key 惩罚，比按渠道聚合更宽松）。
+// CountChannelBreakerOpens 统计渠道在 [from, to) 秒级时间窗内熔断打开的次数
+// （三类打开事件都算，见上方常量说明）。keyHash 非空时只统计该 Key
+// （多 Key 渠道按 Key 惩罚，比按渠道聚合更宽松）。
 func CountChannelBreakerOpens(channelId int, keyHash string, from int64, to int64) (int64, error) {
 	query := DB.Model(&ChannelBreakerLog{}).
-		Where("channel_id = ? AND reason = ? AND created_at >= ? AND created_at < ?",
-			channelId, ChannelBreakerLogReasonOpened, from, to)
+		Where("channel_id = ? AND created_at >= ? AND created_at < ?", channelId, from, to).
+		Where("(reason = ? OR reason LIKE ? OR reason LIKE ?)",
+			ChannelBreakerLogReasonOpened,
+			ChannelBreakerLogReasonReopenedPrefix+"%",
+			ChannelBreakerLogReasonProbeTimeoutPrefix+"%")
 	if keyHash != "" {
 		query = query.Where("key_hash = ?", keyHash)
 	}

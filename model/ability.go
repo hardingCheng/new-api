@@ -61,6 +61,14 @@ func GetAllEnableAbilities() []Ability {
 	return abilities
 }
 
+// GetEnabledAbilityGroupModels 返回渠道当前启用的 (group, model) 能力列表，
+// 供熔断惩罚下线前的全池审查（整渠道下线会同时影响它承载的所有池）。
+func GetEnabledAbilityGroupModels(channelId int) ([]Ability, error) {
+	var abilities []Ability
+	err := DB.Where(map[string]interface{}{"channel_id": channelId, "enabled": true}).Find(&abilities).Error
+	return abilities, err
+}
+
 // CountEnabledChannelsForGroupModel 返回 (group, model) 下启用渠道数，
 // 供熔断惩罚自动下线前的池保护判断（池太小只告警不下线）。
 // map 条件由 dialector 处理保留字引号，不依赖 initCol 的列名初始化。

@@ -17,60 +17,55 @@ import (
 // 熔断惩罚：熔断只有短期记忆（每次打开都清零重来），本文件补上长期记忆 ——
 // 反复打开的渠道先告警、连续超阈值则自动下线（DisableChannelWithoutAutoRecovery，
 // 定时重测不复活）。判据是打开频次，不解析错误文本。
-
-// channelBreakerPenaltyEvent 是一次熔断打开事件的上下文快照。
-// gin.Context 在请求结束后会被复用，异步评估前必须在这里落值。
-type channelBreakerPenaltyEvent struct {
-	ChannelError types.ChannelError
-	Group        string
-	Model        string
-}
+//
+// 判定与执行分两段：decideChannelBreakerPenalty 只读判定频次与渠道状态；
+// 池保护是终审，放在 runChannelBreakerPenaltyOffline 的互斥临界区里，
+// 防止同池多条渠道并发通过初审后一起下线把池摘穿。
 
 type channelBreakerPenaltyDecision struct {
 	Alert            bool
-	Offline          bool
-	OfflineBlockedBy string // 达到下线频次但被拦下的原因；空 = 未触线或已放行下线
+	Offline          bool   // 频次触线且初审通过；终审（池保护）在执行期
+	OfflineBlockedBy string // 达到下线频次但被拦下的原因；空 = 未触线或初审放行
 	CurrentHourOpens int64
 	HourBucket       int64
 }
 
-var channelBreakerPenaltyAlertMemory sync.Map
+var (
+	channelBreakerPenaltyAlertMemory sync.Map
+	channelBreakerPenaltyOfflineMu   sync.Mutex
+)
 
 // EvaluateChannelBreakerPenaltyAsync 在熔断打开后触发惩罚评估。
-// 熔断日志异步落库，本次打开可能尚未计入；慢性渠道会在随后的打开事件补上，判定仍收敛。
 func EvaluateChannelBreakerPenaltyAsync(c *gin.Context, channelError types.ChannelError) {
 	if !common.IsChannelBreakerPenaltyEnabled() {
 		return
 	}
-	ev := channelBreakerPenaltyEvent{
-		ChannelError: channelError,
-		Group:        channelBreakerContextGroup(c),
-		Model:        channelBreakerContextModel(c),
-	}
 	gopool.Go(func() {
-		decision, err := decideChannelBreakerPenalty(ev, time.Now())
+		// 熔断日志经 gopool 异步落库，等一拍再计数，把本次打开也算进去
+		time.Sleep(time.Second)
+		decision, err := decideChannelBreakerPenalty(channelError, time.Now())
 		if err != nil {
-			common.SysError(fmt.Sprintf("channel breaker penalty evaluation failed for channel %d: %s", ev.ChannelError.ChannelId, err.Error()))
+			common.SysError(fmt.Sprintf("channel breaker penalty evaluation failed for channel %d: %s", channelError.ChannelId, err.Error()))
 		}
-		executeChannelBreakerPenalty(ev, decision)
+		executeChannelBreakerPenalty(channelError, decision)
 	})
 }
 
 // decideChannelBreakerPenalty 只判定不动作。小时桶用 FLOOR(unix/3600) 固定桶，
 // 与阈值校准 SQL 同口径；当前桶达标即触发，不等桶结束。
 // 出错时保守处理：能告警就告警，绝不带着不确定的数据下线渠道。
-func decideChannelBreakerPenalty(ev channelBreakerPenaltyEvent, now time.Time) (channelBreakerPenaltyDecision, error) {
+func decideChannelBreakerPenalty(channelError types.ChannelError, now time.Time) (channelBreakerPenaltyDecision, error) {
 	decision := channelBreakerPenaltyDecision{}
 	if !common.IsChannelBreakerPenaltyEnabled() {
 		return decision, nil
 	}
-	channelId := ev.ChannelError.ChannelId
+	channelId := channelError.ChannelId
 	if channelId <= 0 {
 		return decision, nil
 	}
 	keyHash := ""
-	if ev.ChannelError.IsMultiKey && ev.ChannelError.UsingKey != "" {
-		keyHash = ChannelBreakerKeyHash(ev.ChannelError.UsingKey)
+	if channelError.IsMultiKey && channelError.UsingKey != "" {
+		keyHash = ChannelBreakerKeyHash(channelError.UsingKey)
 	}
 	threshold := int64(common.GetChannelBreakerPenaltyAlertOpensPerHour())
 	bucket := now.Unix() / 3600
@@ -114,46 +109,21 @@ func decideChannelBreakerPenalty(ev channelBreakerPenaltyEvent, now time.Time) (
 		decision.OfflineBlockedBy = "渠道已不在启用状态"
 		return decision, nil
 	}
-	minPool := common.GetChannelBreakerPenaltyMinPoolSize()
-	if minPool > 0 {
-		if ev.Group == "" || ev.Model == "" {
-			decision.OfflineBlockedBy = "缺少分组/模型上下文"
-			return decision, nil
-		}
-		poolSize, poolErr := model.CountEnabledChannelsForGroupModel(ev.Group, ev.Model)
-		if poolErr != nil {
-			decision.OfflineBlockedBy = "池保护查询失败"
-			return decision, poolErr
-		}
-		if poolSize < int64(minPool) {
-			decision.OfflineBlockedBy = fmt.Sprintf("分组「%s」模型「%s」启用渠道仅 %d 条（下限 %d）", ev.Group, ev.Model, poolSize, minPool)
-			return decision, nil
-		}
-	}
 	decision.Offline = true
 	return decision, nil
 }
 
-func executeChannelBreakerPenalty(ev channelBreakerPenaltyEvent, decision channelBreakerPenaltyDecision) {
+func executeChannelBreakerPenalty(channelError types.ChannelError, decision channelBreakerPenaltyDecision) {
 	if !decision.Alert {
 		return
 	}
-	channelError := ev.ChannelError
 	if decision.Offline {
-		target := channelError
-		if !target.IsMultiKey {
-			target.UsingKey = ""
+		blockReason := runChannelBreakerPenaltyOffline(channelError, decision)
+		if blockReason == "" {
+			// disableChannel 自带 NotifyRootUser + Bark 告警，不再重复发一级告警
+			return
 		}
-		// 熔断事件只产生于 AutoBan 渠道，这里固化以免快照期间渠道配置变更
-		target.AutoBan = true
-		reason := fmt.Sprintf("熔断惩罚：连续 %d 小时每小时打开熔断 ≥ %d 次（本小时 %d 次），已自动下线，处理后需手动启用",
-			common.GetChannelBreakerPenaltyOfflineConsecutiveHours(),
-			common.GetChannelBreakerPenaltyAlertOpensPerHour(),
-			decision.CurrentHourOpens)
-		markChannelBreakerTargetQuarantined(target)
-		// disableChannel 自带 NotifyRootUser + Bark 告警，此处不再重复发一级告警
-		DisableChannelWithoutAutoRecovery(target, reason)
-		return
+		decision.OfflineBlockedBy = blockReason
 	}
 	if !allowChannelBreakerPenaltyAlert(channelError, decision.HourBucket) {
 		return
@@ -167,6 +137,63 @@ func executeChannelBreakerPenalty(ev channelBreakerPenaltyEvent, decision channe
 	}
 	common.SysLog(content)
 	NotifyRootUser("channel_breaker_penalty_"+strconv.Itoa(channelError.ChannelId), subject, content)
+}
+
+// runChannelBreakerPenaltyOffline 终审并执行下线。互斥串行化：并发的下线评估
+// 逐个通过池保护，前一个下线产生的池变化对后一个可见（UpdateChannelStatus 同步
+// 更新 abilities），单实例内不会把池摘穿；跨实例的数据库层竞态见计划文档。
+// 返回空串 = 已执行下线；非空 = 拦截原因。
+func runChannelBreakerPenaltyOffline(channelError types.ChannelError, decision channelBreakerPenaltyDecision) string {
+	channelBreakerPenaltyOfflineMu.Lock()
+	defer channelBreakerPenaltyOfflineMu.Unlock()
+
+	blockReason, err := channelBreakerPenaltyPoolBlockReason(channelError.ChannelId, common.GetChannelBreakerPenaltyMinPoolSize())
+	if err != nil {
+		common.SysError(fmt.Sprintf("channel breaker penalty pool audit failed for channel %d: %s", channelError.ChannelId, err.Error()))
+		return "池保护查询失败"
+	}
+	if blockReason != "" {
+		return blockReason
+	}
+
+	target := channelError
+	if !target.IsMultiKey {
+		target.UsingKey = ""
+	}
+	// 熔断事件只产生于 AutoBan 渠道，这里固化以免快照期间渠道配置变更
+	target.AutoBan = true
+	reason := fmt.Sprintf("熔断惩罚：连续 %d 小时每小时打开熔断 ≥ %d 次（本小时 %d 次），已自动下线，处理后需手动启用",
+		common.GetChannelBreakerPenaltyOfflineConsecutiveHours(),
+		common.GetChannelBreakerPenaltyAlertOpensPerHour(),
+		decision.CurrentHourOpens)
+	markChannelBreakerTargetQuarantined(target)
+	DisableChannelWithoutAutoRecovery(target, reason)
+	return ""
+}
+
+// channelBreakerPenaltyPoolBlockReason 下线前审该渠道承载的全部启用 (分组, 模型) 池：
+// 摘除后任一池剩余低于下限即拦截 —— 整渠道下线影响的是它所有的池，不只是触发
+// 请求的那一个。多 Key 渠道同按整渠道口径审（最后一把 Key 被禁时渠道整体停用，
+// 宁可保守）。返回空串 = 放行。
+func channelBreakerPenaltyPoolBlockReason(channelId int, minPool int) (string, error) {
+	if minPool <= 0 {
+		return "", nil
+	}
+	abilities, err := model.GetEnabledAbilityGroupModels(channelId)
+	if err != nil {
+		return "", err
+	}
+	for _, ability := range abilities {
+		poolSize, countErr := model.CountEnabledChannelsForGroupModel(ability.Group, ability.Model)
+		if countErr != nil {
+			return "", countErr
+		}
+		if poolSize-1 < int64(minPool) {
+			return fmt.Sprintf("下线后分组「%s」模型「%s」仅剩 %d 条启用渠道（下限 %d）",
+				ability.Group, ability.Model, poolSize-1, minPool), nil
+		}
+	}
+	return "", nil
 }
 
 // allowChannelBreakerPenaltyAlert 每（渠道/Key × 小时桶）只发一次一级告警。

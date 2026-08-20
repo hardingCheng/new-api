@@ -78,12 +78,8 @@ func seedPenaltyAbility(t *testing.T, db *gorm.DB, group, modelName string, chan
 	require.NoError(t, db.Create(&model.Ability{Group: group, Model: modelName, ChannelId: channelId, Enabled: enabled}).Error)
 }
 
-func penaltyEvent(channelId int) channelBreakerPenaltyEvent {
-	return channelBreakerPenaltyEvent{
-		ChannelError: types.ChannelError{ChannelId: channelId, ChannelName: fmt.Sprintf("penalty-ch-%d", channelId), AutoBan: true},
-		Group:        "default",
-		Model:        "gpt-test",
-	}
+func penaltyChannelError(channelId int) types.ChannelError {
+	return types.ChannelError{ChannelId: channelId, ChannelName: fmt.Sprintf("penalty-ch-%d", channelId), AutoBan: true}
 }
 
 func TestChannelBreakerPenaltyDisabledDoesNothing(t *testing.T) {
@@ -94,7 +90,7 @@ func TestChannelBreakerPenaltyDisabledDoesNothing(t *testing.T) {
 	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 0, 50)
 	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 1, 50)
 
-	decision, err := decideChannelBreakerPenalty(penaltyEvent(1), penaltyTestNow())
+	decision, err := decideChannelBreakerPenalty(penaltyChannelError(1), penaltyTestNow())
 	require.NoError(t, err)
 	assert.False(t, decision.Alert)
 	assert.False(t, decision.Offline)
@@ -105,7 +101,7 @@ func TestChannelBreakerPenaltyBelowThresholdByOne(t *testing.T) {
 	seedPenaltyChannel(t, db, 1, common.ChannelStatusEnabled)
 	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 0, 9)
 
-	decision, err := decideChannelBreakerPenalty(penaltyEvent(1), penaltyTestNow())
+	decision, err := decideChannelBreakerPenalty(penaltyChannelError(1), penaltyTestNow())
 	require.NoError(t, err)
 	assert.False(t, decision.Alert)
 	assert.False(t, decision.Offline)
@@ -118,7 +114,7 @@ func TestChannelBreakerPenaltyAlertOnlyWhenPreviousHourQuiet(t *testing.T) {
 	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 0, 10)
 	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 1, 9)
 
-	decision, err := decideChannelBreakerPenalty(penaltyEvent(1), penaltyTestNow())
+	decision, err := decideChannelBreakerPenalty(penaltyChannelError(1), penaltyTestNow())
 	require.NoError(t, err)
 	assert.True(t, decision.Alert)
 	assert.False(t, decision.Offline)
@@ -128,17 +124,30 @@ func TestChannelBreakerPenaltyAlertOnlyWhenPreviousHourQuiet(t *testing.T) {
 func TestChannelBreakerPenaltyOfflineAfterConsecutiveHours(t *testing.T) {
 	db := setupChannelBreakerPenaltyTest(t)
 	seedPenaltyChannel(t, db, 1, common.ChannelStatusEnabled)
-	seedPenaltyChannel(t, db, 2, common.ChannelStatusEnabled)
-	seedPenaltyAbility(t, db, "default", "gpt-test", 1, true)
-	seedPenaltyAbility(t, db, "default", "gpt-test", 2, true)
 	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 0, 10)
 	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 1, 10)
 
-	decision, err := decideChannelBreakerPenalty(penaltyEvent(1), penaltyTestNow())
+	decision, err := decideChannelBreakerPenalty(penaltyChannelError(1), penaltyTestNow())
 	require.NoError(t, err)
 	assert.True(t, decision.Alert)
 	assert.True(t, decision.Offline)
 	assert.Empty(t, decision.OfflineBlockedBy)
+}
+
+func TestChannelBreakerPenaltyCountsProbeReopenReasons(t *testing.T) {
+	db := setupChannelBreakerPenaltyTest(t)
+	seedPenaltyChannel(t, db, 1, common.ChannelStatusEnabled)
+	// 慢性坏渠道的打开事件多为探测失败/超时重开，三类都要计入
+	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 0, 3)
+	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonReopenedPrefix+" (0/5 successes)", 0, 4)
+	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonProbeTimeoutPrefix+" (0/3 successes, 2/5 completed)", 0, 3)
+	// 立即禁用的日志行不属于打开事件，不计入
+	seedBreakerOpens(t, db, 1, "", "命中立即禁用规则「全局默认规则」(status_code=403)", 0, 20)
+
+	decision, err := decideChannelBreakerPenalty(penaltyChannelError(1), penaltyTestNow())
+	require.NoError(t, err)
+	assert.Equal(t, int64(10), decision.CurrentHourOpens)
+	assert.True(t, decision.Alert)
 }
 
 func TestChannelBreakerPenaltyOfflineSwitchOffBlocksOffline(t *testing.T) {
@@ -148,51 +157,11 @@ func TestChannelBreakerPenaltyOfflineSwitchOffBlocksOffline(t *testing.T) {
 	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 0, 10)
 	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 1, 10)
 
-	decision, err := decideChannelBreakerPenalty(penaltyEvent(1), penaltyTestNow())
+	decision, err := decideChannelBreakerPenalty(penaltyChannelError(1), penaltyTestNow())
 	require.NoError(t, err)
 	assert.True(t, decision.Alert)
 	assert.False(t, decision.Offline)
 	assert.NotEmpty(t, decision.OfflineBlockedBy)
-}
-
-func TestChannelBreakerPenaltyIgnoresProbeReopenReasons(t *testing.T) {
-	db := setupChannelBreakerPenaltyTest(t)
-	seedPenaltyChannel(t, db, 1, common.ChannelStatusEnabled)
-	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 0, 10)
-	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 1, 5)
-	// probe 失败重开与超时不计入，与阈值校准口径一致
-	seedBreakerOpens(t, db, 1, "", "channel breaker remains open after probe (0/5 successes)", 1, 20)
-
-	decision, err := decideChannelBreakerPenalty(penaltyEvent(1), penaltyTestNow())
-	require.NoError(t, err)
-	assert.True(t, decision.Alert)
-	assert.False(t, decision.Offline)
-}
-
-func TestChannelBreakerPenaltyPoolProtection(t *testing.T) {
-	db := setupChannelBreakerPenaltyTest(t)
-	seedPenaltyChannel(t, db, 1, common.ChannelStatusEnabled)
-	seedPenaltyAbility(t, db, "default", "gpt-test", 1, true)
-	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 0, 10)
-	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 1, 10)
-
-	decision, err := decideChannelBreakerPenalty(penaltyEvent(1), penaltyTestNow())
-	require.NoError(t, err)
-	assert.True(t, decision.Alert)
-	assert.False(t, decision.Offline)
-	assert.Contains(t, decision.OfflineBlockedBy, "启用渠道仅 1 条")
-}
-
-func TestChannelBreakerPenaltyPoolProtectionDisabledByZero(t *testing.T) {
-	db := setupChannelBreakerPenaltyTest(t)
-	common.SetChannelBreakerPenaltyMinPoolSize(0)
-	seedPenaltyChannel(t, db, 1, common.ChannelStatusEnabled)
-	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 0, 10)
-	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 1, 10)
-
-	decision, err := decideChannelBreakerPenalty(penaltyEvent(1), penaltyTestNow())
-	require.NoError(t, err)
-	assert.True(t, decision.Offline)
 }
 
 func TestChannelBreakerPenaltyExemptChannelNotOffline(t *testing.T) {
@@ -202,7 +171,7 @@ func TestChannelBreakerPenaltyExemptChannelNotOffline(t *testing.T) {
 	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 0, 10)
 	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 1, 10)
 
-	decision, err := decideChannelBreakerPenalty(penaltyEvent(1), penaltyTestNow())
+	decision, err := decideChannelBreakerPenalty(penaltyChannelError(1), penaltyTestNow())
 	require.NoError(t, err)
 	assert.True(t, decision.Alert)
 	assert.False(t, decision.Offline)
@@ -215,54 +184,88 @@ func TestChannelBreakerPenaltyManuallyDisabledChannelNotOffline(t *testing.T) {
 	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 0, 10)
 	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 1, 10)
 
-	decision, err := decideChannelBreakerPenalty(penaltyEvent(1), penaltyTestNow())
+	decision, err := decideChannelBreakerPenalty(penaltyChannelError(1), penaltyTestNow())
 	require.NoError(t, err)
 	assert.True(t, decision.Alert)
 	assert.False(t, decision.Offline)
 	assert.Contains(t, decision.OfflineBlockedBy, "启用状态")
 }
 
-func TestChannelBreakerPenaltyMissingContextBlocksOffline(t *testing.T) {
-	db := setupChannelBreakerPenaltyTest(t)
-	seedPenaltyChannel(t, db, 1, common.ChannelStatusEnabled)
-	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 0, 10)
-	seedBreakerOpens(t, db, 1, "", model.ChannelBreakerLogReasonOpened, 1, 10)
-
-	ev := penaltyEvent(1)
-	ev.Group = ""
-	decision, err := decideChannelBreakerPenalty(ev, penaltyTestNow())
-	require.NoError(t, err)
-	assert.True(t, decision.Alert)
-	assert.False(t, decision.Offline)
-	assert.Contains(t, decision.OfflineBlockedBy, "上下文")
-}
-
 func TestChannelBreakerPenaltyMultiKeyCountsPerKey(t *testing.T) {
 	db := setupChannelBreakerPenaltyTest(t)
 	seedPenaltyChannel(t, db, 1, common.ChannelStatusEnabled)
-	seedPenaltyChannel(t, db, 2, common.ChannelStatusEnabled)
-	seedPenaltyAbility(t, db, "default", "gpt-test", 1, true)
-	seedPenaltyAbility(t, db, "default", "gpt-test", 2, true)
 	hashA := ChannelBreakerKeyHash("key-a")
 	hashB := ChannelBreakerKeyHash("key-b")
 	seedBreakerOpens(t, db, 1, hashA, model.ChannelBreakerLogReasonOpened, 0, 10)
 	seedBreakerOpens(t, db, 1, hashA, model.ChannelBreakerLogReasonOpened, 1, 10)
 	seedBreakerOpens(t, db, 1, hashB, model.ChannelBreakerLogReasonOpened, 0, 3)
 
-	evA := penaltyEvent(1)
-	evA.ChannelError.IsMultiKey = true
-	evA.ChannelError.UsingKey = "key-a"
-	decisionA, err := decideChannelBreakerPenalty(evA, penaltyTestNow())
+	ceA := penaltyChannelError(1)
+	ceA.IsMultiKey = true
+	ceA.UsingKey = "key-a"
+	decisionA, err := decideChannelBreakerPenalty(ceA, penaltyTestNow())
 	require.NoError(t, err)
 	assert.True(t, decisionA.Offline)
 
-	evB := penaltyEvent(1)
-	evB.ChannelError.IsMultiKey = true
-	evB.ChannelError.UsingKey = "key-b"
-	decisionB, err := decideChannelBreakerPenalty(evB, penaltyTestNow())
+	ceB := penaltyChannelError(1)
+	ceB.IsMultiKey = true
+	ceB.UsingKey = "key-b"
+	decisionB, err := decideChannelBreakerPenalty(ceB, penaltyTestNow())
 	require.NoError(t, err)
 	assert.False(t, decisionB.Alert)
 	assert.False(t, decisionB.Offline)
+}
+
+func TestChannelBreakerPenaltyPoolAudit(t *testing.T) {
+	db := setupChannelBreakerPenaltyTest(t)
+	for id := 1; id <= 3; id++ {
+		seedPenaltyChannel(t, db, id, common.ChannelStatusEnabled)
+	}
+
+	// 池 3 条、下限 2：摘 1 剩 2，放行
+	seedPenaltyAbility(t, db, "default", "gpt-test", 1, true)
+	seedPenaltyAbility(t, db, "default", "gpt-test", 2, true)
+	seedPenaltyAbility(t, db, "default", "gpt-test", 3, true)
+	reason, err := channelBreakerPenaltyPoolBlockReason(1, 2)
+	require.NoError(t, err)
+	assert.Empty(t, reason)
+
+	// 池 2 条、下限 2：摘 1 剩 1 < 2，拦截（剩余量口径，不是摘除前口径）
+	seedPenaltyAbility(t, db, "vip", "claude-x", 1, true)
+	seedPenaltyAbility(t, db, "vip", "claude-x", 2, true)
+	reason, err = channelBreakerPenaltyPoolBlockReason(1, 2)
+	require.NoError(t, err)
+	assert.Contains(t, reason, "vip")
+	assert.Contains(t, reason, "claude-x")
+	assert.Contains(t, reason, "仅剩 1 条")
+
+	// 任一池不达标即拦截：default 池充足救不了 vip 池
+	reason, err = channelBreakerPenaltyPoolBlockReason(2, 2)
+	require.NoError(t, err)
+	assert.NotEmpty(t, reason)
+}
+
+func TestChannelBreakerPenaltyPoolAuditDisabledByZero(t *testing.T) {
+	db := setupChannelBreakerPenaltyTest(t)
+	seedPenaltyChannel(t, db, 1, common.ChannelStatusEnabled)
+	seedPenaltyAbility(t, db, "default", "gpt-test", 1, true)
+
+	reason, err := channelBreakerPenaltyPoolBlockReason(1, 0)
+	require.NoError(t, err)
+	assert.Empty(t, reason)
+}
+
+func TestChannelBreakerPenaltyPoolAuditIgnoresDisabledAbilities(t *testing.T) {
+	db := setupChannelBreakerPenaltyTest(t)
+	seedPenaltyChannel(t, db, 1, common.ChannelStatusEnabled)
+	seedPenaltyChannel(t, db, 2, common.ChannelStatusEnabled)
+	seedPenaltyAbility(t, db, "default", "gpt-test", 1, false)
+	seedPenaltyAbility(t, db, "default", "gpt-test", 2, true)
+
+	// 渠道 1 没有启用中的能力，无池可保护，放行
+	reason, err := channelBreakerPenaltyPoolBlockReason(1, 2)
+	require.NoError(t, err)
+	assert.Empty(t, reason)
 }
 
 func TestChannelBreakerPenaltyAlertDeduplicatesPerHourBucket(t *testing.T) {
