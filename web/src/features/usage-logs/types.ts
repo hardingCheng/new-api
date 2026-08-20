@@ -55,6 +55,8 @@ export interface CommonLogFilters extends CommonFilters {
   usernames?: string[]
   requestId?: string
   upstreamRequestId?: string
+  /** 错误日志结局(仅类型=错误时生效):visible=客户可见失败,recovered=已重试成功 */
+  errorOutcome?: string
 }
 
 /**
@@ -146,6 +148,10 @@ export interface LogOtherData {
       clamped: number
     }
   }
+  // Retry recovery marker (type=5 only): this failed attempt's request was
+  // retried on another channel and eventually succeeded, so the customer
+  // never saw this error. Written by the backend after the final success.
+  retry_recovered?: boolean
   // Language-independent operation descriptor (audit/login logs).
   // Frontend renders localized content from action + params via i18n templates.
   op?: {
@@ -380,6 +386,7 @@ export interface GetLogsParams {
   group?: string
   request_id?: string
   upstream_request_id?: string
+  error_outcome?: string
 }
 
 export interface GetLogsResponse {

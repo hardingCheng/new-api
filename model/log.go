@@ -325,6 +325,36 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	}
 }
 
+// 请求经重试最终成功后回写:同 request_id 此前落下的失败尝试错误日志加
+// other.retry_recovered=true,日志页和告警口径据此区分「已被重试救回」与
+// 「客户可见失败」。ClickHouse 日志库跳过(UPDATE 是重写数据块的 mutation)。
+func MarkErrorLogsRecovered(requestId string) {
+	if requestId == "" {
+		return
+	}
+	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		return
+	}
+	var logs []*Log
+	if err := LOG_DB.Where("request_id = ? AND type = ?", requestId, LogTypeError).Find(&logs).Error; err != nil {
+		common.SysError("failed to load error logs for retry_recovered mark: " + err.Error())
+		return
+	}
+	for _, errorLog := range logs {
+		otherMap, _ := common.StrToMap(errorLog.Other)
+		if otherMap == nil {
+			otherMap = map[string]interface{}{}
+		}
+		if recovered, ok := otherMap["retry_recovered"].(bool); ok && recovered {
+			continue
+		}
+		otherMap["retry_recovered"] = true
+		if err := LOG_DB.Model(&Log{}).Where("id = ?", errorLog.Id).Update("other", common.MapToJsonStr(otherMap)).Error; err != nil {
+			common.SysError("failed to mark error log retry_recovered: " + err.Error())
+		}
+	}
+}
+
 type RecordConsumeLogParams struct {
 	ChannelId        int                    `json:"channel_id"`
 	PromptTokens     int                    `json:"prompt_tokens"`
@@ -453,12 +483,32 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	}
 }
 
-func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, usernames []string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
+// 错误日志结局筛选(仅 logType=LogTypeError 时生效):
+// visible=未被重试救回、客户真收到错误;recovered=已被重试救回。
+const (
+	ErrorOutcomeVisible   = "visible"
+	ErrorOutcomeRecovered = "recovered"
+)
+
+// retry_recovered 标记由 MarkErrorLogsRecovered 统一写入,JSON 字面量稳定,
+// 可用 LIKE 匹配,三种数据库均兼容。
+const retryRecoveredLikePattern = `%"retry_recovered":true%`
+
+func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, usernames []string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string, errorOutcome string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB
 	} else {
 		tx = LOG_DB.Where("logs.type = ?", logType)
+	}
+	if logType == LogTypeError {
+		switch errorOutcome {
+		case ErrorOutcomeVisible:
+			// other 为 NULL 的历史行没有标记,也属于客户可见失败,NOT LIKE 对 NULL 不成立需单独放行
+			tx = tx.Where("logs.other NOT LIKE ? OR logs.other IS NULL", retryRecoveredLikePattern)
+		case ErrorOutcomeRecovered:
+			tx = tx.Where("logs.other LIKE ?", retryRecoveredLikePattern)
+		}
 	}
 
 	if tx, err = applyExplicitLogTextFilter(tx, "logs.model_name", modelName); err != nil {

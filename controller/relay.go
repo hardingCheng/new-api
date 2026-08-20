@@ -280,6 +280,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if newAPIError == nil {
 			relayInfo.LastError = nil
 			service.RecordChannelBreakerSuccess(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan(), common.IsChannelBreakerExemptChannel(channel.Id)))
+			markRecoveredErrorLogs(c)
 			return
 		}
 
@@ -364,6 +365,18 @@ func addUsedChannel(c *gin.Context, channelId int) {
 	useChannel := c.GetStringSlice("use_channel")
 	useChannel = append(useChannel, fmt.Sprintf("%d", channelId))
 	c.Set("use_channel", useChannel)
+}
+
+// markRecoveredErrorLogs 在重试后最终成功时,把本请求此前失败尝试落下的错误
+// 日志标记为已挽救。错误日志在 processChannelError 里同步落库,此时行已提交。
+func markRecoveredErrorLogs(c *gin.Context) {
+	if !constant.ErrorLogEnabled || len(c.GetStringSlice("use_channel")) <= 1 {
+		return
+	}
+	requestId := c.GetString(common.RequestIdKey)
+	gopool.Go(func() {
+		model.MarkErrorLogsRecovered(requestId)
+	})
 }
 
 func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
@@ -838,6 +851,7 @@ func RelayTask(c *gin.Context) {
 		result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
 		if taskErr == nil {
 			service.RecordChannelBreakerSuccess(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan(), common.IsChannelBreakerExemptChannel(channel.Id)))
+			markRecoveredErrorLogs(c)
 			break
 		}
 

@@ -204,6 +204,9 @@ export function buildApiParams(config: {
     ...(searchParams.upstreamRequestId
       ? { upstream_request_id: String(searchParams.upstreamRequestId) }
       : {}),
+    ...(isAdmin && searchParams.errorOutcome
+      ? { error_outcome: String(searchParams.errorOutcome) }
+      : {}),
     ...buildTimeRangeParams(searchParams, false),
   }
 

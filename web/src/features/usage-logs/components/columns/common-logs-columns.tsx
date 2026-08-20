@@ -40,7 +40,7 @@ import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-import { LOG_TYPE_ALL_VALUE } from '../../constants'
+import { LOG_TYPE_ALL_VALUE, LOG_TYPE_ENUM } from '../../constants'
 import type { UsageLog } from '../../data/schema'
 import {
   formatModelName,
@@ -324,17 +324,35 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       header: t('Type'),
       cell: ({ row }) => {
         const config = getLogTypeConfig(row.original.type)
+        // 错误日志按失败尝试逐条落库;带 retry_recovered 标记 = 该请求已被
+        // 自动重试救回,客户拿到的是成功响应
+        const recoveredByRetry =
+          row.original.type === LOG_TYPE_ENUM.ERROR &&
+          parseLogOther(row.original.other)?.retry_recovered === true
 
         return (
-          <StatusBadge
-            label={t(config.label)}
-            variant={config.color as StatusBadgeProps['variant']}
-            size='sm'
-            showDot
-            copyable={false}
-            className='rounded-md border border-current/20 bg-current/10 px-2 py-0.5 font-semibold'
-            aria-label={`${t('Type')}: ${t(config.label)}`}
-          />
+          <div className='flex flex-col items-start gap-0.5'>
+            <StatusBadge
+              label={t(config.label)}
+              variant={config.color as StatusBadgeProps['variant']}
+              size='sm'
+              showDot
+              copyable={false}
+              className='rounded-md border border-current/20 bg-current/10 px-2 py-0.5 font-semibold'
+              aria-label={`${t('Type')}: ${t(config.label)}`}
+            />
+            {recoveredByRetry && (
+              <StatusBadge
+                label={t('Recovered by Retry')}
+                variant='green'
+                size='sm'
+                showDot
+                copyable={false}
+                className='rounded-md border border-current/20 bg-current/10 px-2 py-0.5 font-semibold'
+                aria-label={t('Recovered by Retry')}
+              />
+            )}
+          </div>
         )
       },
       enableHiding: false,

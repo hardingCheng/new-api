@@ -46,6 +46,8 @@ const usageLogsSearchSchema = z.object({
   usernames: z.string().optional().catch(''),
   requestId: z.string().optional().catch(''),
   upstreamRequestId: z.string().optional().catch(''),
+  // 错误日志结局(仅 type=5 生效):visible=客户可见失败,recovered=已重试成功
+  errorOutcome: z.enum(['visible', 'recovered']).optional().catch(undefined),
   startTime: z.number().optional(),
   endTime: z.number().optional(),
 })

@@ -40,7 +40,11 @@ import {
 } from '@/components/ui/tooltip'
 import { searchUsers } from '@/features/users/api'
 
-import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
+import {
+  LOG_TYPE_ALL_VALUE,
+  LOG_TYPE_ENUM,
+  LOG_TYPE_FILTERS,
+} from '../constants'
 import { buildSearchParams } from '../lib/filter'
 import { getDefaultTimeRange } from '../lib/utils'
 import type { CommonLogFilters } from '../types'
@@ -67,6 +71,15 @@ type CommonLogDraft = {
   logType: LogTypeValue
 }
 
+const ERROR_LOG_TYPE_VALUE = String(LOG_TYPE_ENUM.ERROR)
+
+// 错误日志结局筛选:客户可见失败 vs 已被重试救回(仅类型=错误时展示)
+const ERROR_OUTCOME_FILTERS = [
+  { label: 'All Errors', value: 'all' },
+  { label: 'Customer-Visible Failures', value: 'visible' },
+  { label: 'Recovered by Retry', value: 'recovered' },
+] as const
+
 function isLogTypeValue(value: string): value is LogTypeValue {
   return logTypeValueSet.has(value)
 }
@@ -91,6 +104,7 @@ function buildSearchSourceKey(values: {
   usernames?: unknown
   requestId?: unknown
   upstreamRequestId?: unknown
+  errorOutcome?: unknown
   type?: unknown
 }) {
   return [
@@ -104,6 +118,7 @@ function buildSearchSourceKey(values: {
     values.usernames,
     values.requestId,
     values.upstreamRequestId,
+    values.errorOutcome,
     Array.isArray(values.type) ? values.type.join(',') : values.type,
   ]
     .map((value) => String(value ?? ''))
@@ -138,6 +153,7 @@ export function CommonLogsFilterBar<TData>(
       usernames: searchParams.usernames,
       requestId: searchParams.requestId,
       upstreamRequestId: searchParams.upstreamRequestId,
+      errorOutcome: searchParams.errorOutcome,
       type: searchParams.type,
     }
     const filters: CommonLogFilters = {
@@ -155,6 +171,7 @@ export function CommonLogsFilterBar<TData>(
         : undefined,
       requestId: searchParams.requestId || undefined,
       upstreamRequestId: searchParams.upstreamRequestId || undefined,
+      errorOutcome: isAdmin ? searchParams.errorOutcome || undefined : undefined,
     }
     return {
       sourceKey: buildSearchSourceKey(sourceValues),
@@ -172,6 +189,7 @@ export function CommonLogsFilterBar<TData>(
     searchParams.usernames,
     searchParams.requestId,
     searchParams.upstreamRequestId,
+    searchParams.errorOutcome,
     searchParams.type,
     isAdmin,
   ])
@@ -376,7 +394,11 @@ export function CommonLogsFilterBar<TData>(
                 : searchState
             return {
               sourceKey: searchState.sourceKey,
-              filters: base.filters,
+              // 结局筛选只对错误类型有意义,切走时一并清掉
+              filters:
+                nextLogType === ERROR_LOG_TYPE_VALUE
+                  ? base.filters
+                  : { ...base.filters, errorOutcome: undefined },
               logType: nextLogType,
             }
           })
@@ -397,6 +419,42 @@ export function CommonLogsFilterBar<TData>(
       </Select>
     </LogsFilterField>
   )
+  const errorOutcomeValue = filters.errorOutcome || 'all'
+  const errorOutcomeLabel = t(
+    ERROR_OUTCOME_FILTERS.find((outcome) => outcome.value === errorOutcomeValue)
+      ?.label ?? 'All Errors'
+  )
+  const errorOutcomeFilter =
+    isAdmin && logType === ERROR_LOG_TYPE_VALUE ? (
+      <LogsFilterField>
+        <Select
+          items={ERROR_OUTCOME_FILTERS.map((outcome) => ({
+            value: outcome.value,
+            label: t(outcome.label),
+          }))}
+          value={errorOutcomeValue}
+          onValueChange={(value) => {
+            handleChange(
+              'errorOutcome',
+              value === 'visible' || value === 'recovered' ? value : undefined
+            )
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue>{errorOutcomeLabel}</SelectValue>
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false}>
+            <SelectGroup>
+              {ERROR_OUTCOME_FILTERS.map((outcome) => (
+                <SelectItem key={outcome.value} value={outcome.value}>
+                  {t(outcome.label)}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </LogsFilterField>
+    ) : null
   const advancedFilters = (
     <>
       <LogsFilterField>
@@ -491,6 +549,7 @@ export function CommonLogsFilterBar<TData>(
           {modelFilter}
           {isAdmin ? groupFilter : null}
           {typeFilter}
+          {errorOutcomeFilter}
         </>
       }
       advancedFilters={advancedFilters}
@@ -500,6 +559,7 @@ export function CommonLogsFilterBar<TData>(
           {modelFilter}
           {isAdmin ? groupFilter : null}
           {typeFilter}
+          {errorOutcomeFilter}
           {advancedFilters}
         </>
       }

@@ -45,7 +45,8 @@ func GetAllLogs(c *gin.Context) {
 	group := c.Query("group")
 	requestId := c.Query("request_id")
 	upstreamRequestId := c.Query("upstream_request_id")
-	logs, total, err := model.GetAllLogs(logType, startTimestamp, endTimestamp, modelName, username, usernames, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group, requestId, upstreamRequestId)
+	errorOutcome := c.Query("error_outcome")
+	logs, total, err := model.GetAllLogs(logType, startTimestamp, endTimestamp, modelName, username, usernames, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group, requestId, upstreamRequestId, errorOutcome)
 	if err != nil {
 		common.ApiError(c, err)
 		return
