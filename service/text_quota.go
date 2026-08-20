@@ -76,24 +76,47 @@ func (s *textQuotaSummary) hasBillableUsage() bool {
 	return s.TotalTokens > 0 || !s.ToolCallSurchargeQuota.IsZero()
 }
 
-// shouldWaiveZeroCompletionQuota 判定「零完成不计费」：生成类请求、零补全、无工具附加费，
-// 且故障在上游侧——流式 = 非正常结束且非客户端断开；非流式 = 上游未返回 usage
-// （现状是按估算 prompt 收费）。客户端主动断开不免，防止大 prompt 秒断白嫖上游成本。
+// shouldWaiveZeroCompletionQuota 判定「零完成不计费」：生成类请求、零补全，
+// 且没有任何模型输出送达客户端。免除的是推理费；已实际发生的工具附加费
+// 由 splitZeroCompletionWaiver 保留。
 func shouldWaiveZeroCompletionQuota(relayInfo *relaycommon.RelayInfo, summary *textQuotaSummary, originUsage *dto.Usage) bool {
 	if !common.IsZeroCompletionNoChargeEnabled() {
 		return false
 	}
-	if relayInfo == nil || summary.CompletionTokens != 0 || !summary.ToolCallSurchargeQuota.IsZero() {
+	if relayInfo == nil || summary.CompletionTokens != 0 {
 		return false
 	}
 	if !isGenerationRelay(relayInfo) {
 		return false
 	}
 	if relayInfo.IsStream {
+		// 判据是「没有任何上游数据块送达客户端」（HasSendResponse 在首个真实
+		// 数据块时置位，SSE ping 不算）：送达过部分内容就不免——本地计数路径的
+		// 部分内容会产生 completion>0 被上面挡住，这里兜住纯透传路径；结束原因
+		// 不设限，空白完成（上游立即正常收流但零输出）同样免除。
+		// 客户端主动断开不免，防止大 prompt 秒断白嫖上游成本。
 		status := relayInfo.StreamStatus
-		return status != nil && !status.IsNormalEnd() && status.EndReason != relaycommon.StreamEndReasonClientGone
+		return status != nil && status.EndReason != relaycommon.StreamEndReasonClientGone && !relayInfo.HasSendResponse()
 	}
+	// 非流式：OpenAI/Claude/Gemini 适配器在上游缺 usage 时都会从响应内容
+	// 本地补算 completion，usage 仍为 nil 意味着没有拿到任何可用内容
 	return originUsage == nil
+}
+
+// splitZeroCompletionWaiver 把应免额度拆成（保留, 免除）：免除模型推理费，
+// 保留已实际发生的工具附加费（搜索等调用在上游已经执行并计费）。
+func splitZeroCompletionWaiver(quota int, surcharge decimal.Decimal) (keepQuota int, waivedQuota int) {
+	keepQuota = 0
+	if !surcharge.IsZero() {
+		keepQuota = common.QuotaFromDecimal(surcharge)
+	}
+	if keepQuota < 0 {
+		keepQuota = 0
+	}
+	if keepQuota > quota {
+		keepQuota = quota
+	}
+	return keepQuota, quota - keepQuota
 }
 
 // isGenerationRelay 白名单圈定「期望产生补全输出」的请求形态；
@@ -461,12 +484,18 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		}
 	}
 
-	// 零完成不计费：置 0 后 SettleBilling 按差额自动退回预扣费
+	// 零完成不计费：免除推理费、保留工具附加费；降额后 SettleBilling 按差额自动退回预扣费
 	zeroCompletionWaivedQuota := -1
 	if shouldWaiveZeroCompletionQuota(relayInfo, &summary, originUsage) {
-		zeroCompletionWaivedQuota = summary.Quota
-		summary.Quota = 0
-		extraContent = append(extraContent, "本次请求未产生输出，已免除费用")
+		if keepQuota, waived := splitZeroCompletionWaiver(summary.Quota, summary.ToolCallSurchargeQuota); waived > 0 {
+			zeroCompletionWaivedQuota = waived
+			summary.Quota = keepQuota
+			if keepQuota > 0 {
+				extraContent = append(extraContent, "本次请求未产生输出，已免除模型费用（工具调用费用保留）")
+			} else {
+				extraContent = append(extraContent, "本次请求未产生输出，已免除费用")
+			}
+		}
 	}
 
 	for _, item := range summary.ToolSurchargeItems {
