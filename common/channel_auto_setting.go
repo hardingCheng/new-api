@@ -1,6 +1,7 @@
 package common
 
 import (
+	"fmt"
 	"math"
 	"slices"
 	"strconv"
@@ -337,23 +338,43 @@ func GetChannelBreakerBackoffMultipliers() []int {
 	return append([]int(nil), multipliers...)
 }
 
-// SetChannelBreakerBackoffMultipliers 解析逗号/换行分隔的正整数阶梯；
-// 任一项非法即整体回退默认阶梯，避免半套配置生效。
-func SetChannelBreakerBackoffMultipliers(value string) {
+// parseChannelBreakerBackoffMultipliers 解析逗号/换行分隔的正整数阶梯；
+// 空串按默认阶梯，任一项非法返回错误。
+func parseChannelBreakerBackoffMultipliers(value string) ([]int, error) {
 	parts := ParseChannelBreakerList(value)
+	if len(parts) == 0 {
+		return append([]int(nil), defaultChannelBreakerBackoffMultipliers...), nil
+	}
 	multipliers := make([]int, 0, len(parts))
 	for _, part := range parts {
 		n, err := strconv.Atoi(part)
 		if err != nil || n <= 0 {
-			multipliers = nil
-			break
+			return nil, fmt.Errorf("冷却退避阶梯必须是正整数列表，非法项：%q", part)
 		}
 		multipliers = append(multipliers, n)
 	}
-	if len(multipliers) == 0 {
+	return multipliers, nil
+}
+
+// SetChannelBreakerBackoffMultipliers 内部初始化用：非法输入回退默认阶梯。
+// 管理端配置入口请走 UpdateChannelBreakerBackoffMultipliersByString（拒绝非法值）。
+func SetChannelBreakerBackoffMultipliers(value string) {
+	multipliers, err := parseChannelBreakerBackoffMultipliers(value)
+	if err != nil {
 		multipliers = append([]int(nil), defaultChannelBreakerBackoffMultipliers...)
 	}
 	channelBreakerBackoffMultiplier.Store(multipliers)
+}
+
+// UpdateChannelBreakerBackoffMultipliersByString 校验并更新阶梯；
+// 非法输入返回错误且不改动现值，避免坏配置静默生效。
+func UpdateChannelBreakerBackoffMultipliersByString(value string) error {
+	multipliers, err := parseChannelBreakerBackoffMultipliers(value)
+	if err != nil {
+		return err
+	}
+	channelBreakerBackoffMultiplier.Store(multipliers)
+	return nil
 }
 
 func ChannelBreakerBackoffMultipliersToString() string {

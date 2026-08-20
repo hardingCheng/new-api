@@ -55,6 +55,16 @@ const CONFIG_KEYS = [
   'ChannelBreakerProbeSuccessCount',
   'ChannelBreakerExcludePaths',
   'ChannelBreakerFailureStatusCodes',
+  'ChannelBreakerPenaltyEnabled',
+  'ChannelBreakerPenaltyOfflineEnabled',
+  'ChannelBreakerPenaltyAlertOpensPerHour',
+  'ChannelBreakerPenaltyOfflineConsecutiveHours',
+  'ChannelBreakerPenaltyMinPoolSize',
+  'ChannelBreakerBackoffEnabled',
+  'ChannelBreakerBackoffMultipliers',
+  'ChannelBreakerBackoffMaxCooldownSeconds',
+  'ChannelBreakerBackoffDecaySeconds',
+  'ZeroCompletionNoChargeEnabled',
   'AutomaticDisableKeywords',
   'monitor_setting.bark_alert_enabled',
   'monitor_setting.bark_alert_url',
@@ -150,6 +160,15 @@ function validStatusCodes(value: string) {
       const end = Number(match[2] ?? match[1])
       return start >= 100 && end <= 599 && start <= end
     })
+}
+
+function validBackoffMultipliers(value: string) {
+  const tokens = value
+    .split(/[,\n，]/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+  if (tokens.length === 0) return true
+  return tokens.every((token) => /^\d+$/.test(token) && Number(token) > 0)
 }
 
 function formatTime(value?: string | number) {
@@ -287,6 +306,10 @@ export function ChannelBreakerSection(props: {
   const saveConfig = async () => {
     if (!validStatusCodes(config.ChannelBreakerFailureStatusCodes)) {
       toast.error(t('Invalid circuit breaker status code list'))
+      return
+    }
+    if (!validBackoffMultipliers(config.ChannelBreakerBackoffMultipliers)) {
+      toast.error(t('Invalid backoff multipliers list'))
       return
     }
     if (
@@ -874,6 +897,110 @@ export function ChannelBreakerSection(props: {
                   />
                 </EditorField>
               </div>
+            </div>
+          </TitledCard>
+
+          <TitledCard title={t('Breaker penalty & backoff')}>
+            <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
+              {(
+                [
+                  [
+                    'ChannelBreakerPenaltyEnabled',
+                    'Enable repeated-breaker alerts',
+                  ],
+                  [
+                    'ChannelBreakerPenaltyOfflineEnabled',
+                    'Auto offline chronic channels',
+                  ],
+                  ['ChannelBreakerBackoffEnabled', 'Enable cooldown backoff'],
+                ] as const
+              ).map(([key, label]) => (
+                <label key={key} className='flex items-center gap-2 text-sm'>
+                  <Switch
+                    checked={config[key]}
+                    onCheckedChange={(checked) =>
+                      setConfig((current) => ({ ...current, [key]: checked }))
+                    }
+                  />
+                  {t(label)}
+                </label>
+              ))}
+              {(
+                [
+                  [
+                    'ChannelBreakerPenaltyAlertOpensPerHour',
+                    'Opens per hour threshold',
+                    1,
+                  ],
+                  [
+                    'ChannelBreakerPenaltyOfflineConsecutiveHours',
+                    'Consecutive hours to offline',
+                    1,
+                  ],
+                  [
+                    'ChannelBreakerPenaltyMinPoolSize',
+                    'Minimum channels kept per pool',
+                    0,
+                  ],
+                  [
+                    'ChannelBreakerBackoffMaxCooldownSeconds',
+                    'Max cooldown seconds',
+                    1,
+                  ],
+                  [
+                    'ChannelBreakerBackoffDecaySeconds',
+                    'Backoff decay seconds',
+                    1,
+                  ],
+                ] as const
+              ).map(([key, label, min]) => (
+                <EditorField key={key} label={t(label)}>
+                  <Input
+                    type='number'
+                    min={min}
+                    value={config[key]}
+                    onChange={(event) =>
+                      setConfig((current) => ({
+                        ...current,
+                        [key]: event.target.value,
+                      }))
+                    }
+                  />
+                </EditorField>
+              ))}
+              <EditorField label={t('Backoff multipliers')}>
+                <Input
+                  value={config.ChannelBreakerBackoffMultipliers}
+                  onChange={(event) =>
+                    setConfig((current) => ({
+                      ...current,
+                      ChannelBreakerBackoffMultipliers: event.target.value,
+                    }))
+                  }
+                />
+              </EditorField>
+            </div>
+          </TitledCard>
+
+          <TitledCard title={t('Billing protection')}>
+            <div className='grid gap-2'>
+              <label className='flex items-center gap-2 text-sm'>
+                <Switch
+                  checked={config.ZeroCompletionNoChargeEnabled}
+                  onCheckedChange={(checked) =>
+                    setConfig((current) => ({
+                      ...current,
+                      ZeroCompletionNoChargeEnabled: checked,
+                    }))
+                  }
+                />
+                {t('No charge for zero-output failures')}
+              </label>
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'Waive model fees when an upstream failure produced no output; tool surcharges are still billed.'
+                )}
+              </p>
             </div>
           </TitledCard>
 

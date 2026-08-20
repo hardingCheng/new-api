@@ -644,23 +644,40 @@ func updateOptionMap(key string, value string) (err error) {
 		err = common.UpdateChannelBreakerRulesByJSONString(value)
 	case "ChannelBreakerExemptChannels":
 		err = common.UpdateChannelBreakerExemptChannelsByJSONString(value)
+	// 熔断惩罚/退避的数字配置：解析失败拒绝写入而不是静默按 0 处理——
+	// MinPoolSize 被静默置 0 等于关闭池保护，代价太高
 	case "ChannelBreakerPenaltyAlertOpensPerHour":
-		opens, _ := strconv.Atoi(value)
-		common.SetChannelBreakerPenaltyAlertOpensPerHour(opens)
+		var opens int
+		opens, err = strconv.Atoi(value)
+		if err == nil {
+			common.SetChannelBreakerPenaltyAlertOpensPerHour(opens)
+		}
 	case "ChannelBreakerPenaltyOfflineConsecutiveHours":
-		hours, _ := strconv.Atoi(value)
-		common.SetChannelBreakerPenaltyOfflineConsecutiveHours(hours)
+		var hours int
+		hours, err = strconv.Atoi(value)
+		if err == nil {
+			common.SetChannelBreakerPenaltyOfflineConsecutiveHours(hours)
+		}
 	case "ChannelBreakerPenaltyMinPoolSize":
-		size, _ := strconv.Atoi(value)
-		common.SetChannelBreakerPenaltyMinPoolSize(size)
+		var size int
+		size, err = strconv.Atoi(value)
+		if err == nil {
+			common.SetChannelBreakerPenaltyMinPoolSize(size)
+		}
 	case "ChannelBreakerBackoffMultipliers":
-		common.SetChannelBreakerBackoffMultipliers(value)
+		err = common.UpdateChannelBreakerBackoffMultipliersByString(value)
 	case "ChannelBreakerBackoffMaxCooldownSeconds":
-		seconds, _ := strconv.Atoi(value)
-		common.SetChannelBreakerBackoffMaxCooldownSeconds(seconds)
+		var seconds int
+		seconds, err = strconv.Atoi(value)
+		if err == nil {
+			common.SetChannelBreakerBackoffMaxCooldownSeconds(seconds)
+		}
 	case "ChannelBreakerBackoffDecaySeconds":
-		seconds, _ := strconv.Atoi(value)
-		common.SetChannelBreakerBackoffDecaySeconds(seconds)
+		var seconds int
+		seconds, err = strconv.Atoi(value)
+		if err == nil {
+			common.SetChannelBreakerBackoffDecaySeconds(seconds)
+		}
 	case "QuotaPerUnit":
 		common.QuotaPerUnit, _ = strconv.ParseFloat(value, 64)
 	case "SensitiveWords":

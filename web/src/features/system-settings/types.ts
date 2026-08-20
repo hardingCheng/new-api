@@ -381,6 +381,16 @@ export type OperationsSettings = {
   ChannelBreakerFailureStatusCodes: string
   ChannelBreakerRules: string
   ChannelBreakerExemptChannels: string
+  ChannelBreakerPenaltyEnabled: boolean
+  ChannelBreakerPenaltyOfflineEnabled: boolean
+  ChannelBreakerPenaltyAlertOpensPerHour: string
+  ChannelBreakerPenaltyOfflineConsecutiveHours: string
+  ChannelBreakerPenaltyMinPoolSize: string
+  ChannelBreakerBackoffEnabled: boolean
+  ChannelBreakerBackoffMultipliers: string
+  ChannelBreakerBackoffMaxCooldownSeconds: string
+  ChannelBreakerBackoffDecaySeconds: string
+  ZeroCompletionNoChargeEnabled: boolean
   AutomaticDisableKeywords: string
   'monitor_setting.bark_alert_enabled': boolean
   'monitor_setting.bark_alert_url': string

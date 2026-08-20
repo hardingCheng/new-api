@@ -5911,5 +5911,19 @@
     "、": "、",
     "，": "，",
     "，and ": "，并"
-  }
+  },
+  "Breaker penalty & backoff": "熔断惩罚与退避",
+  "Enable repeated-breaker alerts": "反复熔断告警",
+  "Auto offline chronic channels": "慢性故障渠道自动下线",
+  "Opens per hour threshold": "每小时打开次数阈值",
+  "Consecutive hours to offline": "连续超标小时数（触发下线）",
+  "Minimum channels kept per pool": "每池保留渠道下限",
+  "Enable cooldown backoff": "冷却指数退避",
+  "Backoff multipliers": "退避倍率阶梯",
+  "Max cooldown seconds": "冷却封顶（秒）",
+  "Backoff decay seconds": "退避衰减窗（秒）",
+  "Billing protection": "计费保护",
+  "No charge for zero-output failures": "零输出故障不计费",
+  "Waive model fees when an upstream failure produced no output; tool surcharges are still billed.": "上游故障且未产生任何输出时免除模型费用；已发生的工具调用费用仍会计费。",
+  "Invalid backoff multipliers list": "退避倍率阶梯必须是正整数列表"
 }
