@@ -85,38 +85,23 @@ func (p *RetryParam) ResetRetryNextTry() {
 // CacheGetRandomSatisfiedChannel tries to get a random channel that satisfies the requirements.
 // 尝试获取一个满足要求的随机渠道。
 //
-// For "auto" tokenGroup with cross-group Retry enabled:
-// 对于启用了跨分组重试的 "auto" tokenGroup：
+// 选路口径:同档优先(2026-08-21 起)。每次选择(含重试)都从最高优先级档
+// 开始,已失败渠道(ExcludeChannelIds)、熔断中、容量满载的渠道从档内候选
+// 剔除;某档被剔空才降到下一档。此前的行为是"第 N 次重试从第 N 档起步只往
+// 下走",同档未被抽中的健康渠道从此没有机会,实测会让重试链跳过大档撞进
+// 空池/兜底渠道(2026-08-20 事故:14→48→52→70,P5 档三条健康渠道未被尝试)。
 //
-//   - Each group will exhaust all its priorities before moving to the next group.
-//     每个分组会用完所有优先级后才会切换到下一个分组。
+// For "auto" tokenGroup with cross-group Retry enabled:
+// 对于启用了跨分组重试的 "auto" tokenGroup:
+//
+//   - 每个分组用完 RetryTimes 次重试(或选不出渠道)后才切换到下一个分组;
+//     组内每次重试同样按"同档优先"选路。
 //
 //   - Uses ContextKeyAutoGroupIndex to track current group index.
 //     使用 ContextKeyAutoGroupIndex 跟踪当前分组索引。
 //
 //   - Uses ContextKeyAutoGroupRetryIndex to track the global Retry count when current group started.
 //     使用 ContextKeyAutoGroupRetryIndex 跟踪当前分组开始时的全局重试次数。
-//
-//   - priorityRetry = Retry - startRetryIndex, represents the priority level within current group.
-//     priorityRetry = Retry - startRetryIndex，表示当前分组内的优先级级别。
-//
-//   - When GetRandomSatisfiedChannel returns nil (priorities exhausted), moves to next group.
-//     当 GetRandomSatisfiedChannel 返回 nil（优先级用完）时，切换到下一个分组。
-//
-// Example flow (2 groups, each with 2 priorities, RetryTimes=3):
-// 示例流程（2个分组，每个有2个优先级，RetryTimes=3）：
-//
-//	Retry=0: GroupA, priority0 (startRetryIndex=0, priorityRetry=0)
-//	         分组A, 优先级0
-//
-//	Retry=1: GroupA, priority1 (startRetryIndex=0, priorityRetry=1)
-//	         分组A, 优先级1
-//
-//	Retry=2: GroupA exhausted → GroupB, priority0 (startRetryIndex=2, priorityRetry=0)
-//	         分组A用完 → 分组B, 优先级0
-//
-//	Retry=3: GroupB, priority1 (startRetryIndex=2, priorityRetry=1)
-//	         分组B, 优先级1
 func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
 	var channel *model.Channel
 	var err error
@@ -144,8 +129,8 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 
 		for i := startGroupIndex; i < len(autoGroups); i++ {
 			autoGroup := autoGroups[i]
-			// Calculate priorityRetry for current group
-			// 计算当前分组的 priorityRetry
+			// priorityRetry 只用于"本组重试预算是否用完"的换组判定与日志,
+			// 不再决定选路起始档位(选路一律同档优先,见 CacheGetRandomSatisfiedChannel 注释)
 			priorityRetry := param.GetRetry()
 			// If moved to a new group, reset priorityRetry and update startRetryIndex
 			// 如果切换到新分组，重置 priorityRetry 并更新 startRetryIndex
@@ -154,7 +139,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, err = getRandomSatisfiedChannelByBreaker(param, autoGroup, priorityRetry)
+			channel, err = getRandomSatisfiedChannelByBreaker(param, autoGroup)
 			if err != nil {
 				var capacityErr *ChannelCapacityExhaustedError
 				if !errors.As(err, &capacityErr) {
@@ -210,7 +195,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			break
 		}
 	} else {
-		channel, err = getRandomSatisfiedChannelByBreaker(param, param.TokenGroup, param.GetRetry())
+		channel, err = getRandomSatisfiedChannelByBreaker(param, param.TokenGroup)
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}
@@ -221,9 +206,9 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	return channel, selectGroup, nil
 }
 
-func getRandomSatisfiedChannelByBreaker(param *RetryParam, group string, priorityRetry int) (*model.Channel, error) {
+func getRandomSatisfiedChannelByBreaker(param *RetryParam, group string) (*model.Channel, error) {
 	decision := resolveUserChannelRouting(param.Ctx, group, param.ModelName)
-	channel, err := getRandomSatisfiedChannelByBreakerAndRouting(param, group, priorityRetry, decision)
+	channel, err := getRandomSatisfiedChannelByBreakerAndRouting(param, group, decision)
 	var assignedCapacityErr *ChannelCapacityExhaustedError
 	if err != nil && !errors.As(err, &assignedCapacityErr) {
 		return channel, err
@@ -236,7 +221,7 @@ func getRandomSatisfiedChannelByBreaker(param *RetryParam, group string, priorit
 		return channel, err
 	}
 
-	channel, err = getRandomSatisfiedChannelByBreakerAndRouting(param, group, priorityRetry, userChannelRoutingDecision{})
+	channel, err = getRandomSatisfiedChannelByBreakerAndRouting(param, group, userChannelRoutingDecision{})
 	setUserChannelRoutingLogInfo(param.Ctx, decision, group, param.ModelName, 0, true, "assigned_pool_unavailable")
 	if channel != nil {
 		setUserChannelRoutingLogInfo(param.Ctx, decision, group, param.ModelName, channel.Id, true, "assigned_pool_unavailable")
@@ -244,11 +229,13 @@ func getRandomSatisfiedChannelByBreaker(param *RetryParam, group string, priorit
 	return channel, err
 }
 
-func getRandomSatisfiedChannelByBreakerAndRouting(param *RetryParam, group string, priorityRetry int, decision userChannelRoutingDecision) (*model.Channel, error) {
-	maxAttempts := common.RetryTimes + 1
-	if maxAttempts < 1 {
-		maxAttempts = 1
-	}
+// maxTierWalk 是单次选路允许下探的优先级档数上限。同档优先后每次选路都从
+// 第 0 档起步,靠排除集清空档位自然下探;默认路径(无用户路由规则)的 model
+// 层不上报 exhausted 而是钳到最低档,需要这个硬上限终止循环。取值远大于任何
+// 真实分组的档数,不构成实际限制。
+const maxTierWalk = 32
+
+func getRandomSatisfiedChannelByBreakerAndRouting(param *RetryParam, group string, decision userChannelRoutingDecision) (*model.Channel, error) {
 	enforceCapacity := param.ReserveCapacity &&
 		operation_setting.GetChannelCapacityMode() == operation_setting.ChannelCapacityModeEnforce
 	// 容量排除集只在本次选择调用内有效：重试之间租约会释放、窗口会滑动，不能跨调用记忆。
@@ -257,11 +244,13 @@ func getRandomSatisfiedChannelByBreakerAndRouting(param *RetryParam, group strin
 	capacityRedisError := false
 	var lastErr error
 outer:
-	for offset := 0; decision.Matched || offset < maxAttempts; offset++ {
+	for offset := 0; decision.Matched || offset < maxTierWalk; offset++ {
+		// 同档优先:每次选路(含重试)都从最高优先级档(offset=0)开始,
+		// 已失败/熔断/满载的渠道被过滤器移出档内候选,某档剔空才降档。
 		// 同层重选：满载渠道仅移出本层候选重新加权抽取，不消耗降层机会。
 		// 每轮排除集严格增大，循环必然收敛。
 		for {
-			channel, exhausted, err := model.GetRandomSatisfiedChannelWithFilters(group, param.ModelName, priorityRetry+offset, param.RequestPath, userChannelRoutingCandidateFilter(decision), func(channel *model.Channel) bool {
+			channel, exhausted, err := model.GetRandomSatisfiedChannelWithFilters(group, param.ModelName, offset, param.RequestPath, userChannelRoutingCandidateFilter(decision), func(channel *model.Channel) bool {
 				if param.ExcludeChannelIds[channel.Id] {
 					logger.LogDebug(param.Ctx, "channel #%d already failed in this request, excluded from reselection", channel.Id)
 					return false
