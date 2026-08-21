@@ -1,6 +1,7 @@
 package common
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 type ThinkingContentInfo struct {
@@ -1158,6 +1160,11 @@ func RemoveDisabledFields(jsonData []byte, channelOtherSettings dto.ChannelOther
 	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || channelPassThroughEnabled {
 		return jsonData, nil
 	}
+	// 默认剥除 Responses input item 的 status，除非明确允许（输出 item 回灌时的
+	// 残留字段，对生成无语义，部分 OpenAI 兼容上游按未知参数直接 400 拒收）
+	if !channelOtherSettings.AllowInputStatus {
+		jsonData = removeResponsesInputStatus(jsonData)
+	}
 	if !hasRemovableDisabledField(jsonData, channelOtherSettings) {
 		return jsonData, nil
 	}
@@ -1225,6 +1232,59 @@ func RemoveDisabledFields(jsonData []byte, channelOtherSettings dto.ChannelOther
 		return jsonData, nil
 	}
 	return jsonDataAfter, nil
+}
+
+// removeResponsesInputStatus 剥掉 Responses 请求 input 数组元素顶层的 status 字段。
+// 不整包 map 往返：codex 会话的 input 可达上千个 item，且 map 往返会把超出
+// float64 精度的整数写坏。改为 gjson 逐项定位 + sjson 对单个 item 定点删除，
+// 最后一次性回写 input 数组，请求体其余字节原样保留。任何一步失败都原样返回。
+func removeResponsesInputStatus(jsonData []byte) []byte {
+	input := gjson.GetBytes(jsonData, "input")
+	if !input.IsArray() {
+		return jsonData
+	}
+	hasStatus := false
+	input.ForEach(func(_, item gjson.Result) bool {
+		if item.IsObject() && item.Get("status").Exists() {
+			hasStatus = true
+			return false
+		}
+		return true
+	})
+	if !hasStatus {
+		return jsonData
+	}
+	var rebuilt bytes.Buffer
+	rebuilt.Grow(len(input.Raw))
+	rebuilt.WriteByte('[')
+	first := true
+	ok := true
+	input.ForEach(func(_, item gjson.Result) bool {
+		if !first {
+			rebuilt.WriteByte(',')
+		}
+		first = false
+		raw := item.Raw
+		if item.IsObject() && item.Get("status").Exists() {
+			cleaned, err := sjson.Delete(raw, "status")
+			if err != nil {
+				ok = false
+				return false
+			}
+			raw = cleaned
+		}
+		rebuilt.WriteString(raw)
+		return true
+	})
+	if !ok {
+		return jsonData
+	}
+	rebuilt.WriteByte(']')
+	out, err := sjson.SetRawBytes(jsonData, "input", rebuilt.Bytes())
+	if err != nil {
+		return jsonData
+	}
+	return out
 }
 
 func hasRemovableDisabledField(jsonData []byte, channelOtherSettings dto.ChannelOtherSettings) bool {

@@ -2176,6 +2176,58 @@ func TestRemoveDisabledFieldsNoControlledFieldsKeepsBody(t *testing.T) {
 	require.Equal(t, input, string(out))
 }
 
+func TestRemoveDisabledFieldsStripsResponsesInputStatus(t *testing.T) {
+	// 输出 item 回灌:message/reasoning 带顶层 status,function_call_output 的
+	// output 内层同名字段不能误伤;大整数必须原样保留(不许经 float64 往返)
+	input := `{"model":"gpt-5.6","big_id":9007199254740993,"input":[` +
+		`{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"hi"}]},` +
+		`{"type":"function_call","call_id":"c1","name":"f","arguments":"{}","status":"completed"},` +
+		`{"type":"function_call_output","call_id":"c1","output":"{\"status\":\"inner\"}"},` +
+		`{"type":"message","role":"user","content":"next"}]}`
+	want := `{"model":"gpt-5.6","big_id":9007199254740993,"input":[` +
+		`{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi"}]},` +
+		`{"type":"function_call","call_id":"c1","name":"f","arguments":"{}"},` +
+		`{"type":"function_call_output","call_id":"c1","output":"{\"status\":\"inner\"}"},` +
+		`{"type":"message","role":"user","content":"next"}]}`
+
+	out, err := RemoveDisabledFields([]byte(input), dto.ChannelOtherSettings{}, false)
+	if err != nil {
+		t.Fatalf("RemoveDisabledFields returned error: %v", err)
+	}
+	require.Equal(t, want, string(out))
+}
+
+func TestRemoveDisabledFieldsAllowInputStatusKeepsBody(t *testing.T) {
+	input := `{"model":"gpt-5.6","input":[{"type":"message","role":"assistant","status":"completed","content":"hi"}]}`
+	settings := dto.ChannelOtherSettings{AllowInputStatus: true}
+
+	out, err := RemoveDisabledFields([]byte(input), settings, false)
+	if err != nil {
+		t.Fatalf("RemoveDisabledFields returned error: %v", err)
+	}
+	require.Equal(t, input, string(out))
+}
+
+func TestRemoveDisabledFieldsInputStringUntouched(t *testing.T) {
+	input := `{"model":"gpt-5.6","input":"plain text prompt"}`
+
+	out, err := RemoveDisabledFields([]byte(input), dto.ChannelOtherSettings{}, false)
+	if err != nil {
+		t.Fatalf("RemoveDisabledFields returned error: %v", err)
+	}
+	require.Equal(t, input, string(out))
+}
+
+func TestRemoveDisabledFieldsInputStatusSkipWhenPassThrough(t *testing.T) {
+	input := `{"model":"gpt-5.6","input":[{"type":"message","role":"assistant","status":"completed","content":"hi"}]}`
+
+	out, err := RemoveDisabledFields([]byte(input), dto.ChannelOtherSettings{}, true)
+	if err != nil {
+		t.Fatalf("RemoveDisabledFields returned error: %v", err)
+	}
+	require.Equal(t, input, string(out))
+}
+
 func TestRemoveDisabledFieldsAllowInferenceGeo(t *testing.T) {
 	input := `{
 		"inference_geo":"eu",
