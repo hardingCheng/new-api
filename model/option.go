@@ -72,6 +72,7 @@ func InitOptionMap() {
 	common.OptionMap["UpstreamClientErrNormalizeEnabled"] = strconv.FormatBool(common.IsUpstreamClientErrNormalizeEnabled())
 	common.OptionMap["BreakerAllOpenFallbackEnabled"] = strconv.FormatBool(common.IsBreakerAllOpenFallbackEnabled())
 	common.OptionMap["ChatToResponsesNonStreamOnly"] = strconv.FormatBool(common.IsChatToResponsesNonStreamOnly())
+	common.OptionMap["UpstreamClientErrNormalizeKeywords"] = strings.Join(common.GetUpstreamClientErrKeywords(), ",")
 	common.OptionMap["ChannelBreakerBackoffMultipliers"] = common.ChannelBreakerBackoffMultipliersToString()
 	common.OptionMap["ChannelBreakerBackoffMaxCooldownSeconds"] = strconv.Itoa(common.GetChannelBreakerBackoffMaxCooldownSeconds())
 	common.OptionMap["ChannelBreakerBackoffDecaySeconds"] = strconv.Itoa(common.GetChannelBreakerBackoffDecaySeconds())
@@ -374,6 +375,8 @@ func updateOptionMap(key string, value string) (err error) {
 			common.SetBreakerAllOpenFallback(boolValue)
 		case "ChatToResponsesNonStreamOnly":
 			common.SetChatToResponsesNonStreamOnly(boolValue)
+		case "UpstreamClientErrNormalizeKeywords":
+			common.SetUpstreamClientErrKeywords(value)
 		case "ZeroCompletionNoChargeEnabled":
 			common.SetZeroCompletionNoChargeEnabled(boolValue)
 		case "LogConsumeEnabled":

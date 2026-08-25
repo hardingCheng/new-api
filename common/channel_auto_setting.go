@@ -70,6 +70,10 @@ var (
 	// chat/completions → Responses 转换只对非流式生效。
 	// 流式要额外把上游 Responses SSE 翻译回 chat SSE，实测大量 500。
 	chatToResponsesNonStreamOnlyFlag atomic.Bool
+	// 归正只对命中关键词的错误生效，默认只认 json_object 那一条。
+	// 「模型不存在」等同样是 invalid_request_error 但换渠道可能成功，
+	// 不在名单里就保持原样，照常重试。
+	upstreamClientErrKeywords        atomic.Value
 	channelBreakerBackoffMultiplier  atomic.Value // []int：连续熔断的冷却倍率阶梯
 	channelBreakerBackoffMaxCooldown atomic.Int64
 	channelBreakerBackoffDecaySecs   atomic.Int64
@@ -96,6 +100,7 @@ func init() {
 	SetUpstreamClientErrNormalize(false)
 	SetBreakerAllOpenFallback(false)
 	SetChatToResponsesNonStreamOnly(false)
+	SetUpstreamClientErrKeywords(DefaultUpstreamClientErrKeywords)
 	SetChannelBreakerBackoffMultipliers("1,2,5,15,60")
 	SetChannelBreakerBackoffMaxCooldownSeconds(3600)
 	SetChannelBreakerBackoffDecaySeconds(600)
@@ -525,6 +530,36 @@ func IsBreakerAllOpenFallbackEnabled() bool {
 
 func SetBreakerAllOpenFallback(enabled bool) {
 	breakerAllOpenFallbackFlag.Store(enabled)
+}
+
+// DefaultUpstreamClientErrKeywords 归正白名单默认值：只认 json_object 校验。
+// 这条的完整原文是：
+//
+//	Response input messages must contain the word 'json' in some form to
+//	use 'text.format' of type 'json_object'.
+//
+// 它百分之百是客户端请求写错了，换任何渠道都不会对。
+const DefaultUpstreamClientErrKeywords = "must contain the word 'json'"
+
+// GetUpstreamClientErrKeywords 返回归正白名单（已小写去空）。
+func GetUpstreamClientErrKeywords() []string {
+	keywords, ok := upstreamClientErrKeywords.Load().([]string)
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), keywords...)
+}
+
+func SetUpstreamClientErrKeywords(value string) {
+	parts := ParseChannelBreakerList(value)
+	normalized := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.ToLower(strings.TrimSpace(part))
+		if part != "" {
+			normalized = append(normalized, part)
+		}
+	}
+	upstreamClientErrKeywords.Store(normalized)
 }
 
 // IsChatToResponsesNonStreamOnly chat→Responses 转换是否只对非流式生效。

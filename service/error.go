@@ -264,5 +264,15 @@ func normalizeUpstreamClientError(oaiError types.OpenAIError, statusCode int) (i
 	if !strings.EqualFold(strings.TrimSpace(oaiError.Type), "invalid_request_error") {
 		return statusCode, nil
 	}
+	// 白名单：只归正确定是「客户端把请求写错了」的那几类。
+	// 同样是 invalid_request_error 的「模型不存在」不在名单里，
+	// 保持原状继续跨渠道重试 —— 换一条渠道确实可能有这个模型。
+	keywords := common.GetUpstreamClientErrKeywords()
+	if len(keywords) == 0 {
+		return statusCode, nil
+	}
+	if matched, _ := AcSearch(strings.ToLower(oaiError.Message), keywords, true); !matched {
+		return statusCode, nil
+	}
 	return http.StatusBadRequest, []types.NewAPIErrorOptions{types.ErrOptionWithSkipRetry()}
 }
