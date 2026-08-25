@@ -235,7 +235,30 @@ func getRandomSatisfiedChannelByBreaker(param *RetryParam, group string) (*model
 // 真实分组的档数,不构成实际限制。
 const maxTierWalk = 32
 
+// getRandomSatisfiedChannelByBreakerAndRouting 正常选路；若全部候选都被熔断
+// 挡住（选不出任何渠道且没有其他错误），在开关打开时降级再选一次，这次忽略
+// 熔断状态。
+//
+// 为什么要这条：熔断在选路层是硬过滤，某档被剔空就降档，所有档剔空就直接
+// 返回「无可用渠道」，用户拿到硬报错。而熔断的本意是「有更好的选择时别用坏
+// 的」——当一个可选的都没有时，坏的也比确定失败强：一条 50% 成功率的渠道
+// 远好过 100% 报错。开了冷却退避后最长冷却可达 1 小时，没有这条兜底就是
+// 最长 1 小时全站无路。
 func getRandomSatisfiedChannelByBreakerAndRouting(param *RetryParam, group string, decision userChannelRoutingDecision) (*model.Channel, error) {
+	channel, err := selectChannelOnce(param, group, decision, false)
+	if channel != nil || err != nil {
+		return channel, err
+	}
+	if !common.IsBreakerAllOpenFallbackEnabled() {
+		return nil, nil
+	}
+	logger.LogWarn(param.Ctx, fmt.Sprintf("all candidates blocked by breaker in group %s for model %s, falling back to breaker-ignored selection", group, param.ModelName))
+	return selectChannelOnce(param, group, decision, true)
+}
+
+// selectChannelOnce 是原来的选路主体。ignoreBreaker 为 true 时不按熔断状态
+// 过滤候选，也不再消耗探测名额。
+func selectChannelOnce(param *RetryParam, group string, decision userChannelRoutingDecision, ignoreBreaker bool) (*model.Channel, error) {
 	enforceCapacity := param.ReserveCapacity &&
 		operation_setting.GetChannelCapacityMode() == operation_setting.ChannelCapacityModeEnforce
 	// 容量排除集只在本次选择调用内有效：重试之间租约会释放、窗口会滑动，不能跨调用记忆。
@@ -257,6 +280,9 @@ outer:
 				}
 				if capacityExcluded[channel.Id] {
 					return false
+				}
+				if ignoreBreaker {
+					return true
 				}
 				allowed := CanUseChannelByBreaker(param.Ctx, typesChannelError(channel))
 				if !allowed {
@@ -304,7 +330,7 @@ outer:
 				}
 			}
 
-			if !channel.ChannelInfo.IsMultiKey && !AcquireChannelBreakerProbe(param.Ctx, typesChannelError(channel)) {
+			if !ignoreBreaker && !channel.ChannelInfo.IsMultiKey && !AcquireChannelBreakerProbe(param.Ctx, typesChannelError(channel)) {
 				logger.LogWarn(param.Ctx, fmt.Sprintf("channel breaker probe limit reached for channel #%d", channel.Id))
 				// probe 不放行时撤销已预留的容量（尚未派发，RPM 与并发都回退），沿用现状降层
 				if capacityLease != nil {

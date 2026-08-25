@@ -59,6 +59,17 @@ var (
 	channelBreakerPenaltyMinPoolSize  atomic.Int64
 
 	channelBreakerBackoffEnabledFlag atomic.Bool
+
+	// ---- 2026-08-25 新增三个开关，默认全关 ----
+	// 上游把 OpenAI 的 400 参数校验错误包成 5xx 时，归正为客户端错误，
+	// 不计入熔断、不跨渠道重试（实测同一条渠道 84% 被包成 502）。
+	upstreamClientErrNormalizeFlag atomic.Bool
+	// 某分组所有档位的渠道都被熔断挡住时，降级再选一次（忽略熔断状态）。
+	// 没有这条时选路直接返回"无可用渠道"，用户拿到硬报错。
+	breakerAllOpenFallbackFlag atomic.Bool
+	// chat/completions → Responses 转换只对非流式生效。
+	// 流式要额外把上游 Responses SSE 翻译回 chat SSE，实测大量 500。
+	chatToResponsesNonStreamOnlyFlag atomic.Bool
 	channelBreakerBackoffMultiplier  atomic.Value // []int：连续熔断的冷却倍率阶梯
 	channelBreakerBackoffMaxCooldown atomic.Int64
 	channelBreakerBackoffDecaySecs   atomic.Int64
@@ -82,6 +93,9 @@ func init() {
 	SetChannelBreakerPenaltyOfflineConsecutiveHours(2)
 	SetChannelBreakerPenaltyMinPoolSize(2)
 	SetChannelBreakerBackoffEnabled(false)
+	SetUpstreamClientErrNormalize(false)
+	SetBreakerAllOpenFallback(false)
+	SetChatToResponsesNonStreamOnly(false)
 	SetChannelBreakerBackoffMultipliers("1,2,5,15,60")
 	SetChannelBreakerBackoffMaxCooldownSeconds(3600)
 	SetChannelBreakerBackoffDecaySeconds(600)
@@ -491,4 +505,33 @@ func cloneChannelBreakerRules(rules []ChannelBreakerRule) []ChannelBreakerRule {
 		cloned[i].Targets = append([]string(nil), rule.Targets...)
 	}
 	return cloned
+}
+
+// ---- 2026-08-25 新增：客户端错误归正 / 全熔断兜底 / 转换仅非流式 ----
+
+// IsUpstreamClientErrNormalizeEnabled 上游把 400 包成 5xx 时是否归正。
+func IsUpstreamClientErrNormalizeEnabled() bool {
+	return upstreamClientErrNormalizeFlag.Load()
+}
+
+func SetUpstreamClientErrNormalize(enabled bool) {
+	upstreamClientErrNormalizeFlag.Store(enabled)
+}
+
+// IsBreakerAllOpenFallbackEnabled 所有候选都被熔断挡住时是否降级重选。
+func IsBreakerAllOpenFallbackEnabled() bool {
+	return breakerAllOpenFallbackFlag.Load()
+}
+
+func SetBreakerAllOpenFallback(enabled bool) {
+	breakerAllOpenFallbackFlag.Store(enabled)
+}
+
+// IsChatToResponsesNonStreamOnly chat→Responses 转换是否只对非流式生效。
+func IsChatToResponsesNonStreamOnly() bool {
+	return chatToResponsesNonStreamOnlyFlag.Load()
+}
+
+func SetChatToResponsesNonStreamOnly(enabled bool) {
+	chatToResponsesNonStreamOnlyFlag.Store(enabled)
 }

@@ -97,6 +97,10 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	if info.RelayMode == relayconstant.RelayModeChatCompletions &&
 		!passThroughGlobal &&
 		!info.ChannelSetting.PassThroughBodyEnabled &&
+		// 流式走转换要额外把上游 Responses SSE 翻译回 chat SSE，
+		// 2026-08-25 实测那条翻译链路大量 500（responses stream error），
+		// 而同期非流式 640 发 0 失败。开关打开时只让非流式走转换。
+		(!info.IsStream || !common.IsChatToResponsesNonStreamOnly()) &&
 		service.ShouldChatCompletionsUseResponsesGlobal(info.ChannelId, info.ChannelType, info.OriginModelName) {
 		applySystemPromptIfNeeded(c, info, request)
 		usage, newApiErr := chatCompletionsViaResponses(c, info, adaptor, request)

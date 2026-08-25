@@ -69,6 +69,9 @@ func InitOptionMap() {
 	common.OptionMap["ChannelBreakerPenaltyOfflineConsecutiveHours"] = strconv.Itoa(common.GetChannelBreakerPenaltyOfflineConsecutiveHours())
 	common.OptionMap["ChannelBreakerPenaltyMinPoolSize"] = strconv.Itoa(common.GetChannelBreakerPenaltyMinPoolSize())
 	common.OptionMap["ChannelBreakerBackoffEnabled"] = strconv.FormatBool(common.IsChannelBreakerBackoffEnabled())
+	common.OptionMap["UpstreamClientErrNormalizeEnabled"] = strconv.FormatBool(common.IsUpstreamClientErrNormalizeEnabled())
+	common.OptionMap["BreakerAllOpenFallbackEnabled"] = strconv.FormatBool(common.IsBreakerAllOpenFallbackEnabled())
+	common.OptionMap["ChatToResponsesNonStreamOnly"] = strconv.FormatBool(common.IsChatToResponsesNonStreamOnly())
 	common.OptionMap["ChannelBreakerBackoffMultipliers"] = common.ChannelBreakerBackoffMultipliersToString()
 	common.OptionMap["ChannelBreakerBackoffMaxCooldownSeconds"] = strconv.Itoa(common.GetChannelBreakerBackoffMaxCooldownSeconds())
 	common.OptionMap["ChannelBreakerBackoffDecaySeconds"] = strconv.Itoa(common.GetChannelBreakerBackoffDecaySeconds())
@@ -365,6 +368,12 @@ func updateOptionMap(key string, value string) (err error) {
 			common.SetChannelBreakerPenaltyOfflineEnabled(boolValue)
 		case "ChannelBreakerBackoffEnabled":
 			common.SetChannelBreakerBackoffEnabled(boolValue)
+		case "UpstreamClientErrNormalizeEnabled":
+			common.SetUpstreamClientErrNormalize(boolValue)
+		case "BreakerAllOpenFallbackEnabled":
+			common.SetBreakerAllOpenFallback(boolValue)
+		case "ChatToResponsesNonStreamOnly":
+			common.SetChatToResponsesNonStreamOnly(boolValue)
 		case "ZeroCompletionNoChargeEnabled":
 			common.SetZeroCompletionNoChargeEnabled(boolValue)
 		case "LogConsumeEnabled":

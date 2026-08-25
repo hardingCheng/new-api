@@ -117,7 +117,8 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		// General format error (OpenAI, Anthropic, Gemini, etc.)
 		oaiError := errResponse.TryToOpenAIError()
 		if oaiError != nil {
-			newApiErr = types.WithOpenAIError(*oaiError, resp.StatusCode)
+			statusCode, errOpts := normalizeUpstreamClientError(*oaiError, resp.StatusCode)
+			newApiErr = types.WithOpenAIError(*oaiError, statusCode, errOpts...)
 			if showBodyWhenFail {
 				newApiErr.Err = buildErrWithBody(newApiErr.Error())
 			}
@@ -232,4 +233,36 @@ func TaskErrorFromAPIError(apiErr *types.NewAPIError) *taskdto.TaskError {
 		LocalError: apiErr.GetErrorType() == types.ErrorTypeNewAPIError,
 		Error:      apiErr.Err,
 	}
+}
+
+// normalizeUpstreamClientError 把上游包装过的「客户端请求错误」归正。
+//
+// 背景：逆向 Codex 的上游各家实现不一，同一个 OpenAI 400 参数校验错误，
+// 有的透传 400，有的自己包成 502（2026-08-25 实测：同一条渠道两种都有，
+// 全池 84% 被包成 502）。而 502 同时落在熔断计数区间和跨渠道重试区间里，
+// 于是一个客户写错的请求会：A 渠道失败 → 熔断 +1 → 重试 B → 失败 → 熔断 +1 …
+// 把健康渠道一起拖下水。
+//
+// 判据用返回体里的 error.type 而不是 HTTP 状态码：状态码被上游改过不可信，
+// error.type 是 OpenAI 原文，各家都原样带回来了。
+//
+// 归正后状态码变 400（不在熔断计数区间、也不在重试区间），并显式带上
+// skipRetry —— ShouldTripChannelBreakerWithRule 与 shouldRetry 都认这个标记，
+// 一处设置同时关掉重试与熔断。
+//
+// 只在上游返回 5xx 时介入：上游本来就返回 400 的，行为完全不变。
+//
+// 已知取舍：OpenAI 也用 invalid_request_error 表示「模型不存在」，那种情况
+// 换一条渠道是可能成功的，归正后就不再重试了。所以本开关默认关闭。
+func normalizeUpstreamClientError(oaiError types.OpenAIError, statusCode int) (int, []types.NewAPIErrorOptions) {
+	if !common.IsUpstreamClientErrNormalizeEnabled() {
+		return statusCode, nil
+	}
+	if statusCode < 500 || statusCode > 599 {
+		return statusCode, nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(oaiError.Type), "invalid_request_error") {
+		return statusCode, nil
+	}
+	return http.StatusBadRequest, []types.NewAPIErrorOptions{types.ErrOptionWithSkipRetry()}
 }
