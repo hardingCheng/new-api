@@ -71,6 +71,14 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	}
 	adaptor.Init(info)
 
+	// 结构化输出兜底：见 relay/json_schema_prompt.go（默认关闭，按渠道开启）
+	applyJsonSchemaPromptIfNeeded(info, request)
+	// 工具参数结构校验：见 relay/tool_schema_validate.go（默认关闭，按渠道开启）
+	if err := validateToolSchemasIfNeeded(info, request); err != nil {
+		return types.NewError(err, types.ErrorCodeInvalidRequest,
+			types.ErrOptionWithStatusCode(http.StatusBadRequest), types.ErrOptionWithSkipRetry())
+	}
+
 	// chatdump：覆盖 OpenAI 兼容入口
 	dumpSession := chatdump.NewSession(request.Model)
 	if dumpSession.Enabled() {

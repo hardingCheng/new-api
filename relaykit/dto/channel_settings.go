@@ -17,6 +17,13 @@ type ChannelSettings struct {
 	PassThroughBodyEnabled bool   `json:"pass_through_body_enabled,omitempty"`
 	SystemPrompt           string `json:"system_prompt,omitempty"`
 	SystemPromptOverride   bool   `json:"system_prompt_override,omitempty"`
+	// JsonSchemaPrompt 把 response_format.json_schema 的 schema 原文补一条 system 消息
+	// 交给模型。用于上游收下 json_schema 却不把 schema 传给模型的情况（实测该类上游
+	// 原样请求 0/6 合规，补 system 后 6/6）。上游本就支持 strict 时多这条不改变结果。
+	JsonSchemaPrompt bool `json:"json_schema_prompt,omitempty"`
+	// ValidateToolSchema 按官方口径校验 function.parameters 的结构，非法直接回 400。
+	// 多数上游会原样收下非法 schema，客户按官方写的一致性用例因此判不合规。
+	ValidateToolSchema bool `json:"validate_tool_schema,omitempty"`
 	// HTTPProtocol controls outbound HTTP version negotiation for this channel.
 	// Accepted values: "", "auto" (default), "http1".
 	HTTPProtocol string `json:"http_protocol,omitempty"`

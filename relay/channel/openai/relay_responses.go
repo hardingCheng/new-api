@@ -46,7 +46,6 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		}
 	}
 
-
 	// 写入新的 response body
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
@@ -98,6 +97,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	imageCounter := &relaycommon.ImageGenerationCallCounter{}
 	imageCommitted := false
 
+	seenCreated := false
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 
 		// 检查当前数据是否包含 completed 状态和 usage 信息
@@ -106,6 +106,23 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			logger.LogError(c, "failed to unmarshal stream response: "+err.Error())
 			sr.Error(err)
 			return
+		}
+		// 首事件规范化：部分上游把 response.created 发成裸的 Response 对象且不带 type，
+		// 事件名因此写成空串（helper.ResponseChunkData 用 type 当事件名），官方 SDK
+		// 按 type 分发时直接抛错。这里补成规范形状，其余事件原样透传。
+		if streamResponse.Type == "" && !seenCreated {
+			if normalized, ok := normalizeResponsesCreatedChunk(data); ok {
+				data = normalized
+				streamResponse = dto.ResponsesStreamResponse{}
+				if err := common.UnmarshalJsonStr(data, &streamResponse); err != nil {
+					logger.LogError(c, "failed to unmarshal normalized stream response: "+err.Error())
+					sr.Error(err)
+					return
+				}
+			}
+		}
+		if streamResponse.Type == "response.created" {
+			seenCreated = true
 		}
 		sendResponsesStreamData(c, streamResponse, data)
 		switch streamResponse.Type {
@@ -188,4 +205,28 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 
 	return usage, nil
+}
+
+// normalizeResponsesCreatedChunk 把"裸 Response 对象、无 type"的首帧改写成官方形状
+// {"type":"response.created","response":{...}}。只在对象自称 object=response 时改写，
+// 其它无法识别的分片保持原样，避免误伤未知事件。
+func normalizeResponsesCreatedChunk(data string) (string, bool) {
+	var payload map[string]any
+	if err := common.UnmarshalJsonStr(data, &payload); err != nil {
+		return "", false
+	}
+	if _, exists := payload["type"]; exists {
+		return "", false
+	}
+	if obj, _ := payload["object"].(string); obj != "response" {
+		return "", false
+	}
+	wrapped, err := common.Marshal(map[string]any{
+		"type":     "response.created",
+		"response": payload,
+	})
+	if err != nil {
+		return "", false
+	}
+	return string(wrapped), true
 }
