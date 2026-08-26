@@ -84,6 +84,8 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		}
 		requestBody = common.NewReplayableBodyReader(storage)
 	} else {
+		// 结构化输出兜底：见 relay/json_schema_prompt.go（默认关闭，按渠道开启，与 chat 侧同一开关）
+		applyResponsesJsonSchemaPromptIfNeeded(info, request)
 		convertedRequest, err := adaptor.ConvertOpenAIResponsesRequest(c, info, *request)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())

@@ -49,6 +49,61 @@ func applyJsonSchemaPromptIfNeeded(info *relaycommon.RelayInfo, request *dto.Gen
 	request.Messages = append([]dto.Message{{Role: systemRole, Content: instruction}}, request.Messages...)
 }
 
+// applyResponsesJsonSchemaPromptIfNeeded 是 responses 协议侧的同一兜底：
+// text.format.type=json_schema 时把 schema 原文并入 instructions（responses 协议的
+// system 级指令位），text.format 本身照常透传。与 chat 侧共用同一渠道开关。
+func applyResponsesJsonSchemaPromptIfNeeded(info *relaycommon.RelayInfo, request *dto.OpenAIResponsesRequest) {
+	if info == nil || info.ChannelMeta == nil || request == nil || !info.ChannelSetting.JsonSchemaPrompt {
+		return
+	}
+	schema := extractResponsesJsonSchemaText(request.Text)
+	if schema == "" {
+		return
+	}
+	instruction := jsonSchemaPromptPrefix + schema + jsonSchemaPromptSuffix
+	existingRaw := strings.TrimSpace(string(request.Instructions))
+	if existingRaw == "" || existingRaw == "null" {
+		encoded, err := common.Marshal(instruction)
+		if err != nil {
+			return
+		}
+		request.Instructions = encoded
+		return
+	}
+	// instructions 官方为字符串；已有时拼在后面，保留客户自己的指令。
+	// 非字符串形状（个别客户端的扩展写法）不动，避免写坏请求。
+	var existing string
+	if err := common.Unmarshal(request.Instructions, &existing); err != nil {
+		return
+	}
+	encoded, err := common.Marshal(existing + "\n\n" + instruction)
+	if err != nil {
+		return
+	}
+	request.Instructions = encoded
+}
+
+// extractResponsesJsonSchemaText 从 responses 请求的 text.format 中取出 schema 原文，
+// 仅 format.type=json_schema 时生效。
+func extractResponsesJsonSchemaText(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var wrapper struct {
+		Format json.RawMessage `json:"format"`
+	}
+	if err := common.Unmarshal(raw, &wrapper); err != nil || len(wrapper.Format) == 0 {
+		return ""
+	}
+	var format struct {
+		Type string `json:"type"`
+	}
+	if err := common.Unmarshal(wrapper.Format, &format); err != nil || format.Type != "json_schema" {
+		return ""
+	}
+	return extractJsonSchemaText(wrapper.Format)
+}
+
 // extractJsonSchemaText 取出 json_schema.schema 的原文。json_schema 是
 // RawMessage，客户可能直接给 schema、也可能按规范包一层 {name, strict, schema}。
 func extractJsonSchemaText(raw []byte) string {

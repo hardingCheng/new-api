@@ -124,6 +124,11 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		if streamResponse.Type == "response.created" {
 			seenCreated = true
 		}
+		// 官方 SDK 把缺失字段反序列化成 None、随后拼接即崩，这里按官方 schema
+		// 回填应为空值的字段（只在缺失时改写，其余事件零开销透传）
+		if fixed, ok := backfillResponsesStreamEvent(streamResponse.Type, data); ok {
+			data = fixed
+		}
 		sendResponsesStreamData(c, streamResponse, data)
 		switch streamResponse.Type {
 		case "response.completed", "response.done":
@@ -205,6 +210,57 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 
 	return usage, nil
+}
+
+// backfillResponsesStreamEvent 给官方 SDK 反序列化必需、但部分上游省略的空值字段补位：
+// response.created / response.in_progress 的 response 缺 output 补 []，
+// response.content_part.added 的 output_text part 缺 text 补 ""。
+// 字段齐全时不改写不重编码；其他事件类型直接跳过。
+func backfillResponsesStreamEvent(eventType string, data string) (string, bool) {
+	switch eventType {
+	case "response.created", "response.in_progress":
+		var payload map[string]any
+		if err := common.UnmarshalJsonStr(data, &payload); err != nil {
+			return "", false
+		}
+		response, ok := payload["response"].(map[string]any)
+		if !ok {
+			return "", false
+		}
+		if _, exists := response["output"]; exists {
+			return "", false
+		}
+		response["output"] = []any{}
+		fixed, err := common.Marshal(payload)
+		if err != nil {
+			return "", false
+		}
+		return string(fixed), true
+	case "response.content_part.added":
+		var payload map[string]any
+		if err := common.UnmarshalJsonStr(data, &payload); err != nil {
+			return "", false
+		}
+		part, ok := payload["part"].(map[string]any)
+		if !ok {
+			return "", false
+		}
+		partType, _ := part["type"].(string)
+		if partType != "output_text" {
+			return "", false
+		}
+		if _, exists := part["text"]; exists {
+			return "", false
+		}
+		part["text"] = ""
+		fixed, err := common.Marshal(payload)
+		if err != nil {
+			return "", false
+		}
+		return string(fixed), true
+	default:
+		return "", false
+	}
 }
 
 // normalizeResponsesCreatedChunk 把"裸 Response 对象、无 type"的首帧改写成官方形状

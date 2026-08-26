@@ -24,6 +24,10 @@ type ChannelSettings struct {
 	// ValidateToolSchema 按官方口径校验 function.parameters 的结构，非法直接回 400。
 	// 多数上游会原样收下非法 schema，客户按官方写的一致性用例因此判不合规。
 	ValidateToolSchema bool `json:"validate_tool_schema,omitempty"`
+	// NormalizeUsage 把 chat 非流式响应里客户可见的 usage 重建成官方形状：
+	// 补齐 prompt_tokens_details.cached_tokens（上游未报缓存计量时为 0，与计费口径一致），
+	// 剥掉非官方字段（如聚合上游透传的成本类内部字段）。只影响响应体，不影响计费。
+	NormalizeUsage bool `json:"normalize_usage,omitempty"`
 	// HTTPProtocol controls outbound HTTP version negotiation for this channel.
 	// Accepted values: "", "auto" (default), "http1".
 	HTTPProtocol string `json:"http_protocol,omitempty"`

@@ -306,7 +306,7 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 		if modelMismatch {
 			simpleResponse.Model = info.OriginModelName
 		}
-		if usageModified || modelMismatch {
+		if usageModified || modelMismatch || info.ChannelSetting.NormalizeUsage {
 			var bodyMap map[string]interface{}
 			err = common.Unmarshal(responseBody, &bodyMap)
 			if err != nil {
@@ -314,6 +314,12 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 			}
 			if usageModified {
 				bodyMap["usage"] = simpleResponse.Usage
+			}
+			// 对客 usage 规范化：见 usage_normalize.go（默认关闭，按渠道开启）
+			if info.ChannelSetting.NormalizeUsage {
+				if normalized, ok := normalizeClientUsage(bodyMap["usage"], simpleResponse.Usage.PromptTokensDetails.CachedTokens); ok {
+					bodyMap["usage"] = normalized
+				}
 			}
 			if modelMismatch {
 				bodyMap["model"] = info.OriginModelName

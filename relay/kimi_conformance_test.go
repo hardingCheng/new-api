@@ -7,6 +7,8 @@ import (
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func infoWith(jsonSchemaPrompt, validateTools bool) *relaycommon.RelayInfo {
@@ -67,6 +69,57 @@ func TestJsonSchemaPromptInjection(t *testing.T) {
 		if len(req.Messages) != 1 {
 			t.Fatalf("json_object 不该注入")
 		}
+	})
+}
+
+func responsesReqWithFormat(format string) *dto.OpenAIResponsesRequest {
+	return &dto.OpenAIResponsesRequest{
+		Model: "kimi-k3",
+		Input: json.RawMessage(`"北京今天25度"`),
+		Text:  json.RawMessage(`{"format":` + format + `}`),
+	}
+}
+
+func TestResponsesJsonSchemaPromptInjection(t *testing.T) {
+	format := `{"type":"json_schema","name":"w","strict":true,"schema":{"type":"object","properties":{"city":{"type":"string"}}}}`
+
+	t.Run("关闭时不注入", func(t *testing.T) {
+		req := responsesReqWithFormat(format)
+		applyResponsesJsonSchemaPromptIfNeeded(infoWith(false, false), req)
+		assert.Empty(t, req.Instructions)
+	})
+
+	t.Run("开启且无 instructions 时写入", func(t *testing.T) {
+		req := responsesReqWithFormat(format)
+		applyResponsesJsonSchemaPromptIfNeeded(infoWith(true, false), req)
+		var got string
+		require.NoError(t, json.Unmarshal(req.Instructions, &got))
+		assert.Contains(t, got, `"city"`)
+		assert.Contains(t, got, "JSON Schema")
+		assert.NotContains(t, got, `"strict"`, "应只取 schema 子对象，不该带 strict 包装")
+	})
+
+	t.Run("已有 instructions 时拼接保留", func(t *testing.T) {
+		req := responsesReqWithFormat(format)
+		req.Instructions = json.RawMessage(`"你是助手"`)
+		applyResponsesJsonSchemaPromptIfNeeded(infoWith(true, false), req)
+		var got string
+		require.NoError(t, json.Unmarshal(req.Instructions, &got))
+		assert.True(t, strings.HasPrefix(got, "你是助手"), "应保留客户指令，实际 %q", got)
+		assert.Contains(t, got, "JSON Schema")
+	})
+
+	t.Run("format 非 json_schema 不注入", func(t *testing.T) {
+		req := responsesReqWithFormat(`{"type":"text"}`)
+		applyResponsesJsonSchemaPromptIfNeeded(infoWith(true, false), req)
+		assert.Empty(t, req.Instructions)
+	})
+
+	t.Run("instructions 非字符串形状不动", func(t *testing.T) {
+		req := responsesReqWithFormat(format)
+		req.Instructions = json.RawMessage(`[{"type":"text","text":"x"}]`)
+		applyResponsesJsonSchemaPromptIfNeeded(infoWith(true, false), req)
+		assert.Equal(t, `[{"type":"text","text":"x"}]`, string(req.Instructions), "非字符串 instructions 不该被改写")
 	})
 }
 
