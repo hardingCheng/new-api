@@ -198,6 +198,8 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
+		// thinking→reasoning_effort 桥接：见 relay/claude_thinking_bridge.go（默认关闭，按渠道开启）
+		applyClaudeThinkingBridgeIfNeeded(info, request, convertedRequest)
 		relaycommon.AppendRequestConversionFromRequest(info, convertedRequest)
 		jsonData, err := common.Marshal(convertedRequest)
 		if err != nil {

@@ -24,6 +24,11 @@ type ChannelSettings struct {
 	// ValidateToolSchema 按官方口径校验 function.parameters 的结构，非法直接回 400。
 	// 多数上游会原样收下非法 schema，客户按官方写的一致性用例因此判不合规。
 	ValidateToolSchema bool `json:"validate_tool_schema,omitempty"`
+	// BridgeThinkingEffort 把 Claude messages 请求的 thinking 开关桥接为 OpenAI 侧的
+	// reasoning_effort：enabled/adaptive → high，disabled/缺省 → 不下发。适用于只认
+	// reasoning_effort 的上游——转换层会把 thinking 字段整个丢掉，不桥接则 enabled 不生效；
+	// 无条件注入则 disabled 关不掉（两边都有客户实测投诉）。
+	BridgeThinkingEffort bool `json:"bridge_thinking_effort,omitempty"`
 	// NormalizeUsage 把 chat 非流式响应里客户可见的 usage 重建成官方形状：
 	// 补齐 prompt_tokens_details.cached_tokens（上游未报缓存计量时为 0，与计费口径一致），
 	// 剥掉非官方字段（如聚合上游透传的成本类内部字段）。只影响响应体，不影响计费。
