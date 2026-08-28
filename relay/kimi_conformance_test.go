@@ -62,13 +62,22 @@ func TestJsonSchemaPromptInjection(t *testing.T) {
 		}
 	})
 
-	t.Run("非 json_schema 不注入", func(t *testing.T) {
+	t.Run("json_object 注入通用 JSON 指令", func(t *testing.T) {
 		req := chatReqWithSchema(wrapped)
 		req.ResponseFormat.Type = "json_object"
+		req.ResponseFormat.JsonSchema = nil
 		applyJsonSchemaPromptIfNeeded(infoWith(true, false), req)
-		if len(req.Messages) != 1 {
-			t.Fatalf("json_object 不该注入")
-		}
+		require.Len(t, req.Messages, 2)
+		got := req.Messages[0].StringContent()
+		assert.Contains(t, got, "valid JSON object")
+		assert.NotContains(t, got, "JSON Schema", "json_object 不该出现 schema 字样")
+	})
+
+	t.Run("text 类型不注入", func(t *testing.T) {
+		req := chatReqWithSchema(wrapped)
+		req.ResponseFormat.Type = "text"
+		applyJsonSchemaPromptIfNeeded(infoWith(true, false), req)
+		assert.Len(t, req.Messages, 1)
 	})
 }
 
@@ -109,10 +118,18 @@ func TestResponsesJsonSchemaPromptInjection(t *testing.T) {
 		assert.Contains(t, got, "JSON Schema")
 	})
 
-	t.Run("format 非 json_schema 不注入", func(t *testing.T) {
+	t.Run("format 为 text 不注入", func(t *testing.T) {
 		req := responsesReqWithFormat(`{"type":"text"}`)
 		applyResponsesJsonSchemaPromptIfNeeded(infoWith(true, false), req)
 		assert.Empty(t, req.Instructions)
+	})
+
+	t.Run("format 为 json_object 注入通用指令", func(t *testing.T) {
+		req := responsesReqWithFormat(`{"type":"json_object"}`)
+		applyResponsesJsonSchemaPromptIfNeeded(infoWith(true, false), req)
+		var got string
+		require.NoError(t, json.Unmarshal(req.Instructions, &got))
+		assert.Contains(t, got, "valid JSON object")
 	})
 
 	t.Run("instructions 非字符串形状不动", func(t *testing.T) {

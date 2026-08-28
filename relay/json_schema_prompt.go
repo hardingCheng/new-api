@@ -19,18 +19,30 @@ import (
 const jsonSchemaPromptPrefix = "You must respond with a single JSON object that validates against this JSON Schema:\n"
 const jsonSchemaPromptSuffix = "\nOutput only the JSON object: no markdown fences, no explanation, no fields outside the schema."
 
+// json_object 没有 schema,用同一兜底思路给一条通用指令(上游忽略 response_format 时
+// 这条就是唯一约束;上游支持时多这条不改变结果)。
+const jsonObjectPromptInstruction = "You must respond with a single valid JSON object. Output only the JSON object: no markdown fences, no explanation."
+
 func applyJsonSchemaPromptIfNeeded(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) {
 	if info == nil || info.ChannelMeta == nil || request == nil || !info.ChannelSetting.JsonSchemaPrompt {
 		return
 	}
-	if request.ResponseFormat == nil || request.ResponseFormat.Type != "json_schema" {
+	if request.ResponseFormat == nil {
 		return
 	}
-	schema := extractJsonSchemaText(request.ResponseFormat.JsonSchema)
-	if schema == "" {
+	var instruction string
+	switch request.ResponseFormat.Type {
+	case "json_schema":
+		schema := extractJsonSchemaText(request.ResponseFormat.JsonSchema)
+		if schema == "" {
+			return
+		}
+		instruction = jsonSchemaPromptPrefix + schema + jsonSchemaPromptSuffix
+	case "json_object":
+		instruction = jsonObjectPromptInstruction
+	default:
 		return
 	}
-	instruction := jsonSchemaPromptPrefix + schema + jsonSchemaPromptSuffix
 	systemRole := request.GetSystemRoleName()
 	for i, message := range request.Messages {
 		if message.Role != systemRole {
@@ -56,11 +68,19 @@ func applyResponsesJsonSchemaPromptIfNeeded(info *relaycommon.RelayInfo, request
 	if info == nil || info.ChannelMeta == nil || request == nil || !info.ChannelSetting.JsonSchemaPrompt {
 		return
 	}
-	schema := extractResponsesJsonSchemaText(request.Text)
-	if schema == "" {
+	var instruction string
+	switch responsesTextFormatType(request.Text) {
+	case "json_schema":
+		schema := extractResponsesJsonSchemaText(request.Text)
+		if schema == "" {
+			return
+		}
+		instruction = jsonSchemaPromptPrefix + schema + jsonSchemaPromptSuffix
+	case "json_object":
+		instruction = jsonObjectPromptInstruction
+	default:
 		return
 	}
-	instruction := jsonSchemaPromptPrefix + schema + jsonSchemaPromptSuffix
 	existingRaw := strings.TrimSpace(string(request.Instructions))
 	if existingRaw == "" || existingRaw == "null" {
 		encoded, err := common.Marshal(instruction)
@@ -83,25 +103,40 @@ func applyResponsesJsonSchemaPromptIfNeeded(info *relaycommon.RelayInfo, request
 	request.Instructions = encoded
 }
 
-// extractResponsesJsonSchemaText 从 responses 请求的 text.format 中取出 schema 原文，
-// 仅 format.type=json_schema 时生效。
-func extractResponsesJsonSchemaText(raw []byte) string {
+func responsesTextFormat(raw []byte) json.RawMessage {
 	if len(raw) == 0 {
-		return ""
+		return nil
 	}
 	var wrapper struct {
 		Format json.RawMessage `json:"format"`
 	}
-	if err := common.Unmarshal(raw, &wrapper); err != nil || len(wrapper.Format) == 0 {
+	if err := common.Unmarshal(raw, &wrapper); err != nil {
+		return nil
+	}
+	return wrapper.Format
+}
+
+func responsesTextFormatType(raw []byte) string {
+	formatRaw := responsesTextFormat(raw)
+	if len(formatRaw) == 0 {
 		return ""
 	}
 	var format struct {
 		Type string `json:"type"`
 	}
-	if err := common.Unmarshal(wrapper.Format, &format); err != nil || format.Type != "json_schema" {
+	if err := common.Unmarshal(formatRaw, &format); err != nil {
 		return ""
 	}
-	return extractJsonSchemaText(wrapper.Format)
+	return format.Type
+}
+
+// extractResponsesJsonSchemaText 从 responses 请求的 text.format 中取出 schema 原文。
+func extractResponsesJsonSchemaText(raw []byte) string {
+	formatRaw := responsesTextFormat(raw)
+	if len(formatRaw) == 0 {
+		return ""
+	}
+	return extractJsonSchemaText(formatRaw)
 }
 
 // extractJsonSchemaText 取出 json_schema.schema 的原文。json_schema 是
