@@ -29,6 +29,12 @@ type ChannelSettings struct {
 	// reasoning_effort 的上游——转换层会把 thinking 字段整个丢掉，不桥接则 enabled 不生效；
 	// 无条件注入则 disabled 关不掉（两边都有客户实测投诉）。
 	BridgeThinkingEffort bool `json:"bridge_thinking_effort,omitempty"`
+	// StructuredToolCallToContent 把"用强制工具调用实现 response_format"的上游响应
+	// 搬回官方形状：这类上游对 json_schema/json_object 请求返回 finish_reason=tool_calls、
+	// JSON 在 tool_calls[0].function.arguments 里、content 为空。客户端按官方读 content
+	// 会拿到空串。仅当客户请求带 response_format(json 系)且未带任何 tools 时才搬运，
+	// 真实工具调用不受影响。默认关闭，按渠道开启。
+	StructuredToolCallToContent bool `json:"structured_toolcall_to_content,omitempty"`
 	// NormalizeUsage 把 chat 非流式响应里客户可见的 usage 重建成官方形状：
 	// 补齐 prompt_tokens_details.cached_tokens（上游未报缓存计量时为 0，与计费口径一致），
 	// 剥掉非官方字段（如聚合上游透传的成本类内部字段）。只影响响应体，不影响计费。

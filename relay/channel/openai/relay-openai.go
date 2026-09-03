@@ -268,6 +268,14 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 		}
 	}
 
+	// 结构化输出形状归位：见 structured_toolcall.go（默认关闭，按渠道开启）。
+	// 必须在计费工具调用统计之前——合成的 tool_call 不是真实调用，不该计费。
+	var structuredFixedIndexes []int
+	if shouldFixStructuredToolCall(info) {
+		structuredFixedIndexes = fixStructuredToolCallChoices(simpleResponse.Choices)
+	}
+	structuredFixed := len(structuredFixedIndexes) > 0
+
 	for _, choice := range simpleResponse.Choices {
 		for _, tc := range choice.Message.ParseToolCalls() {
 			info.CountBillableToolCall(dto.BuildInCallFunctionCall, tc.Function.Name)
@@ -306,11 +314,14 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 		if modelMismatch {
 			simpleResponse.Model = info.OriginModelName
 		}
-		if usageModified || modelMismatch || info.ChannelSetting.NormalizeUsage {
+		if usageModified || modelMismatch || structuredFixed || info.ChannelSetting.NormalizeUsage {
 			var bodyMap map[string]interface{}
 			err = common.Unmarshal(responseBody, &bodyMap)
 			if err != nil {
 				return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+			}
+			if structuredFixed {
+				applyStructuredToolCallFixToBody(bodyMap, simpleResponse.Choices, structuredFixedIndexes)
 			}
 			if usageModified {
 				bodyMap["usage"] = simpleResponse.Usage
