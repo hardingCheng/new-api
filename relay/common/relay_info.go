@@ -923,6 +923,7 @@ type TaskSubmitReq struct {
 	InputReferences []string               `json:"-"`
 	GenerateAudio   *dto.BoolValue         `json:"generate_audio,omitempty"`
 	Ratio           string                 `json:"ratio,omitempty"`
+	AspectRatio     string                 `json:"aspect_ratio,omitempty"`
 	Metadata        map[string]interface{} `json:"metadata,omitempty"`
 }
 
