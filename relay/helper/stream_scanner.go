@@ -266,6 +266,13 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				info.SetFirstResponseTime()
 				info.ReceivedResponseCount++
 
+				// 上游可能在 200 开流之后才塞错误事件（如 OpenAI 的 server_is_overloaded）。
+				// 此时状态码已发出、无法改写也无法换渠道重试，只能记一笔让它别被算成成功。
+				if msg, ok := detectUpstreamStreamError(data); ok {
+					info.StreamStatus.RecordError(msg)
+					logger.LogError(c, msg)
+				}
+
 				select {
 				case dataChan <- data:
 				case <-ctx.Done():
