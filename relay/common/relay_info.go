@@ -990,6 +990,23 @@ func (t TaskSubmitReq) InputReferenceUpstreamValue() interface{} {
 	return upstreamStringListValue(t.InputReferenceValues())
 }
 
+// ImageValues 汇总一次请求里的全部参考图：images、input_reference（两者都可传字符串或数组）
+// 以及单图 image 字段，去重后按传入顺序返回。
+func (t TaskSubmitReq) ImageValues() []string {
+	values := make([]string, 0, len(t.Images)+len(t.InputReferences)+1)
+	values = append(values, t.Images...)
+	values = append(values, t.InputReferenceValues()...)
+	if len(values) == 0 {
+		values = append(values, t.Image)
+	}
+	return normalizeStringList(values)
+}
+
+// ImageUpstreamValue 供只认 image 字段的上游使用：单图回字符串，多图回数组。
+func (t TaskSubmitReq) ImageUpstreamValue() interface{} {
+	return upstreamStringListValue(t.ImageValues())
+}
+
 type TaskMediaURL struct {
 	URL string `json:"url,omitempty"`
 }
@@ -1037,7 +1054,7 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 	cleaned := make(map[string]json.RawMessage, len(raw))
 	for key, value := range raw {
 		switch key {
-		case "duration", "metadata", "images", "input_reference":
+		case "duration", "metadata", "image", "images", "input_reference":
 			continue
 		default:
 			cleaned[key] = value
@@ -1077,6 +1094,18 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 				}
 				t.Duration = value
 			}
+		}
+	}
+
+	if rawImage, exists := raw["image"]; exists {
+		images, err := stringListFromRawJSON(rawImage)
+		if err != nil {
+			return fmt.Errorf("image %w", err)
+		}
+		// image 字段保留单图语义（取第一张），其他适配器读 Image 的行为不变；整份列表进 Images。
+		if len(images) > 0 {
+			t.Image = images[0]
+			t.Images = images
 		}
 	}
 

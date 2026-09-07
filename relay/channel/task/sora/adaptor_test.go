@@ -259,3 +259,82 @@ func TestSoraBuildRequestBodyReturnsReplayablePassThroughBody(t *testing.T) {
 	require.NoError(t, replayBody.Close())
 	assert.Equal(t, payload, replay)
 }
+
+func TestBuildRequestBodyMergesReferenceImages(t *testing.T) {
+	tests := []struct {
+		name          string
+		body          string
+		originModel   string
+		expectedImage interface{}
+		expectMerged  bool
+	}{
+		{
+			name:          "single image stays a string",
+			body:          `{"model":"seedance-2.0-mini-480p","prompt":"test","image":"https://example.com/a.png","seconds":"4"}`,
+			originModel:   "seedance-2.0-mini-480p",
+			expectedImage: "https://example.com/a.png",
+			expectMerged:  true,
+		},
+		{
+			name:          "image array reaches upstream as array",
+			body:          `{"model":"seedance-2.0-mini-480p","prompt":"test","image":["https://example.com/a.png","https://example.com/b.png"],"seconds":"4"}`,
+			originModel:   "seedance-2.0-mini-480p",
+			expectedImage: []interface{}{"https://example.com/a.png", "https://example.com/b.png"},
+			expectMerged:  true,
+		},
+		{
+			name:          "images array is folded into image",
+			body:          `{"model":"seedance-2.0-mini-480p","prompt":"test","images":["https://example.com/c.png","https://example.com/d.png"],"seconds":"4"}`,
+			originModel:   "seedance-2.0-mini-480p",
+			expectedImage: []interface{}{"https://example.com/c.png", "https://example.com/d.png"},
+			expectMerged:  true,
+		},
+		{
+			name:          "input_reference array is folded into image",
+			body:          `{"model":"seedance-2.0-mini-480p","prompt":"test","input_reference":["https://example.com/e.png","https://example.com/f.png"],"seconds":"4"}`,
+			originModel:   "seedance-2.0-mini-480p",
+			expectedImage: []interface{}{"https://example.com/e.png", "https://example.com/f.png"},
+			expectMerged:  true,
+		},
+		{
+			name:         "non-seedance body is left untouched",
+			body:         `{"model":"omni-fast","prompt":"test","images":["https://example.com/g.png","https://example.com/h.png"],"seconds":"4"}`,
+			originModel:  "omni-fast",
+			expectMerged: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := newTaskRequestContext(t, []byte(test.body), "application/json")
+			info := &relaycommon.RelayInfo{
+				OriginModelName: test.originModel,
+				ChannelMeta: &relaycommon.ChannelMeta{
+					UpstreamModelName: "provider-video-model",
+				},
+				TaskRelayInfo: &relaycommon.TaskRelayInfo{},
+			}
+			adaptor := &TaskAdaptor{}
+
+			require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
+			requestBody, err := adaptor.BuildRequestBody(ctx, info)
+			require.NoError(t, err)
+			body, err := io.ReadAll(requestBody)
+			require.NoError(t, err)
+
+			var payload map[string]interface{}
+			require.NoError(t, common.Unmarshal(body, &payload))
+
+			if !test.expectMerged {
+				// 其他视频渠道各有自己的参考图字段协议，不能被 seedance 的归并改写
+				assert.NotContains(t, payload, "image")
+				assert.Equal(t, []interface{}{"https://example.com/g.png", "https://example.com/h.png"}, payload["images"])
+				return
+			}
+
+			assert.Equal(t, test.expectedImage, payload["image"])
+			assert.NotContains(t, payload, "images")
+			assert.NotContains(t, payload, "input_reference")
+		})
+	}
+}

@@ -218,6 +218,16 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 					relaycommon.FillGrokImagineVideo15PreviewImages(info, req, bodyMap)
 				}
 			}
+			// seedance 系上游只认 image 字段（字符串或数组），images / input_reference 会被静默忽略：
+			// 归并成 image，避免客户按 images 传参后参考图被丢弃、却照常按秒计费。
+			// 仅限 seedance —— 同一适配器还服务其他视频渠道，它们各有自己的参考图字段协议。
+			if req, err := relaycommon.GetTaskRequest(c); err == nil && relaycommon.IsSeedanceRelayModel(info, req.Model) {
+				if value := req.ImageUpstreamValue(); value != nil {
+					bodyMap["image"] = value
+					delete(bodyMap, "images")
+					delete(bodyMap, "input_reference")
+				}
+			}
 			if newBody, err := common.Marshal(bodyMap); err == nil {
 				return bytes.NewReader(newBody), nil
 			}
