@@ -202,16 +202,26 @@ func TestEstimateBillingSkipsNonAvatarAction(t *testing.T) {
 	assert.Nil(t, ratios)
 }
 
-// 上游提交响应带回实际用量，用它校正预扣的秒数。
-func TestAdjustBillingOnSubmitUsesUpstreamCredits(t *testing.T) {
+// 上游返回的是积分消耗，必须按换算还原成秒；换算未确认时一律不动计费，
+// 否则会拿没核对过的倍数多扣客户。
+func TestAdjustBillingOnSubmitConvertsUpstreamCredits(t *testing.T) {
 	adaptor := &TaskAdaptor{}
 	info := &relaycommon.RelayInfo{
 		TaskRelayInfo: &relaycommon.TaskRelayInfo{Action: constant.TaskActionAvatarGenerate},
 	}
 
+	// 换算未确认（默认 0）：保持预扣的估算秒数不变
+	require.Zero(t, avatarCreditsPerSecond, "换算未经实测确认前必须保持为 0")
+	assert.Nil(t, adaptor.AdjustBillingOnSubmit(info, []byte(`{"task_id":"1","credits":30}`)))
+
+	// 换算确认后：积分按每秒消耗还原成秒
+	original := avatarCreditsPerSecond
+	avatarCreditsPerSecond = 4
+	defer func() { avatarCreditsPerSecond = original }()
+
 	ratios := adaptor.AdjustBillingOnSubmit(info, []byte(`{"task_id":"1","state":"created","credits":30}`))
 	require.NotNil(t, ratios)
-	assert.Equal(t, float64(30), ratios["seconds"])
+	assert.Equal(t, float64(8), ratios["seconds"], "30 积分 / 4 每秒 = 7.5 → 向上取整 8 秒")
 
 	// 上游返回的数字同样不可信，必须收敛到上界
 	ratios = adaptor.AdjustBillingOnSubmit(info, []byte(`{"task_id":"1","credits":999999999}`))

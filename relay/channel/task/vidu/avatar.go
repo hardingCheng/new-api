@@ -47,6 +47,14 @@ type avatarRequestPayload struct {
 	CallbackUrl string `json:"callback_url,omitempty"`
 }
 
+// avatarCreditsPerSecond 是上游每秒视频消耗的积分数。
+//
+// 上游提交响应返回的是积分消耗，不是秒数，要先还原成秒才能用于按秒计费。上游公开
+// 定价里这条能力没有单独列（同为数字人，实时交互是 1.5 积分/秒、对口型是 4 积分/秒），
+// 换算关系未经实测确认，因此保持为 0：为 0 时不做校正，按预扣的估算秒数计费。
+// 宁可不校正，也不能拿一个没核对过的换算去多扣客户。实测确认后填入即可生效。
+var avatarCreditsPerSecond float64
+
 // avatarSubmitResponse 只取提交响应里计费要用的部分。
 type avatarSubmitResponse struct {
 	TaskId  string `json:"task_id"`

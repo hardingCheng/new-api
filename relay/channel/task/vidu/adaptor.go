@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -356,16 +357,20 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 
 // AdjustBillingOnSubmit 用上游提交响应里的实际用量校正预扣的秒数。
 //
-// 上游按视频时长（秒，向上取整）计费，提交响应的 credits 即该次任务的用量。
+// 上游返回的是积分消耗，按 avatarCreditsPerSecond 还原成秒。该换算未经实测确认前
+// 为 0，此时不校正，按预扣的估算秒数计费（见 avatarCreditsPerSecond 的说明）。
 func (a *TaskAdaptor) AdjustBillingOnSubmit(info *relaycommon.RelayInfo, taskData []byte) map[string]float64 {
 	if info == nil || info.Action != constant.TaskActionAvatarGenerate || len(taskData) == 0 {
 		return nil
 	}
-	var resp avatarSubmitResponse
-	if err := common.Unmarshal(taskData, &resp); err != nil {
+	if avatarCreditsPerSecond <= 0 {
 		return nil
 	}
-	seconds := avatarBillableSeconds(resp.Credits)
+	var resp avatarSubmitResponse
+	if err := common.Unmarshal(taskData, &resp); err != nil || resp.Credits <= 0 {
+		return nil
+	}
+	seconds := avatarBillableSeconds(int(math.Ceil(float64(resp.Credits) / avatarCreditsPerSecond)))
 	if seconds <= 0 {
 		return nil
 	}
