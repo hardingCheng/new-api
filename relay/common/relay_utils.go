@@ -701,8 +701,12 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 		return createTaskError(err, "invalid_request", http.StatusBadRequest, true)
 	}
 
-	if taskErr := validatePrompt(req.Prompt); taskErr != nil {
-		return taskErr
+	// 只给音频的任务（如数字人按音频对口型）本来就没有文本提示词
+	audioInput, _ := req.Metadata["audio"].(string)
+	if strings.TrimSpace(audioInput) == "" {
+		if taskErr := validatePrompt(req.Prompt); taskErr != nil {
+			return taskErr
+		}
 	}
 
 	if taskErr := ValidateTaskDurationBoundsForModel(req, info); taskErr != nil {

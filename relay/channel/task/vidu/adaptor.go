@@ -92,6 +92,15 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	if err != nil {
 		return service.TaskErrorWrapper(err, "get_task_request_failed", http.StatusBadRequest)
 	}
+	if IsAvatarModel(req.Model) {
+		// 数字人：一张人像图 + 音频或文本，走上游独立的提交端点
+		if taskErr := validateAvatarRequest(&req); taskErr != nil {
+			return taskErr
+		}
+		info.Action = constant.TaskActionAvatarGenerate
+		return nil
+	}
+
 	action := constant.TaskActionTextGenerate
 	if meatAction, ok := req.Metadata["action"]; ok {
 		action, _ = meatAction.(string)
@@ -117,6 +126,14 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	}
 	req := v.(relaycommon.TaskSubmitReq)
 
+	if info.Action == constant.TaskActionAvatarGenerate {
+		data, err := common.Marshal(convertToAvatarPayload(&req, info))
+		if err != nil {
+			return nil, err
+		}
+		return bytes.NewReader(data), nil
+	}
+
 	body, err := a.convertToRequestPayload(&req, info)
 	if err != nil {
 		return nil, err
@@ -137,6 +154,10 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	if info.Action == constant.TaskActionAvatarGenerate {
+		return fmt.Sprintf("%s/ent/v2/avatar-video/generations", a.baseURL), nil
+	}
+
 	var path string
 	switch info.Action {
 	case constant.TaskActionGenerate:
@@ -214,7 +235,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 }
 
 func (a *TaskAdaptor) GetModelList() []string {
-	return []string{"viduq2", "viduq1", "vidu2.0", "vidu1.5"}
+	return []string{"viduq2", "viduq1", "vidu2.0", "vidu1.5", "vidu-s1-540p", "vidu-s1-720p"}
 }
 
 func (a *TaskAdaptor) GetChannelName() string {
@@ -298,4 +319,55 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, erro
 	}
 
 	return common.Marshal(openAIVideo)
+}
+
+// EstimateBilling 估算数字人视频的计费秒数。
+//
+// 视频时长由讲话内容决定，提交时上游不会告诉我们最终时长，而预扣费必须发生在提交之前：
+// 给了音频就直接读音频文件的真实时长，只给文本就按文本估。提交成功后
+// AdjustBillingOnSubmit 会用上游返回的实际用量再校正一次。
+func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) (map[string]float64, error) {
+	if info == nil || info.Action != constant.TaskActionAvatarGenerate {
+		return nil, nil
+	}
+	req, err := relaycommon.GetTaskRequest(c)
+	if err != nil {
+		return nil, err
+	}
+
+	seconds := 0
+	if audio := avatarAudioInput(&req); audio != "" {
+		// 探不到时长就不放行：让请求失败，好过按错误的秒数计费
+		seconds, err = service.GetVideoDurationSeconds(c, audio)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to read avatar audio duration")
+		}
+	} else {
+		seconds = estimateSpeechSeconds(req.Prompt)
+	}
+
+	seconds = avatarBillableSeconds(seconds)
+	if seconds <= 0 {
+		return nil, errors.New("cannot determine avatar video duration for billing")
+	}
+	c.Set("generated_video_seconds", seconds)
+	return map[string]float64{"seconds": float64(seconds)}, nil
+}
+
+// AdjustBillingOnSubmit 用上游提交响应里的实际用量校正预扣的秒数。
+//
+// 上游按视频时长（秒，向上取整）计费，提交响应的 credits 即该次任务的用量。
+func (a *TaskAdaptor) AdjustBillingOnSubmit(info *relaycommon.RelayInfo, taskData []byte) map[string]float64 {
+	if info == nil || info.Action != constant.TaskActionAvatarGenerate || len(taskData) == 0 {
+		return nil
+	}
+	var resp avatarSubmitResponse
+	if err := common.Unmarshal(taskData, &resp); err != nil {
+		return nil
+	}
+	seconds := avatarBillableSeconds(resp.Credits)
+	if seconds <= 0 {
+		return nil
+	}
+	return map[string]float64{"seconds": float64(seconds)}
 }
