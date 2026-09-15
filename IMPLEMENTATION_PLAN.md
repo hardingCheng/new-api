@@ -54,6 +54,11 @@ POST /v1/video/generations
 **Tests**: 文本估时长（中/英/混合）、上游 credits 校正、缺字段时不炸
 **Status**: Complete
 
+## 部署状态
+
+2026-09-15 已部署 `cheng:vidu-s1-20260915`（容器健康、/api/status 200）。线上尚未建
+Vidu 渠道，`vidu-s1-*` 对客户不可见。分组倍率已核实：`视频分组` = 1，三站实收 ¥0.02/秒。
+
 ## Stage 4: 验收（待额度到位）
 **Goal**: 上游真跑一单，确认计费口径与产物可用。
 **Success Criteria**:
