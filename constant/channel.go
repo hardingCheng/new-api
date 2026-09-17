@@ -60,6 +60,7 @@ const (
 	ChannelTypeNewAPI         = 60
 	ChannelTypeDMC            = 61
 	ChannelTypeTokenMart      = 62
+	ChannelTypeTencentMPS     = 63
 	ChannelTypeDummy          // this one is only for count, do not add any channel after this
 
 )
@@ -128,6 +129,7 @@ var ChannelBaseURLs = []string{
 	"",                                          //60
 	"https://dmc.cc",                            //61
 	"https://model.service-inference.ai",        //62
+	"https://mps.tencentcloudapi.com",           //63
 }
 
 var ChannelTypeNames = map[int]string{
@@ -190,6 +192,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeNewAPI:         "New API",
 	ChannelTypeDMC:            "DMC",
 	ChannelTypeTokenMart:      "TokenMart",
+	ChannelTypeTencentMPS:     "Tencent MPS",
 }
 
 func GetChannelTypeName(channelType int) string {

@@ -1,74 +1,70 @@
-# 接入 Vidu S1 数字人（非实时 · 视频文件版）
+# 接入音视频超分增强（腾讯云 MPS 大模型增强 / 修复）
 
 ## 背景
 
-上游有两条数字人产品线，形状完全不同：
+上游是腾讯云媒体处理（MPS）的「音视频增强」能力：给一段已有视频，输出画质增强后的更高分辨率
+版本。接口只有两个：`ProcessMedia` 提交、`DescribeTaskDetail` 查询，签名 TC3-HMAC-SHA256，
+出错时 HTTP 仍是 200、错误放在 `Response.Error`。
 
-- **实时交互**（`POST /live/v1/lives` + WebSocket 控制链 + 阿里 RTC 媒体流）：只有建会话那一下经过 hub，音视频和控制信令客户端直连上游，计费按会话秒数事后回查。hub 发出 RTC 凭据后就失去管控，无法按量计费/限流/中断。**本次不接。**
-- **非实时 · 视频文件版**（`POST /ent/v2/avatar-video/generations`）：标准异步任务，轮询端点与 hub 现有 vidu 渠道完全相同（`/ent/v2/tasks/{id}/creations`）。**本次接这条。**
-
-额度现状（2026-09-15 实测）：当前 key 只买了 `task_type: live`，avatar-video 报 `CreditInsufficient`。代码先写好，额度到位后做上游实测验收。
+上游计费 = 极速高清转码 + 大模型增强（或修复），三个维度都按**输出**算：分辨率（模板钉死）、
+帧率档（≤30 / ≤60 / ≤120 帧，1× / 2× / 4×）、时长（随源）。
 
 ## 对客契约
 
 ```
 POST /v1/video/generations
 {
-  "model": "vidu-s1-540p",                 // 或 vidu-s1-720p
-  "image": "https://.../portrait.png",     // 人像图，必填
-  "prompt": "大家好，欢迎光临",              // 要说的话（文本模式）
-  "metadata": {
-    "audio": "https://.../speech.mp3",     // 给音频则优先于 prompt
-    "voice": "<voice_id>",                 // 音色（文本模式可选）
-    "timeline": "{\"actions\":[...]}"      // 动作时间轴（可选）
-  }
+  "model": "video-enhance-1080p",            // video-enhance-{720p|1080p|2k|4k} / video-restore-{...}
+  "input_reference": "https://.../in.mp4",   // 源视频公网地址（也认 metadata.video_url / content[].video_url）
+  "seconds": "120",                          // 源视频时长，必填，用于预扣
+  "metadata": { "scene": "anime" }           // 可选：real（默认）/ anime / real-small-face / anime-small-face / seedance
 }
+GET /v1/video/generations/{id}               // 完成后 url = 上游临时链接，7 天有效
 ```
 
-分辨率只由模型名后缀决定，不接受请求参数覆盖 —— 与 seedance 同样的理由：上游按分辨率计价，放开会让低价档模型成本超过售价。
+- 分辨率与能力系列只由模型名决定（定价维度），场景只选模板、不改价。
+- 模型名必须是上面 8 个之一；渠道模型映射改的是上游名，不参与解析。
+- 渠道密钥框：`SecretId|SecretKey|Region|Bucket`。输出走上游临时链接，但上游仍要求填一个
+  账号下真实存在的 COS 桶过校验。
+
+## 计费口径
+
+- 预扣：模型单价（元/秒）× 调用方声明的秒数，帧率按 ≤30 帧档估。
+- 完成后：用上游回报的输出 `Duration`（进位到秒）与 `Fps` 档位重算，差额补扣或退还
+  （`AdjustBillingOnComplete`）。帧率档位倍数作用于整价，比上游只对增强部分翻倍略保守。
+- 失败：走框架统一退款。
 
 ---
 
-## Stage 1: 请求链路
-**Goal**: 数字人模型的提交请求正确打到 `/ent/v2/avatar-video/generations`，字段映射正确，分辨率锁死。
+## Stage 1: 渠道类型与适配器
+**Goal**: 新渠道类型 63，提交 / 轮询 / 结算三段跑通，密钥不落请求体。
 **Success Criteria**:
-- 模型名识别数字人路径，不影响现有四个常规 vidu 端点的路由
-- `image` / `prompt`→`text` / `metadata.audio` / `voice` / `timeline` 映射正确
-- audio 与 text 同时给出时，audio 优先（与上游一致）
-- 模型名后缀锁死 `resolution`，metadata 里的 resolution 被忽略
-**Tests**: 路由分流、字段映射、audio 优先、分辨率锁死不被覆盖
+- 模型名 → 模板 ID / 短边；场景选模板；修复系列忽略场景
+- 源地址三种来源取值，非 http(s) 拒绝；秒数缺失 / 自动 / 越界拒绝
+- ProcessMedia 请求体：URL 输入、COS 校验桶、StdExtInfo 带 short 与 use_internal_cos
+- 签名规范请求串与官方算例哈希一致
+- 轮询：WAITING / PROCESSING（进度封顶 99%）/ FINISH 成功取 tmpl_url / FINISH 失败取原因；
+  永久性错误判失败、鉴权限流类错误留待下一轮
+- 完成后按实际秒数 × 帧率档重算额度
+**Tests**: `relay/channel/task/tencentmps` 18 条单测
 **Status**: Complete
 
-## Stage 2: 纯音频模式放行
-**Goal**: 只给 audio 不给 prompt 的请求不被公共校验拦掉。
-**Success Criteria**: 公共 `validatePrompt` 对"带音频输入的数字人请求"豁免，其他模型行为不变
-**Tests**: 纯音频请求通过、纯文本请求通过、两者都缺时仍报错
-**Status**: Complete
-
-## Stage 3: 计费
-**Goal**: 按视频秒数计费，提交时估得准，提交后用上游实际返回校正。
+## Stage 2: 部署 + 建渠道 + 配价
+**Goal**: 三站可下单。
 **Success Criteria**:
-- audio 模式：探测音频真实时长（复用 `common.GetAudioDuration`），向上取整
-- text 模式：按文本估算（中日韩按字、拉丁按词），估高不估低，避免预扣不足
-- `AdjustBillingOnSubmit` 用上游响应的 `credits` 精确校正
-**Tests**: 文本估时长（中/英/混合）、上游 credits 校正、缺字段时不炸
-**Status**: Complete
+- 分支 rebase 到生产 HEAD 后构建镜像部署，容器健康
+- 控制台侧：开通 MPS、授权 COS、建一个 COS 桶、拿 SecretId/SecretKey
+- 渠道挂「视频分组」（倍率 1），8 个模型配单价；脚本 `~/ai/hub-mps-enhance-20260917.sh`
+**Status**: Not Started — 等 owner 拍板单价、提供腾讯云密钥与桶
 
-## 部署状态
-
-2026-09-15 已部署 `cheng:vidu-s1-20260915`（容器健康、/api/status 200）。线上尚未建
-Vidu 渠道，`vidu-s1-*` 对客户不可见。分组倍率已核实：`视频分组` = 1，三站实收 ¥0.02/秒。
-
-## Stage 4: 验收（待额度到位）
-**Goal**: 上游真跑一单，确认计费口径与产物可用。
+## Stage 3: 真跑验收
+**Goal**: 上游真跑一单，确认口径。
 **Success Criteria**:
-- 提交→轮询→拿到视频 URL 全链路通
-- **确认积分与视频秒数的换算**，填入 `avatarCreditsPerSecond`（现为 0 = 不校正）。
-  上游公开定价没有单列这条能力：实时数字人 1.5 积分/秒、对口型 4 积分/秒，
-  1 积分 = ¥0.03125。拿错了换算会按倍数多扣客户
-- 定价拍板后写入默认价
-**Status**: Blocked — 等非实时额度到账
+- 预制模板 3270xx 在本账号可用（文档列的是预制 ID，若报模板不存在需在控制台创建并改映射）
+- 提交 → 轮询 → 拿到临时链接可下载
+- 对账：上游账单的转码 + 增强费用 ≈ 我们按秒数 × 档位算出的成本；60 帧源确认落到 2× 档
+**Status**: Not Started
 
-上游形状已做零成本验证（额度检查之前的校验全部通过）：`image` / `audio` / `text` /
-`voice` / `timeline` 字段名与必填项无误。但 `resolution` 传 `1080p` 也没被拦 ——
-取值校验发生在额度检查之后，说明上游不会替我们兜住分辨率，模型名钉死是唯一防线。
+## 遗留（上一项）
+
+Vidu 数字人 Stage 4（真跑验收、确认积分↔秒换算）仍卡在上游非实时额度未到账，见记忆。
