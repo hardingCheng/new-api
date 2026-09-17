@@ -1,0 +1,252 @@
+{
+  "Response": {
+    "TaskType": "WorkflowTask",
+    "Status": "FINISH",
+    "CreateTime": "2026-09-17T15:31:27Z",
+    "BeginProcessTime": "2026-09-17T15:31:27Z",
+    "FinishTime": "2026-09-17T15:32:21Z",
+    "WorkflowTask": {
+      "TaskId": "2600000000-WorkflowTask-0123456789abcdef0123456789abcdeftt7",
+      "Status": "FINISH",
+      "ErrCode": 0,
+      "Message": "SUCCESS",
+      "InputInfo": {
+        "Type": "COS",
+        "CosInputInfo": {
+          "Bucket": "mps-enhance-out-1250000000",
+          "Region": "ap-guangzhou",
+          "Object": "/input/sample.mp4"
+        },
+        "UrlInputInfo": null,
+        "S3InputInfo": null,
+        "VODInputInfo": null
+      },
+      "MetaData": {
+        "AudioDuration": 5.062,
+        "AudioStreamSet": [
+          {
+            "Bitrate": 73570,
+            "Codec": "aac",
+            "SamplingRate": 44100,
+            "Channel": 2,
+            "Codecs": "",
+            "Loudness": 0,
+            "Duration": 5.062
+          }
+        ],
+        "Bitrate": 1678549,
+        "Container": "mp4",
+        "Duration": 5.086,
+        "Height": 720,
+        "Rotate": 0,
+        "Size": 1067138,
+        "VideoDuration": 5.042,
+        "VideoStreamSet": [
+          {
+            "Bitrate": 1612035,
+            "Codec": "h264",
+            "Fps": 24,
+            "Height": 720,
+            "Width": 1280,
+            "ColorPrimaries": "",
+            "ColorSpace": "",
+            "ColorTransfer": "",
+            "HdrType": "unknown",
+            "Codecs": "",
+            "Duration": 5.042,
+            "FpsNumerator": 0,
+            "FpsDenominator": 0
+          }
+        ],
+        "Width": 1280
+      },
+      "MediaProcessResultSet": [
+        {
+          "Type": "Transcode",
+          "TranscodeTask": {
+            "Status": "SUCCESS",
+            "ErrCode": 0,
+            "ErrCodeExt": "",
+            "Message": "SUCCESS",
+            "BeginProcessTime": "2026-09-17T15:31:27Z",
+            "FinishTime": "2026-09-17T15:32:21Z",
+            "Input": {
+              "Definition": 327003,
+              "DefinitionType": "Enhance",
+              "RawParameter": {
+                "Container": "",
+                "RemoveVideo": 0,
+                "RemoveAudio": 0,
+                "VideoTemplate": {
+                  "Codec": "",
+                  "Fps": 0,
+                  "Bitrate": 0,
+                  "ResolutionAdaptive": "",
+                  "Width": 0,
+                  "Height": 0,
+                  "Gop": 0,
+                  "FillType": "",
+                  "VideoProfile": "",
+                  "VideoLevel": "",
+                  "SegmentType": 0,
+                  "HlsTime": 0,
+                  "Subjective": 0,
+                  "ContentAdaptStream": 0,
+                  "FpsDenominator": 0,
+                  "Stereo3dType": "",
+                  "Sar": "",
+                  "GopUnit": "",
+                  "NoScenecut": 0,
+                  "RawPts": 0,
+                  "ScenarioBased": 0,
+                  "SceneType": "",
+                  "CompressType": ""
+                },
+                "AudioTemplate": {
+                  "Codec": "",
+                  "Bitrate": 0,
+                  "SampleRate": 0,
+                  "AudioChannel": 0,
+                  "StreamSelects": [],
+                  "HlsTime": 0,
+                  "AudioName": "",
+                  "AudioLanguage": "",
+                  "DefaultTrack": false
+                },
+                "TEHDConfig": {
+                  "Type": "",
+                  "MaxVideoBitrate": 0
+                },
+                "StdExtInfo": ""
+              },
+              "OverrideParameter": {
+                "Container": "",
+                "RemoveVideo": 0,
+                "RemoveAudio": 0,
+                "VideoTemplate": {
+                  "Codec": "",
+                  "Fps": 0,
+                  "Bitrate": 0,
+                  "ResolutionAdaptive": "",
+                  "Width": 0,
+                  "Height": 0,
+                  "Gop": 0,
+                  "FillType": "",
+                  "VideoProfile": "",
+                  "VideoLevel": "",
+                  "SegmentType": 0,
+                  "HlsTime": 0,
+                  "Subjective": 0,
+                  "ContentAdaptStream": 0,
+                  "FpsDenominator": 0,
+                  "Stereo3dType": "",
+                  "Sar": "",
+                  "GopUnit": "",
+                  "NoScenecut": 0,
+                  "RawPts": 0,
+                  "ScenarioBased": 0,
+                  "SceneType": "",
+                  "CompressType": ""
+                },
+                "AudioTemplate": {
+                  "Codec": "",
+                  "Bitrate": 0,
+                  "SampleRate": 0,
+                  "AudioChannel": 0,
+                  "StreamSelects": [],
+                  "HlsTime": 0,
+                  "AudioName": "",
+                  "AudioLanguage": "",
+                  "DefaultTrack": false
+                },
+                "TEHDConfig": null
+              },
+              "MosaicSet": [],
+              "WatermarkSet": [],
+              "StartTimeOffset": 0,
+              "EndTimeOffset": 0,
+              "OutputStorage": null,
+              "OutputObjectPath": "",
+              "SegmentObjectName": "",
+              "ObjectNumberFormat": null
+            },
+            "Output": {
+              "OutputStorage": {
+                "Type": "COS",
+                "CosOutputStorage": {
+                  "Bucket": "mps-enhance-out-1250000000",
+                  "Region": "ap-guangzhou"
+                },
+                "S3OutputStorage": null,
+                "VODOutputStorage": null
+              },
+              "Path": "/for_online_user/20260917/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee-concat/sample_transcode_327003.mp4",
+              "Definition": 327003,
+              "Bitrate": 6978846,
+              "PeakBitrate": 0,
+              "Height": 1080,
+              "Width": 1920,
+              "Size": 4415865,
+              "Duration": 5.062,
+              "Container": "mov,mp4,m4a,3gp,3g2,mj2",
+              "Md5": "0123456789abcdef0123456789abcdef",
+              "VideoStreamSet": [
+                {
+                  "Bitrate": 6900203,
+                  "Codec": "h264",
+                  "Fps": 24,
+                  "Height": 1080,
+                  "Width": 1920,
+                  "ColorPrimaries": "",
+                  "ColorSpace": "",
+                  "ColorTransfer": "",
+                  "HdrType": "",
+                  "Codecs": "",
+                  "Duration": 5.042,
+                  "FpsNumerator": 24,
+                  "FpsDenominator": 1
+                }
+              ],
+              "AudioStreamSet": [
+                {
+                  "Bitrate": 98022,
+                  "Codec": "aac",
+                  "SamplingRate": 44100,
+                  "Channel": 2,
+                  "Codecs": "",
+                  "Loudness": 0,
+                  "Duration": 5.062
+                }
+              ],
+              "CallBackExtInfo": "{\"tmpl_url\":\"https://vod-trans-1250000001.cos.ap-shanghai.myqcloud.com/for_online_user/20260917/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee-concat/sample_transcode_327003.mp4\"}"
+            },
+            "Progress": 100
+          },
+          "AnimatedGraphicTask": null,
+          "SnapshotByTimeOffsetTask": null,
+          "SampleSnapshotTask": null,
+          "ImageSpriteTask": null,
+          "AdaptiveDynamicStreamingTask": null
+        }
+      ],
+      "AiRecognitionResultSet": [],
+      "AiContentReviewResultSet": [],
+      "AiAnalysisResultSet": [],
+      "AiQualityControlTaskResult": null,
+      "EvaluationTaskResult": null,
+      "SmartSubtitlesTaskResult": [],
+      "SmartEraseTaskResult": null
+    },
+    "ScheduleTask": null,
+    "LiveScheduleTask": null,
+    "EditMediaTask": null,
+    "LiveStreamProcessTask": null,
+    "EvaluationTask": null,
+    "TaskNotifyConfig": null,
+    "TasksPriority": 0,
+    "SessionId": "",
+    "SessionContext": "",
+    "ExtInfo": "",
+    "RequestId": "00000000-0000-0000-0000-000000000000"
+  }
+}

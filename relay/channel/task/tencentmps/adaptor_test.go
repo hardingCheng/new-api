@@ -3,6 +3,7 @@ package tencentmps
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -382,5 +383,44 @@ func TestConvertToOpenAIVideo(t *testing.T) {
 	meta, _ := video["metadata"].(map[string]interface{})
 	if meta["url"] != "https://vod-trans.cos.ap-shanghai.myqcloud.com/for_online_user/a.mp4" {
 		t.Fatalf("metadata = %v", meta)
+	}
+}
+
+// 2026-09-17 直连上游真跑一单(720p 24 帧 5.06 秒 → 1080p 真人模板)拿到的 DescribeTaskDetail 终态响应,
+// 已脱敏。hub 对上游形状的全部假设都要能在这份真样本上成立。
+func TestRealFinishedResponse(t *testing.T) {
+	body, err := os.ReadFile("testdata/describe_task_detail_finish.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &TaskAdaptor{}
+	info, err := a.ParseTaskResult(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Status != model.TaskStatusSuccess || info.Progress != "100%" {
+		t.Fatalf("status = %+v", info)
+	}
+	wantURL := "https://vod-trans-1250000001.cos.ap-shanghai.myqcloud.com/for_online_user/20260917/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee-concat/sample_transcode_327003.mp4"
+	if info.Url != wantURL {
+		t.Fatalf("url = %q", info.Url)
+	}
+
+	// 声明 5 秒预扣 1000;实际输出 5.062 秒进位 6 秒、24 帧基准档 → 1200
+	task := &model.Task{Quota: 1000, Data: json.RawMessage(body), Status: model.TaskStatusSuccess}
+	task.PrivateData.BillingContext = &model.TaskBillingContext{OtherRatios: map[string]float64{"seconds": 5, "fps": 1}}
+	if got := a.AdjustBillingOnComplete(task, info); got != 1200 {
+		t.Fatalf("settlement = %d, want 1200", got)
+	}
+
+	// 对客查询响应能拿到地址
+	task.TaskID = "task_real"
+	task.Properties.OriginModelName = "video-enhance-1080p"
+	out, err := a.ConvertToOpenAIVideo(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), wantURL) {
+		t.Fatalf("openai video lacks url: %s", out)
 	}
 }
