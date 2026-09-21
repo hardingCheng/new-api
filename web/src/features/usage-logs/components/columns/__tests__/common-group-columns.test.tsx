@@ -96,14 +96,18 @@ const log: UsageLog = {
   upstream_request_id: '',
 }
 
-function CommonColumnsHarness(props: { isAdmin: boolean }) {
+function CommonColumnsHarness(props: {
+  isAdmin: boolean
+  data?: UsageLog[]
+  targetIds?: string[]
+}) {
   const columns = useCommonLogsColumns(props.isAdmin)
   const table = useReactTable({
     columns,
-    data: [log],
+    data: props.data ?? [log],
     getCoreRowModel: getCoreRowModel(),
   })
-  const targetIds = new Set(['group', 'token_name'])
+  const targetIds = new Set(props.targetIds ?? ['group', 'token_name'])
   const headers = table
     .getFlatHeaders()
     .filter((header) => targetIds.has(header.column.id))
@@ -128,7 +132,10 @@ function CommonColumnsHarness(props: { isAdmin: boolean }) {
   )
 }
 
-async function renderColumns(isAdmin: boolean) {
+async function renderColumns(
+  isAdmin: boolean,
+  options: { data?: UsageLog[]; targetIds?: string[] } = {}
+) {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -137,7 +144,11 @@ async function renderColumns(isAdmin: boolean) {
     root.render(
       <I18nextProvider i18n={i18n}>
         <UsageLogsProvider>
-          <CommonColumnsHarness isAdmin={isAdmin} />
+          <CommonColumnsHarness
+            isAdmin={isAdmin}
+            data={options.data}
+            targetIds={options.targetIds}
+          />
         </UsageLogsProvider>
       </I18nextProvider>
     )
@@ -190,6 +201,25 @@ test('user common logs omit the group column and keep the token column clean', a
   assert.equal(tokenText, 'gemini-token')
   assert.equal(tokenText.includes('image-group'), false)
   assert.equal(tokenText.includes('3x'), false)
+
+  await act(async () => rendered.root.unmount())
+  rendered.container.remove()
+})
+
+test('effort surcharge shows up in the details preview', async () => {
+  const surchargedLog: UsageLog = {
+    ...log,
+    other: JSON.stringify({ effort_ratio: 2, reasoning_effort: 'max' }),
+  }
+  const rendered = await renderColumns(false, {
+    data: [surchargedLog],
+    targetIds: ['content'],
+  })
+
+  const detailText =
+    rendered.container.querySelector('[data-cell-id="content"]')?.textContent ??
+    ''
+  assert.equal(detailText.includes('Effort Ratio 2x'), true)
 
   await act(async () => rendered.root.unmount())
   rendered.container.remove()

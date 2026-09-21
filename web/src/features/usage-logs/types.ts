@@ -206,6 +206,7 @@ export interface LogOtherData {
   matched_tier?: string
   request_rules?: RequestRuleTrace[]
   reasoning_effort?: string
+  effort_ratio?: number
   image?: boolean
   image_size?: string
   image_ratio?: number

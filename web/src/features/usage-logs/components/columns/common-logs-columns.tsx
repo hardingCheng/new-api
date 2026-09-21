@@ -306,6 +306,16 @@ function buildTypeDetailSegments(
     }
   }
 
+  if (
+    other.effort_ratio != null &&
+    Number.isFinite(other.effort_ratio) &&
+    other.effort_ratio !== 1
+  ) {
+    segments.push({
+      text: `${t('Effort Ratio')} ${formatRatioCompact(other.effort_ratio)}x`,
+    })
+  }
+
   if (other.is_system_prompt_overwritten) {
     segments.push({
       text: t('System Prompt Override'),

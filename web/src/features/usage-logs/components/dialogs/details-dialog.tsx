@@ -279,6 +279,17 @@ function BillingBreakdown(props: {
     })
   }
 
+  if (
+    other.effort_ratio != null &&
+    Number.isFinite(other.effort_ratio) &&
+    other.effort_ratio !== 1
+  ) {
+    rows.push({
+      label: t('Effort Ratio'),
+      value: `${formatRatio(other.effort_ratio)}x`,
+    })
+  }
+
   if (!isTieredExpr && isClaude && hasAnyCacheTokens(other)) {
     if (other.cache_ratio != null && other.cache_ratio !== 1) {
       rows.push({

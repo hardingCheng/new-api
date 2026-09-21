@@ -176,3 +176,20 @@ func TestInitChannelMetaRestoresRequestReasoningEffortForRetry(t *testing.T) {
 	info.InitChannelMeta(ctx)
 	assert.Equal(t, "max", info.ReasoningEffort)
 }
+
+func TestRequestReasoningEffortSurvivesPassThroughBlanking(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/v1/messages", nil)
+	request := &dto.ClaudeRequest{Model: "claude-opus-5", OutputConfig: json.RawMessage(`{"effort":" MAX "}`)}
+	info, err := GenRelayInfo(ctx, types.RelayFormatClaude, request, nil)
+	require.NoError(t, err)
+
+	// 透传模式会把 ReasoningEffort 清空;计费读的是请求体,不受影响
+	info.ReasoningEffort = ""
+	assert.Equal(t, "MAX", info.RequestReasoningEffort())
+
+	var nilInfo *RelayInfo
+	assert.Equal(t, "", nilInfo.RequestReasoningEffort())
+	assert.Equal(t, "", (&RelayInfo{}).RequestReasoningEffort())
+}

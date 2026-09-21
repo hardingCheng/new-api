@@ -99,6 +99,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	if relayInfo.ReasoningEffort != "" {
 		other["reasoning_effort"] = relayInfo.ReasoningEffort
 	}
+	appendEffortRatioInfo(relayInfo, other)
 	if relayInfo.IsModelMapped {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = relayInfo.UpstreamModelName
@@ -167,6 +168,25 @@ func appendStreamStatus(relayInfo *relaycommon.RelayInfo, other map[string]inter
 		streamInfo["errors"] = messages
 	}
 	other["stream_status"] = streamInfo
+}
+
+// appendEffortRatioInfo 把「推理强度倍率」写进日志,客户看到账单翻倍时能对上原因。
+// 透传模式下 ReasoningEffort 会被清空(见 relay_info.go),但倍率既然按请求体里的强度收了,
+// 就把那个强度一并补进日志,否则只见 2x 不见 max。
+func appendEffortRatioInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
+	if relayInfo == nil || other == nil {
+		return
+	}
+	ratio, ok := relayInfo.PriceData.GetOtherRatio(hosttypes.OtherRatioKeyEffort)
+	if !ok {
+		return
+	}
+	other["effort_ratio"] = ratio
+	if _, exists := other["reasoning_effort"]; !exists {
+		if effort := relayInfo.RequestReasoningEffort(); effort != "" {
+			other["reasoning_effort"] = effort
+		}
+	}
 }
 
 func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {

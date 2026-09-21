@@ -90,6 +90,30 @@ func RefreshGroupRatioForRetry(ctx *gin.Context, info *relaycommon.RelayInfo) {
 	}
 	info.PriceData.GroupRatioInfo = HandleGroupRatio(ctx, info)
 	applyUserPricingOverridesToPriceData(info, &info.PriceData)
+	applyEffortRatioToPriceData(info, &info.PriceData)
+}
+
+// applyEffortRatioToPriceData 按「计费分组 × 推理强度」给账单叠加倍率(GroupEffortRatio)。
+//
+// 强度取的是客户请求体里声明的值(RequestReasoningEffort),不用 info.ReasoningEffort:
+// 那个字段要等选中渠道后才写、透传模式下还会被清空,而算价发生在选路之前。
+// 倍率放进 PriceData 的附加倍率(键 OtherRatioKeyEffort),预扣和结算两头自然同源。
+// 幂等:先摘再按当前 UsingGroup 重配,重试换分组时由 RefreshGroupRatioForRetry 再调一次即可。
+// tiered_expr 模型走表达式自管定价,不经过这里。
+func applyEffortRatioToPriceData(info *relaycommon.RelayInfo, priceData *hosttypes.PriceData) {
+	if info == nil || priceData == nil {
+		return
+	}
+	priceData.RemoveOtherRatio(hosttypes.OtherRatioKeyEffort)
+	effort := info.RequestReasoningEffort()
+	if effort == "" {
+		return
+	}
+	ratio, ok := ratio_setting.GetGroupEffortRatio(info.UsingGroup, effort)
+	if !ok || ratio == 1 {
+		return
+	}
+	priceData.AddOtherRatio(hosttypes.OtherRatioKeyEffort, ratio)
 }
 
 func applyUserPricingOverridesToPriceData(info *relaycommon.RelayInfo, priceData *hosttypes.PriceData) {
@@ -259,6 +283,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	}
 
 	applyUserPricingOverridesToPriceData(info, &priceData)
+	applyEffortRatioToPriceData(info, &priceData)
 	if priceData.UsePrice {
 		quotaToPreConsume := priceData.ApplyOtherRatiosToFloat(priceData.ModelPrice * common.QuotaPerUnit * priceData.GroupRatioInfo.GroupRatio)
 		quota, err := common.QuotaFromFloatStrict(quotaToPreConsume)
@@ -272,7 +297,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		}
 	} else {
 		ratio := priceData.ModelRatio * priceData.GroupRatioInfo.GroupRatio
-		quota, err := common.QuotaFromFloatStrict(float64(preConsumedTokens) * ratio)
+		// 按量计费的附加倍率(目前只有推理强度倍率)也要进预扣,否则 max 强度的大请求
+		// 预扣只有一半,结算时才补,余额不足的客户会先跑完再欠费。
+		quota, err := common.QuotaFromFloatStrict(priceData.ApplyOtherRatiosToFloat(float64(preConsumedTokens) * ratio))
 		if err != nil {
 			return hosttypes.PriceData{}, err
 		}

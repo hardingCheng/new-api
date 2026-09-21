@@ -824,6 +824,16 @@ func (info *RelayInfo) SetReasoningEffort(effort string) {
 	info.ReasoningEffort = strings.TrimSpace(effort)
 }
 
+// RequestReasoningEffort 返回客户请求体里声明的推理强度(output_config.effort /
+// reasoning_effort / reasoning.effort / thinking_level),与 ReasoningEffort 不同:
+// 它不依赖是否已选中渠道、也不会因透传模式被清空。计费按客户要的强度收钱,用这个。
+func (info *RelayInfo) RequestReasoningEffort() string {
+	if info == nil {
+		return ""
+	}
+	return reasoningEffortFromRequest(info.Request)
+}
+
 func (info *RelayInfo) EnsureClaudeConvertInfo() *convmeta.ClaudeConvertInfo {
 	if info == nil {
 		return &convmeta.ClaudeConvertInfo{

@@ -55,6 +55,23 @@ type PriceData struct {
 	VideoRefApplyGroupRatio bool
 }
 
+// OtherRatioKeyEffort 是「推理强度倍率」在附加倍率里的键(配置见 ratio_setting.GetGroupEffortRatio)。
+const OtherRatioKeyEffort = "effort"
+
+// GetOtherRatio 读取一条附加倍率;不存在或无效(<=0)时返回 (0, false)。
+func (p *PriceData) GetOtherRatio(key string) (float64, bool) {
+	ratio, ok := p.otherRatios[key]
+	if !ok || !isValidOtherRatio(ratio) {
+		return 0, false
+	}
+	return ratio, true
+}
+
+// RemoveOtherRatio 摘掉一条附加倍率;不存在时无操作。
+func (p *PriceData) RemoveOtherRatio(key string) {
+	delete(p.otherRatios, key)
+}
+
 func (p *PriceData) AddOtherRatio(key string, ratio float64) {
 	if !isValidOtherRatio(ratio) {
 		return
