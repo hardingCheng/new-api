@@ -91,7 +91,7 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *taskdto.TaskError) {
-	if taskErr = relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); taskErr != nil {
+	if taskErr = relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionImageToVideo); taskErr != nil {
 		return taskErr
 	}
 	req, err := relaycommon.GetTaskRequest(c)
@@ -111,7 +111,12 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 }
 
 // EstimateBilling 按输出秒数计费，参考素材不额外计费（上游对带素材的请求单价更低）。
-func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) (map[string]float64, error) {
+func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
+	ratios, _ := a.EstimateBillingValidated(c, info)
+	return ratios
+}
+
+func (a *TaskAdaptor) EstimateBillingValidated(c *gin.Context, info *relaycommon.RelayInfo) (map[string]float64, error) {
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil, err
@@ -167,7 +172,15 @@ func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, req
 	return channel.DoTaskApiRequest(a, c, info, requestBody)
 }
 
-func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (taskID string, taskData []byte, taskErr *taskdto.TaskError) {
+func (a *TaskAdaptor) ParseResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*channel.TaskSubmitResponse, *taskdto.TaskError) {
+	taskID, taskData, clientResponse, taskErr := a.doResponse(c, resp, info)
+	if taskErr != nil {
+		return nil, taskErr
+	}
+	return &channel.TaskSubmitResponse{UpstreamTaskID: taskID, TaskData: taskData, ClientResponse: clientResponse}, nil
+}
+
+func (a *TaskAdaptor) doResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (taskID string, taskData []byte, clientResponse any, taskErr *taskdto.TaskError) {
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		taskErr = service.TaskErrorWrapper(err, "read_response_body_failed", http.StatusInternalServerError)
@@ -202,11 +215,18 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	ov.CreatedAt = time.Now().Unix()
 	ov.Model = info.OriginModelName
 
-	c.JSON(http.StatusOK, ov)
-	return envelope.Task.ID, responseBody, nil
+	clientResponse = ov
+	return envelope.Task.ID, responseBody, clientResponse, nil
 }
 
-func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy string) (*http.Response, error) {
+func (a *TaskAdaptor) FetchTask(baseUrl, key string, task *model.Task, proxy string) (*http.Response, error) {
+	return a.fetchTaskBody(baseUrl, key, map[string]any{
+		"task_id": task.GetUpstreamTaskID(),
+		"action":  constant.NormalizeTaskAction(task.Action),
+	}, proxy)
+}
+
+func (a *TaskAdaptor) fetchTaskBody(baseUrl, key string, body map[string]any, proxy string) (*http.Response, error) {
 	taskID, ok := body["task_id"].(string)
 	if !ok || taskID == "" {
 		return nil, fmt.Errorf("invalid task_id")
@@ -327,7 +347,11 @@ func upstreamFailureReason(raw json.RawMessage) string {
 	return string(raw)
 }
 
-func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {
+func (a *TaskAdaptor) ParseTaskResult(_ *model.Task, _ *http.Response, respBody []byte) (*relaycommon.TaskInfo, error) {
+	return a.parseTaskResult(respBody)
+}
+
+func (a *TaskAdaptor) parseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {
 	var envelope taskEnvelope
 	if err := common.Unmarshal(respBody, &envelope); err != nil {
 		return nil, errors.Wrap(err, "unmarshal task result failed")

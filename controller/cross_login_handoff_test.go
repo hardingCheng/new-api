@@ -37,7 +37,7 @@ func TestSetupLoginHandsOffAccountOwnedByAnotherStation(t *testing.T) {
 	previousRedis := common.RedisEnabled
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.TwoFA{}, &model.PasskeyCredential{}))
 	model.DB = db
 	common.RedisEnabled = false
 	t.Cleanup(func() {
@@ -56,9 +56,9 @@ func TestSetupLoginHandsOffAccountOwnedByAnotherStation(t *testing.T) {
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "https://cd.example.com/api/user/login", nil)
 
-	setupLogin(user, c)
+	setupLogin(user, nil, c)
 
-	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 	var response struct {
 		Success bool `json:"success"`
 		Data    struct {

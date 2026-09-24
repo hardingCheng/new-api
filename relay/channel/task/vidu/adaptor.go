@@ -86,7 +86,7 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) *taskdto.TaskError {
-	if err := relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); err != nil {
+	if err := relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionImageToVideo); err != nil {
 		return err
 	}
 	req, err := relaycommon.GetTaskRequest(c)
@@ -102,17 +102,17 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 		return nil
 	}
 
-	action := constant.TaskActionTextGenerate
+	action := constant.TaskActionTextToVideo
 	if meatAction, ok := req.Metadata["action"]; ok {
 		action, _ = meatAction.(string)
 	} else if req.HasImage() {
-		action = constant.TaskActionGenerate
+		action = constant.TaskActionImageToVideo
 		if info.ChannelType == constant.ChannelTypeVidu {
 			// vidu 增加 首尾帧生视频和参考图生视频
 			if len(req.Images) == 2 {
-				action = constant.TaskActionFirstTailGenerate
+				action = constant.TaskActionFirstTailToVideo
 			} else if len(req.Images) > 2 {
-				action = constant.TaskActionReferenceGenerate
+				action = constant.TaskActionReferenceToVideo
 			}
 		}
 	}
@@ -140,7 +140,7 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		return nil, err
 	}
 
-	if info.Action == constant.TaskActionReferenceGenerate {
+	if info.Action == constant.TaskActionReferenceToVideo {
 		if strings.Contains(body.Model, "viduq2") {
 			// 参考图生视频只能用 viduq2 模型, 不能带有pro或turbo后缀 https://platform.vidu.cn/docs/reference-to-video
 			body.Model = "viduq2"
@@ -161,11 +161,11 @@ func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, erro
 
 	var path string
 	switch info.Action {
-	case constant.TaskActionGenerate:
+	case constant.TaskActionImageToVideo:
 		path = "/img2video"
-	case constant.TaskActionFirstTailGenerate:
+	case constant.TaskActionFirstTailToVideo:
 		path = "/start-end2video"
-	case constant.TaskActionReferenceGenerate:
+	case constant.TaskActionReferenceToVideo:
 		path = "/reference2video"
 	default:
 		path = "/text2video"
@@ -184,7 +184,15 @@ func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, req
 	return channel.DoTaskApiRequest(a, c, info, requestBody)
 }
 
-func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (taskID string, taskData []byte, taskErr *taskdto.TaskError) {
+func (a *TaskAdaptor) ParseResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*channel.TaskSubmitResponse, *taskdto.TaskError) {
+	taskID, taskData, clientResponse, taskErr := a.doResponse(c, resp, info)
+	if taskErr != nil {
+		return nil, taskErr
+	}
+	return &channel.TaskSubmitResponse{UpstreamTaskID: taskID, TaskData: taskData, ClientResponse: clientResponse}, nil
+}
+
+func (a *TaskAdaptor) doResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (taskID string, taskData []byte, clientResponse any, taskErr *taskdto.TaskError) {
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		taskErr = service.TaskErrorWrapper(err, "read_response_body_failed", http.StatusInternalServerError)
@@ -208,11 +216,18 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	ov.TaskID = info.PublicTaskID
 	ov.CreatedAt = time.Now().Unix()
 	ov.Model = info.OriginModelName
-	c.JSON(http.StatusOK, ov)
-	return vResp.TaskId, responseBody, nil
+	clientResponse = ov
+	return vResp.TaskId, responseBody, clientResponse, nil
 }
 
-func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy string) (*http.Response, error) {
+func (a *TaskAdaptor) FetchTask(baseUrl, key string, task *model.Task, proxy string) (*http.Response, error) {
+	return a.fetchTaskBody(baseUrl, key, map[string]any{
+		"task_id": task.GetUpstreamTaskID(),
+		"action":  constant.NormalizeTaskAction(task.Action),
+	}, proxy)
+}
+
+func (a *TaskAdaptor) fetchTaskBody(baseUrl, key string, body map[string]any, proxy string) (*http.Response, error) {
 	taskID, ok := body["task_id"].(string)
 	if !ok {
 		return nil, fmt.Errorf("invalid task_id")
@@ -263,7 +278,11 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq, in
 	return &r, nil
 }
 
-func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {
+func (a *TaskAdaptor) ParseTaskResult(_ *model.Task, _ *http.Response, respBody []byte) (*relaycommon.TaskInfo, error) {
+	return a.parseTaskResult(respBody)
+}
+
+func (a *TaskAdaptor) parseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {
 	taskInfo := &relaycommon.TaskInfo{}
 
 	var taskResp taskResultResponse
@@ -327,7 +346,12 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, erro
 // 视频时长由讲话内容决定，提交时上游不会告诉我们最终时长，而预扣费必须发生在提交之前：
 // 给了音频就直接读音频文件的真实时长，只给文本就按文本估。提交成功后
 // AdjustBillingOnSubmit 会用上游返回的实际用量再校正一次。
-func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) (map[string]float64, error) {
+func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
+	ratios, _ := a.EstimateBillingValidated(c, info)
+	return ratios
+}
+
+func (a *TaskAdaptor) EstimateBillingValidated(c *gin.Context, info *relaycommon.RelayInfo) (map[string]float64, error) {
 	if info == nil || info.Action != constant.TaskActionAvatarGenerate {
 		return nil, nil
 	}

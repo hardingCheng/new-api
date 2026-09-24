@@ -135,7 +135,7 @@ func TestRegularViduRoutingUnaffected(t *testing.T) {
 	adaptor.Init(info)
 
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(c, info))
-	assert.Equal(t, constant.TaskActionGenerate, info.Action)
+	assert.Equal(t, constant.TaskActionImageToVideo, info.Action)
 
 	url, err := adaptor.BuildRequestURL(info)
 	require.NoError(t, err)
@@ -182,7 +182,7 @@ func TestEstimateBillingTextMode(t *testing.T) {
 	adaptor.Init(info)
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(c, info))
 
-	ratios, err := adaptor.EstimateBilling(c, info)
+	ratios, err := adaptor.EstimateBillingValidated(c, info)
 	require.NoError(t, err)
 	require.NotNil(t, ratios)
 	assert.Equal(t, float64(2), ratios["seconds"]) // 7 字 / 4 = 1.75 → 2
@@ -197,7 +197,7 @@ func TestEstimateBillingSkipsNonAvatarAction(t *testing.T) {
 	adaptor.Init(info)
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(c, info))
 
-	ratios, err := adaptor.EstimateBilling(c, info)
+	ratios, err := adaptor.EstimateBillingValidated(c, info)
 	require.NoError(t, err)
 	assert.Nil(t, ratios)
 }
@@ -232,6 +232,6 @@ func TestAdjustBillingOnSubmitConvertsUpstreamCredits(t *testing.T) {
 	assert.Nil(t, adaptor.AdjustBillingOnSubmit(info, []byte(`{"task_id":"1"}`)))
 	assert.Nil(t, adaptor.AdjustBillingOnSubmit(info, []byte(`not json`)))
 	assert.Nil(t, adaptor.AdjustBillingOnSubmit(
-		&relaycommon.RelayInfo{TaskRelayInfo: &relaycommon.TaskRelayInfo{Action: constant.TaskActionGenerate}},
+		&relaycommon.RelayInfo{TaskRelayInfo: &relaycommon.TaskRelayInfo{Action: constant.TaskActionImageToVideo}},
 		[]byte(`{"credits":30}`)))
 }

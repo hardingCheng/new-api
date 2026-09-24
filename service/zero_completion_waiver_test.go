@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -168,18 +169,19 @@ func TestSplitZeroCompletionWaiver(t *testing.T) {
 }
 
 func TestAttachZeroCompletionWaiverNestsUnderAdminInfo(t *testing.T) {
-	other := map[string]interface{}{}
+	other := model.NewLogOther()
 	attachZeroCompletionWaiver(other, 1234)
 
-	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	adminInfo, ok := other.Snapshot()["admin_info"].(map[string]any)
 	assert.True(t, ok)
 	assert.Equal(t, true, adminInfo["zero_completion_no_charge"])
 	assert.Equal(t, 1234, adminInfo["zero_completion_waived_quota"])
 
 	// 已存在 admin_info 时并入而非覆盖
-	other2 := map[string]interface{}{"admin_info": map[string]interface{}{"use_channel": []string{"7"}}}
+	other2 := model.NewLogOther()
+	other2.SetAdmin("use_channel", []string{"7"})
 	attachZeroCompletionWaiver(other2, 5)
-	adminInfo2 := other2["admin_info"].(map[string]interface{})
+	adminInfo2 := other2.Snapshot()["admin_info"].(map[string]any)
 	assert.Equal(t, []string{"7"}, adminInfo2["use_channel"])
 	assert.Equal(t, true, adminInfo2["zero_completion_no_charge"])
 }

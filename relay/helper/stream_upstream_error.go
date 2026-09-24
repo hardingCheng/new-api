@@ -67,3 +67,10 @@ func truncateRunes(s string, limit int) string {
 	}
 	return string(runes[:limit]) + "…"
 }
+
+// IsUpstreamStreamError reports whether StreamScannerHandler already recorded
+// this chunk as an in-stream upstream error, so handlers do not count it twice.
+func IsUpstreamStreamError(data string) bool {
+	_, ok := detectUpstreamStreamError(data)
+	return ok
+}

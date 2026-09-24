@@ -140,7 +140,7 @@ func TestParseTaskResultStatusMapping(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := a.ParseTaskResult([]byte(tc.body))
+			got, err := a.parseTaskResult([]byte(tc.body))
 			require.NoError(t, err)
 			assert.Equal(t, string(tc.wantStatus), string(got.Status))
 			if tc.wantURL != "" {

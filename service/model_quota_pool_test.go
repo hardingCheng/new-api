@@ -199,18 +199,18 @@ func TestAppendAdminBillingRulesOmitsRedisKeyWithoutMutatingReservation(t *testi
 		RedisKey: "model_quota_pool:global:secret",
 		Amount:   10,
 	}
-	other := make(map[string]interface{})
+	other := model.NewLogOther()
 
 	appendAdminBillingRules(other, nil, []ratio_setting.ModelQuotaPoolMatch{reservation})
 
-	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	rawPools, ok := other.Admin("model_quota_pools")
 	require.True(t, ok)
-	logPools, ok := adminInfo["model_quota_pools"].([]ratio_setting.ModelQuotaPoolMatch)
+	logPools, ok := rawPools.([]ratio_setting.ModelQuotaPoolMatch)
 	require.True(t, ok)
 	require.Len(t, logPools, 1)
 	assert.Empty(t, logPools[0].RedisKey)
 	assert.Equal(t, "model_quota_pool:global:secret", reservation.RedisKey)
-	assert.NotContains(t, other, "model_quota_pools")
+	assert.NotContains(t, other.Snapshot(), "model_quota_pools")
 	serialized, err := common.Marshal(other)
 	require.NoError(t, err)
 	assert.NotContains(t, string(serialized), "redis_key")

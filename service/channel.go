@@ -88,6 +88,15 @@ func buildChannelBreakerBarkBody(ctx ChannelBreakerNotificationContext) string {
 	return strings.Join(lines, "\n")
 }
 
+func shouldCloseActiveWebSocketsAfterDisable(channelId int) bool {
+	channel, err := model.GetChannelById(channelId, true)
+	if err != nil {
+		common.SysLog(fmt.Sprintf("failed to check channel status before closing active websockets: channel_id=%d, error=%v", channelId, err))
+		return true
+	}
+	return channel.Status != common.ChannelStatusEnabled
+}
+
 // disable & notify
 func DisableChannel(channelError types.ChannelError, reason string) {
 	disableChannel(channelError, reason, false)
@@ -113,6 +122,9 @@ func disableChannel(channelError types.ChannelError, reason string, disableAutoR
 	}
 	if success {
 		ClearChannelBreaker(channelError)
+		if shouldCloseActiveWebSocketsAfterDisable(channelError.ChannelId) {
+			CloseActiveWebSocketsForChannel(channelError.ChannelId, ChannelDisabledCloseReason)
+		}
 		subject := fmt.Sprintf("通道「%s」（#%d）已被禁用", channelError.ChannelName, channelError.ChannelId)
 		content := fmt.Sprintf("通道「%s」（#%d）已被禁用，原因：%s", channelError.ChannelName, channelError.ChannelId, reason)
 		if channelError.IsMultiKey && channelError.UsingKey != "" {

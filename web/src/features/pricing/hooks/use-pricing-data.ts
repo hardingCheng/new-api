@@ -20,20 +20,21 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 
 import { useStatus } from '@/hooks/use-status'
+import { requireServerSuccess } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { getPricing } from '../api'
 import { mergeUserPricingGroupRatios } from '../lib/model-helpers'
 
-export function usePricingData() {
+export function usePricingData(enabled = true) {
   const { status } = useStatus()
   const userId = useAuthStore((state) => state.auth.user?.id)
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['pricing', userId],
-    queryFn: getPricing,
-    enabled: userId !== undefined,
+    queryFn: async () => requireServerSuccess(await getPricing()),
     staleTime: 5 * 60 * 1000,
+    enabled: enabled && userId !== undefined,
   })
 
   // Ensure rates never reach zero to prevent division errors

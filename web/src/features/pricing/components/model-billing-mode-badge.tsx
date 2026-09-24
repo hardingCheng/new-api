@@ -19,37 +19,33 @@ For commercial licensing, please contact support@quantumnous.com
 import { useTranslation } from 'react-i18next'
 
 import { StatusBadge, type StatusVariant } from '@/components/status-badge'
+import { cn } from '@/lib/utils'
 
-import { isDynamicPricingModel } from '../lib/dynamic-price'
-import { isTokenBasedModel } from '../lib/model-helpers'
+import { getBillingModeLabelKey } from '../lib/billing-mode'
 import type { PricingModel } from '../types'
 
 interface ModelBillingModeBadgeProps {
   model: PricingModel
+  appearance?: 'default' | 'caption'
   className?: string
 }
 
 export function ModelBillingModeBadge(props: ModelBillingModeBadgeProps) {
   const { t } = useTranslation()
-  let label = t('Per Request')
+  const labelKey = getBillingModeLabelKey(props.model)
+  const label = t(labelKey)
+  const isCaption = props.appearance === 'caption'
   // 巴西站:计费方式是元数据不是状态,统一素灰(prismix 去彩原则)。
-  let variant: StatusVariant = 'neutral'
-
-  if (isDynamicPricingModel(props.model)) {
-    label = t('Dynamic Pricing')
-    variant = 'neutral'
-  } else if (isTokenBasedModel(props.model)) {
-    label = t('Token-based')
-    variant = 'neutral'
-  }
+  const variant: StatusVariant = 'neutral'
 
   return (
     <StatusBadge
       label={label}
       variant={variant}
+      type={isCaption ? 'text' : undefined}
       copyable={false}
       size='sm'
-      className={props.className}
+      className={cn(isCaption && 'text-xs font-normal', props.className)}
     />
   )
 }

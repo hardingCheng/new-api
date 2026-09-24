@@ -17,9 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import { after, test } from 'node:test'
 
 import { Window } from 'happy-dom'
+import { afterAll as after, test } from 'vitest'
 
 import type { UsageLog } from '../../data/schema'
 
@@ -57,6 +57,8 @@ Object.defineProperty(document, 'compatMode', {
 
 const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
+const { QueryClient, QueryClientProvider } =
+  await import('@tanstack/react-query')
 const { createInstance } = await import('i18next')
 const { I18nextProvider, initReactI18next } = await import('react-i18next')
 const { flexRender, getCoreRowModel, useReactTable } =
@@ -98,7 +100,7 @@ const consumeLog: UsageLog = {
 }
 
 function CommonLogTypeHarness(props: { mobile: boolean }) {
-  const columns = useCommonLogsColumns(false)
+  const columns = useCommonLogsColumns(false, false)
   const table = useReactTable({
     columns,
     data: [consumeLog],
@@ -142,9 +144,17 @@ async function renderHarness(mobile: boolean) {
   await act(async () => {
     root.render(
       <I18nextProvider i18n={i18n}>
-        <UsageLogsProvider>
-          <CommonLogTypeHarness mobile={mobile} />
-        </UsageLogsProvider>
+        <QueryClientProvider
+          client={
+            new QueryClient({
+              defaultOptions: { queries: { enabled: false } },
+            })
+          }
+        >
+          <UsageLogsProvider>
+            <CommonLogTypeHarness mobile={mobile} />
+          </UsageLogsProvider>
+        </QueryClientProvider>
       </I18nextProvider>
     )
   })
@@ -195,7 +205,7 @@ test('mobile common logs keep type prominent and separate from time', async () =
     '[data-slot="usage-log-mobile-time"]'
   )
   assert.ok(timeField)
-  assert.equal(timeField.textContent?.includes('Time'), true)
+  assert.match(timeField.getAttribute('aria-label') ?? '', /^Time: /)
   assert.equal(timeField.textContent?.includes('Consume'), false)
 
   await act(async () => rendered.root.unmount())

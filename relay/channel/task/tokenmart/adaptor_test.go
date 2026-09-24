@@ -113,32 +113,32 @@ func TestConvertToRequestPayloadDurationFromBody(t *testing.T) {
 func TestParseTaskResultStatusMapping(t *testing.T) {
 	adaptor := &TaskAdaptor{}
 
-	queued, err := adaptor.ParseTaskResult([]byte(`{"task":{"id":"mvt-1","status":"pending","outputs":[],"error":null}}`))
+	queued, err := adaptor.parseTaskResult([]byte(`{"task":{"id":"mvt-1","status":"pending","outputs":[],"error":null}}`))
 	require.NoError(t, err)
 	assert.Equal(t, model.TaskStatusQueued, queued.Status)
 
-	running, err := adaptor.ParseTaskResult([]byte(`{"task":{"id":"mvt-1","status":"processing","outputs":[],"error":null}}`))
+	running, err := adaptor.parseTaskResult([]byte(`{"task":{"id":"mvt-1","status":"processing","outputs":[],"error":null}}`))
 	require.NoError(t, err)
 	assert.Equal(t, model.TaskStatusInProgress, running.Status)
 
-	done, err := adaptor.ParseTaskResult([]byte(`{"task":{"id":"mvt-1","status":"completed","outputs":["https://cdn.example.com/out.mp4"],"error":null}}`))
+	done, err := adaptor.parseTaskResult([]byte(`{"task":{"id":"mvt-1","status":"completed","outputs":["https://cdn.example.com/out.mp4"],"error":null}}`))
 	require.NoError(t, err)
 	assert.Equal(t, model.TaskStatusSuccess, done.Status)
 	assert.Equal(t, "https://cdn.example.com/out.mp4", done.Url)
 
 	// 失败原因两种形状都要能取出来
-	failedObject, err := adaptor.ParseTaskResult([]byte(`{"task":{"id":"mvt-1","status":"failed","outputs":[],"error":{"code":"InvalidParameter","message":"ratio is not valid"}}}`))
+	failedObject, err := adaptor.parseTaskResult([]byte(`{"task":{"id":"mvt-1","status":"failed","outputs":[],"error":{"code":"InvalidParameter","message":"ratio is not valid"}}}`))
 	require.NoError(t, err)
 	assert.Equal(t, model.TaskStatusFailure, failedObject.Status)
 	assert.Equal(t, "InvalidParameter: ratio is not valid", failedObject.Reason)
 
-	failedString, err := adaptor.ParseTaskResult([]byte(`{"task":{"id":"mvt-1","status":"failed","outputs":[],"error":"moderation blocked"}}`))
+	failedString, err := adaptor.parseTaskResult([]byte(`{"task":{"id":"mvt-1","status":"failed","outputs":[],"error":"moderation blocked"}}`))
 	require.NoError(t, err)
 	assert.Equal(t, model.TaskStatusFailure, failedString.Status)
 	assert.Equal(t, "moderation blocked", failedString.Reason)
 
 	// 失败但上游没给原因时，至少回落到状态字面量，不能是空
-	failedBare, err := adaptor.ParseTaskResult([]byte(`{"task":{"id":"mvt-1","status":"failed","outputs":[],"error":null}}`))
+	failedBare, err := adaptor.parseTaskResult([]byte(`{"task":{"id":"mvt-1","status":"failed","outputs":[],"error":null}}`))
 	require.NoError(t, err)
 	assert.Equal(t, "failed", failedBare.Reason)
 }

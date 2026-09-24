@@ -41,6 +41,8 @@ import {
 import { FailReasonDialog } from '../dialogs/fail-reason-dialog'
 import { TaskDetailsDialog } from '../dialogs/task-details-dialog'
 import { TaskVideoPreview } from '../dialogs/video-preview-dialog'
+import { PluginAuthorLink } from '../plugin-author-link'
+import { TaskArtifactsCell } from '../task-artifacts'
 import { useUsageLogsContext } from '../usage-logs-provider'
 import { createDurationColumn, createProgressColumn } from './column-helpers'
 
@@ -91,7 +93,10 @@ function AudioPreviewCell({ log }: { log: TaskLog }) {
   )
 }
 
-export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
+export function useTaskLogsColumns(
+  isAdmin: boolean,
+  isRoot: boolean
+): ColumnDef<TaskLog>[] {
   const { t } = useTranslation()
   const columns: ColumnDef<TaskLog>[] = [
     {
@@ -197,6 +202,35 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
             </button>
           )
         },
+      },
+      {
+        id: 'plugin',
+        header: t('Plugin'),
+        accessorFn: (row) => row.admin_info?.task_plugin?.key ?? '',
+        cell: ({ row }) => {
+          const plugin = row.original.admin_info?.task_plugin
+          if (!plugin) {
+            return <span className='text-muted-foreground/60 text-xs'>-</span>
+          }
+          return (
+            <div className='flex max-w-[170px] flex-col gap-0.5'>
+              <span className='truncate text-xs font-medium'>
+                {plugin.name || plugin.key}
+              </span>
+              <span className='text-muted-foreground truncate font-mono text-[11px]'>
+                {plugin.key}
+                {plugin.version ? ` @ ${plugin.version}` : ''}
+              </span>
+              {plugin.author ? (
+                <PluginAuthorLink
+                  author={plugin.author}
+                  showUrl
+                  className='text-muted-foreground text-[11px]'
+                />
+              ) : null}
+            </div>
+          )
+        },
       }
     )
   }
@@ -209,7 +243,7 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
       if (!taskId) {
         return <span className='text-muted-foreground/60 text-xs'>-</span>
       }
-      return <TaskIdCell log={row.original} isAdmin={isAdmin} />
+      return <TaskIdCell log={row.original} isAdmin={isAdmin} isRoot={isRoot} />
     },
     meta: { mobileTitle: true },
   })
@@ -396,6 +430,15 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
     },
     createProgressColumn<TaskLog>({ headerLabel: t('Progress') }),
     {
+      id: 'artifacts',
+      header: t('Artifacts'),
+      cell: ({ row }) => (
+        <TaskArtifactsCell key={row.original.task_id} log={row.original} />
+      ),
+      size: 120,
+      maxSize: 140,
+    },
+    {
       accessorKey: 'fail_reason',
       header: t('Details'),
       cell: function DetailsCell({ row }) {
@@ -463,7 +506,11 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
   return columns
 }
 
-function TaskIdCell(props: { log: TaskLog; isAdmin: boolean }) {
+function TaskIdCell(props: {
+  log: TaskLog
+  isAdmin: boolean
+  isRoot: boolean
+}) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard()
   const [open, setOpen] = useState(false)
@@ -510,6 +557,7 @@ function TaskIdCell(props: { log: TaskLog; isAdmin: boolean }) {
         <TaskDetailsDialog
           log={props.log}
           isAdmin={props.isAdmin}
+          isRoot={props.isRoot}
           open={open}
           onOpenChange={setOpen}
         />

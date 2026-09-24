@@ -68,7 +68,7 @@ func TestVeoMetadataParametersRejectBillingAndUpstreamRequest(t *testing.T) {
 			adaptor := &TaskAdaptor{}
 			ctx := newVeoTaskContext(req)
 
-			_, err := adaptor.EstimateBilling(ctx, veoRelayInfo())
+			_, err := adaptor.EstimateBillingValidated(ctx, veoRelayInfo())
 			require.ErrorContains(t, err, test.errorText)
 
 			_, err = adaptor.BuildRequestBody(ctx, veoRelayInfo())
@@ -90,7 +90,7 @@ func TestVeoMetadataParametersMatchBillingAndUpstreamRequest(t *testing.T) {
 	adaptor := &TaskAdaptor{}
 	ctx := newVeoTaskContext(req)
 
-	ratios, err := adaptor.EstimateBilling(ctx, veoRelayInfo())
+	ratios, err := adaptor.EstimateBillingValidated(ctx, veoRelayInfo())
 	require.NoError(t, err)
 	assert.Equal(t, 8.0, ratios["seconds"])
 

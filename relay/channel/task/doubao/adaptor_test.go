@@ -76,7 +76,7 @@ func TestEstimateBillingUsesMinimumForSeedance25AutoDuration(t *testing.T) {
 	adaptor := &TaskAdaptor{}
 
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(context, info))
-	ratios, err := adaptor.EstimateBilling(context, info)
+	ratios, err := adaptor.EstimateBillingValidated(context, info)
 	require.NoError(t, err)
 	assert.Equal(t, 4.0, ratios["seconds"])
 }
@@ -98,7 +98,7 @@ func TestEstimateBillingRecognizesSeedance25RoutingAlias(t *testing.T) {
 	adaptor := &TaskAdaptor{}
 
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(context, info))
-	ratios, err := adaptor.EstimateBilling(context, info)
+	ratios, err := adaptor.EstimateBillingValidated(context, info)
 	require.NoError(t, err)
 	assert.Equal(t, 20.0, ratios["seconds"])
 }

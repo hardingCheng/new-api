@@ -141,9 +141,10 @@ func TestUserChannelRoutingStrictAndDefaultFallback(t *testing.T) {
 		require.NotNil(t, selected)
 		assert.Equal(t, 2, selected.Id)
 
-		adminInfo := map[string]interface{}{}
-		AppendUserChannelRoutingAdminInfo(c, adminInfo)
-		routingInfo := adminInfo["user_channel_routing"].(map[string]interface{})
+		logOther := model.NewLogOther()
+		AppendUserChannelRoutingAdminInfo(c, logOther)
+		rawRouting, _ := logOther.Admin("user_channel_routing")
+		routingInfo := rawRouting.(map[string]interface{})
 		assert.Equal(t, false, routingInfo["fallback_used"])
 		assert.Equal(t, 2, routingInfo["selected_channel_id"])
 	})
@@ -161,9 +162,10 @@ func TestUserChannelRoutingStrictAndDefaultFallback(t *testing.T) {
 		require.NotNil(t, selected)
 		assert.Equal(t, 3, selected.Id)
 
-		adminInfo := map[string]interface{}{}
-		AppendUserChannelRoutingAdminInfo(c, adminInfo)
-		routingInfo := adminInfo["user_channel_routing"].(map[string]interface{})
+		logOther := model.NewLogOther()
+		AppendUserChannelRoutingAdminInfo(c, logOther)
+		rawRouting, _ := logOther.Admin("user_channel_routing")
+		routingInfo := rawRouting.(map[string]interface{})
 		assert.Equal(t, "default", routingInfo["rule_id"])
 		assert.Equal(t, true, routingInfo["fallback_used"])
 		assert.Equal(t, 3, routingInfo["selected_channel_id"])
@@ -196,9 +198,7 @@ func TestUserChannelRoutingScansEveryAssignedPriorityBeforeFallback(t *testing.T
 			require.NoError(t, err)
 			require.NotNil(t, selected)
 			assert.Equal(t, channels[2].Id, selected.Id)
-			adminInfo := map[string]interface{}{}
-			AppendUserChannelRoutingAdminInfo(c, adminInfo)
-			routingInfo := adminInfo["user_channel_routing"].(map[string]interface{})
+			routingInfo := userChannelRoutingAdminInfoForTest(t, c)
 			assert.Equal(t, false, routingInfo["fallback_used"])
 		})
 	}
@@ -212,22 +212,19 @@ func TestUserChannelRoutingAdminInfoTracksFinalDecisionAndAlias(t *testing.T) {
 	decision := resolveUserChannelRouting(c, "sd2", "video")
 	require.True(t, decision.Matched)
 	common.SetContextKey(c, constant.ContextKeyOriginalModel, "public-video")
-	adminInfo := map[string]interface{}{}
-	AppendUserChannelRoutingAdminInfo(c, adminInfo)
-	routingInfo := adminInfo["user_channel_routing"].(map[string]interface{})
+	routingInfo := userChannelRoutingAdminInfoForTest(t, c)
 	assert.Equal(t, "public-video", routingInfo["requested_model"])
 
 	decision = resolveUserChannelRouting(c, "default", "video")
 	assert.False(t, decision.Matched)
-	adminInfo = map[string]interface{}{}
-	AppendUserChannelRoutingAdminInfo(c, adminInfo)
-	assert.NotContains(t, adminInfo, "user_channel_routing")
+	emptyOther := model.NewLogOther()
+	AppendUserChannelRoutingAdminInfo(c, emptyOther)
+	_, hasRouting := emptyOther.Admin("user_channel_routing")
+	assert.False(t, hasRouting)
 
 	decision = resolveUserChannelRouting(c, "sd2", "video")
 	require.True(t, decision.Matched)
-	adminInfo = map[string]interface{}{}
-	AppendUserChannelRoutingAdminInfo(c, adminInfo)
-	routingInfo = adminInfo["user_channel_routing"].(map[string]interface{})
+	routingInfo = userChannelRoutingAdminInfoForTest(t, c)
 	assert.Equal(t, "sd2", routingInfo["rule_id"])
 	assert.Equal(t, "public-video", routingInfo["requested_model"])
 }
@@ -267,9 +264,7 @@ func TestUserChannelRoutingChecksSelectedChannelAgainstExpandedAutoGroups(t *tes
 	assert.True(t, AllowSelectedChannelByUserRouting(c, "auto", "video", channels[2]))
 	assert.Equal(t, "sd2", common.GetContextKeyString(c, constant.ContextKeyAutoGroup))
 
-	adminInfo := map[string]interface{}{}
-	AppendUserChannelRoutingAdminInfo(c, adminInfo)
-	routingInfo := adminInfo["user_channel_routing"].(map[string]interface{})
+	routingInfo := userChannelRoutingAdminInfoForTest(t, c)
 	assert.Equal(t, "sd2", routingInfo["using_group"])
 	assert.Equal(t, channels[2].Id, routingInfo["selected_channel_id"])
 }
@@ -339,9 +334,7 @@ func TestUserChannelRoutingMatchesExpandedAutoGroup(t *testing.T) {
 	assert.Equal(t, defaultChannel.Id, selected.Id)
 	assert.Equal(t, "default", selectedGroup)
 	assert.Equal(t, "default", common.GetContextKeyString(c, constant.ContextKeyAutoGroup))
-	adminInfo := map[string]interface{}{}
-	AppendUserChannelRoutingAdminInfo(c, adminInfo)
-	routingInfo := adminInfo["user_channel_routing"].(map[string]interface{})
+	routingInfo := userChannelRoutingAdminInfoForTest(t, c)
 	assert.Equal(t, "default", routingInfo["rule_id"])
 	assert.Equal(t, "default", routingInfo["using_group"])
 }
@@ -384,4 +377,13 @@ func TestUserChannelRoutingAutoGroupReturnsDatabaseErrors(t *testing.T) {
 	assert.Equal(t, "sd2", selectedGroup)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "database is closed")
+}
+
+func userChannelRoutingAdminInfoForTest(t *testing.T, c *gin.Context) map[string]interface{} {
+	t.Helper()
+	other := model.NewLogOther()
+	AppendUserChannelRoutingAdminInfo(c, other)
+	raw, ok := other.Admin("user_channel_routing")
+	require.True(t, ok)
+	return raw.(map[string]interface{})
 }

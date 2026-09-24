@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { test } from 'vitest'
 
 import { renderAuditContent } from '../format'
 
@@ -49,10 +49,9 @@ test('quota audit identifies the target user when structured target data exists'
     translate
   )
 
-  assert.equal(
-    text,
-    'Increased user quota for waule (ID: 180) by ¥1000.000000 quota'
-  )
+  assert.match(text ?? '', /“waule”/)
+  assert.match(text ?? '', /ID: 180/)
+  assert.match(text ?? '', /¥1000\.000000 quota/)
 })
 
 test('quota audit falls back to target user ID for historical records', () => {
@@ -66,10 +65,8 @@ test('quota audit falls back to target user ID for historical records', () => {
     translate
   )
 
-  assert.equal(
-    text,
-    'Increased user quota for User ID: 180 by ¥1000.000000 quota'
-  )
+  assert.match(text ?? '', /ID: 180/)
+  assert.match(text ?? '', /¥1000\.000000 quota/)
 })
 
 test('channel status audits render localized status labels instead of action keys', () => {

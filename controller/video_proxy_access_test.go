@@ -104,6 +104,7 @@ func TestVideoProxyScopesCrossUserAccessToAdminDashboardSessions(t *testing.T) {
 func TestWriteVideoDataURLDisablesSharedCaching(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/task/content", nil)
 	data := base64.StdEncoding.EncodeToString([]byte("video"))
 
 	require.NoError(t, writeVideoDataURL(ctx, "data:video/mp4;base64,"+data))

@@ -24,7 +24,7 @@ func GetGroups(c *gin.Context) {
 }
 
 func GetUserGroups(c *gin.Context) {
-	usableGroups := make(map[string]map[string]interface{})
+	usableGroups := make(map[string]map[string]any)
 	userGroup := ""
 	userId := c.GetInt("id")
 	userGroup, _ = model.GetUserGroup(userId, false)
@@ -37,14 +37,14 @@ func GetUserGroups(c *gin.Context) {
 			if override, ok := ratio_setting.GetUserGroupRatioOverride(userId, "", userGroup, groupName); ok {
 				ratio = override
 			}
-			usableGroups[groupName] = map[string]interface{}{
+			usableGroups[groupName] = map[string]any{
 				"ratio": ratio,
 				"desc":  desc,
 			}
 		}
 	}
 	if _, ok := userUsableGroups["auto"]; ok {
-		usableGroups["auto"] = map[string]interface{}{
+		usableGroups["auto"] = map[string]any{
 			"ratio": "自动",
 			"desc":  setting.GetUsableGroupDescription("auto"),
 		}

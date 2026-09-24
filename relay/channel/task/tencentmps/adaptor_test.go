@@ -246,24 +246,24 @@ const scheduleFinished = `{"Response":{"RequestId":"r","Status":"FINISH","TaskTy
 func TestParseTaskResultStates(t *testing.T) {
 	a := &TaskAdaptor{}
 
-	info, err := a.ParseTaskResult([]byte(`{"Response":{"RequestId":"r","Status":"WAITING","WorkflowTask":{"Status":"WAITING"}}}`))
+	info, err := a.parseTaskResult([]byte(`{"Response":{"RequestId":"r","Status":"WAITING","WorkflowTask":{"Status":"WAITING"}}}`))
 	if err != nil || info.Status != model.TaskStatusQueued {
 		t.Fatalf("waiting: %+v, %v", info, err)
 	}
 
-	info, err = a.ParseTaskResult([]byte(`{"Response":{"RequestId":"r","Status":"PROCESSING","WorkflowTask":{"Status":"PROCESSING",
+	info, err = a.parseTaskResult([]byte(`{"Response":{"RequestId":"r","Status":"PROCESSING","WorkflowTask":{"Status":"PROCESSING",
 	  "MediaProcessResultSet":[{"Type":"Transcode","TranscodeTask":{"Status":"PROCESSING","Progress":100}}]}}}`))
 	if err != nil || info.Status != model.TaskStatusInProgress || info.Progress != "99%" {
 		t.Fatalf("processing should cap progress at 99%%: %+v, %v", info, err)
 	}
 
-	info, err = a.ParseTaskResult([]byte(`{"Response":{"RequestId":"r","Status":"PROCESSING","WorkflowTask":{"Status":"PROCESSING",
+	info, err = a.parseTaskResult([]byte(`{"Response":{"RequestId":"r","Status":"PROCESSING","WorkflowTask":{"Status":"PROCESSING",
 	  "MediaProcessResultSet":[{"Type":"Transcode","TranscodeTask":{"Status":"PROCESSING","Progress":42}}]}}}`))
 	if err != nil || info.Progress != "42%" {
 		t.Fatalf("processing progress: %+v, %v", info, err)
 	}
 
-	info, err = a.ParseTaskResult([]byte(workflowFinished))
+	info, err = a.parseTaskResult([]byte(workflowFinished))
 	if err != nil || info.Status != model.TaskStatusSuccess || info.Progress != "100%" {
 		t.Fatalf("workflow success: %+v, %v", info, err)
 	}
@@ -271,29 +271,29 @@ func TestParseTaskResultStates(t *testing.T) {
 		t.Fatalf("workflow url = %q", info.Url)
 	}
 
-	info, err = a.ParseTaskResult([]byte(scheduleFinished))
+	info, err = a.parseTaskResult([]byte(scheduleFinished))
 	if err != nil || info.Status != model.TaskStatusSuccess || info.Url != "https://vod-trans.cos.ap-shanghai.myqcloud.com/for_online_user/b.mp4" {
 		t.Fatalf("schedule success: %+v, %v", info, err)
 	}
 
-	info, err = a.ParseTaskResult([]byte(`{"Response":{"RequestId":"r","Status":"FINISH","WorkflowTask":{"Status":"FINISH","ErrCode":0,"Message":"SUCCESS",
+	info, err = a.parseTaskResult([]byte(`{"Response":{"RequestId":"r","Status":"FINISH","WorkflowTask":{"Status":"FINISH","ErrCode":0,"Message":"SUCCESS",
 	  "MediaProcessResultSet":[{"Type":"Transcode","TranscodeTask":{"Status":"FAIL","ErrCode":40000,"ErrCodeExt":"InvalidInput","Message":"input video is corrupted"}}]}}}`))
 	if err != nil || info.Status != model.TaskStatusFailure || info.Reason != "input video is corrupted" {
 		t.Fatalf("workflow fail: %+v, %v", info, err)
 	}
 
-	info, err = a.ParseTaskResult([]byte(`{"Response":{"RequestId":"r","Status":"FINISH","WorkflowTask":{"Status":"FINISH","ErrCode":0,"Message":"SUCCESS",
+	info, err = a.parseTaskResult([]byte(`{"Response":{"RequestId":"r","Status":"FINISH","WorkflowTask":{"Status":"FINISH","ErrCode":0,"Message":"SUCCESS",
 	  "MediaProcessResultSet":[{"Type":"Transcode","TranscodeTask":{"Status":"SUCCESS","ErrCode":0,"Message":"SUCCESS","Output":{"Path":"/x.mp4"}}}]}}}`))
 	if err != nil || info.Status != model.TaskStatusFailure || !strings.Contains(info.Reason, "no output url") {
 		t.Fatalf("success without url must fail: %+v, %v", info, err)
 	}
 
-	info, err = a.ParseTaskResult([]byte(`{"Response":{"RequestId":"r","Error":{"Code":"ResourceNotFound.TaskNotFound","Message":"gone"}}}`))
+	info, err = a.parseTaskResult([]byte(`{"Response":{"RequestId":"r","Error":{"Code":"ResourceNotFound.TaskNotFound","Message":"gone"}}}`))
 	if err != nil || info.Status != model.TaskStatusFailure || !strings.Contains(info.Reason, "ResourceNotFound") {
 		t.Fatalf("permanent error: %+v, %v", info, err)
 	}
 
-	if _, err = a.ParseTaskResult([]byte(`{"Response":{"RequestId":"r","Error":{"Code":"AuthFailure.SignatureExpire","Message":"expired"}}}`)); err == nil {
+	if _, err = a.parseTaskResult([]byte(`{"Response":{"RequestId":"r","Error":{"Code":"AuthFailure.SignatureExpire","Message":"expired"}}}`)); err == nil {
 		t.Fatal("transient error must be returned for retry, not mark the task failed")
 	}
 }
@@ -394,7 +394,7 @@ func TestRealFinishedResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := &TaskAdaptor{}
-	info, err := a.ParseTaskResult(body)
+	info, err := a.parseTaskResult(body)
 	if err != nil {
 		t.Fatal(err)
 	}

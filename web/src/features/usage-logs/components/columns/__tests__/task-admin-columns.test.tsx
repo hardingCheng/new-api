@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import { after, test } from 'node:test'
+import { afterAll as after, test } from 'vitest'
 
 import { Window } from 'happy-dom'
 
@@ -97,7 +97,7 @@ const taskLog: TaskLog = {
 }
 
 function TaskColumnsHarness(props: { isAdmin: boolean }) {
-  const columns = useTaskLogsColumns(props.isAdmin)
+  const columns = useTaskLogsColumns(props.isAdmin, false)
   const table = useReactTable({
     columns,
     data: [taskLog],

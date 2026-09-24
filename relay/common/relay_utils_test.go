@@ -77,7 +77,7 @@ func TestValidateMultipartDirectNormalizesImageField(t *testing.T) {
 	storedReq, err := GetTaskRequest(context)
 	require.NoError(t, err)
 	require.Equal(t, []string{"https://example.com/first.png"}, storedReq.Images)
-	require.Equal(t, constant.TaskActionGenerate, info.Action)
+	require.Equal(t, constant.TaskActionImageToVideo, info.Action)
 }
 
 // TestTaskDurationBounds guards the billing invariant that user-supplied
@@ -143,7 +143,7 @@ func TestTaskDurationBounds(t *testing.T) {
 		})
 		t.Run(tt.name+" (basic task request)", func(t *testing.T) {
 			context, info := newContext(t, tt.body)
-			taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+			taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionImageToVideo)
 			if tt.wantErr {
 				require.NotNil(t, taskErr)
 				require.Equal(t, "invalid_seconds", taskErr.Code)
@@ -225,7 +225,7 @@ func TestReferenceVideoPolicyForUserModelAlias(t *testing.T) {
 				TaskRelayInfo:        &TaskRelayInfo{},
 			}
 
-			taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+			taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionImageToVideo)
 			if test.wantErrCode != "" {
 				require.NotNil(t, taskErr)
 				assert.Equal(t, test.wantErrCode, taskErr.Code)
@@ -287,7 +287,7 @@ func TestSeedanceDurationBoundsByVersion(t *testing.T) {
 				TaskRelayInfo:    &TaskRelayInfo{},
 			}
 
-			taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+			taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionImageToVideo)
 			require.Nil(t, taskErr)
 			storedRequest, err := GetTaskRequest(context)
 			require.NoError(t, err)
@@ -317,13 +317,13 @@ func TestSeedance25AutoDurationFeatureFlag(t *testing.T) {
 
 	setting.Seedance25AutoDurationEnabled = false
 	context, info := newContext("seedance-2.5-720p", "-1")
-	taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+	taskErr := ValidateBasicTaskRequest(context, info, constant.TaskActionImageToVideo)
 	require.NotNil(t, taskErr)
 	require.Equal(t, "invalid_seconds", taskErr.Code)
 
 	setting.Seedance25AutoDurationEnabled = true
 	context, info = newContext("seedance-2.5-720p", "-1")
-	taskErr = ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+	taskErr = ValidateBasicTaskRequest(context, info, constant.TaskActionImageToVideo)
 	require.Nil(t, taskErr)
 	storedRequest, err := GetTaskRequest(context)
 	require.NoError(t, err)
@@ -331,12 +331,12 @@ func TestSeedance25AutoDurationFeatureFlag(t *testing.T) {
 	assert.Equal(t, "-1", storedRequest.Seconds)
 
 	context, info = newContext("seedance-2.0-720p", "-1")
-	taskErr = ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+	taskErr = ValidateBasicTaskRequest(context, info, constant.TaskActionImageToVideo)
 	require.NotNil(t, taskErr)
 	require.Equal(t, "invalid_seconds", taskErr.Code)
 
 	context, info = newContext("sora-2", "-1")
-	taskErr = ValidateBasicTaskRequest(context, info, constant.TaskActionGenerate)
+	taskErr = ValidateBasicTaskRequest(context, info, constant.TaskActionImageToVideo)
 	require.NotNil(t, taskErr)
 	require.Equal(t, "invalid_seconds", taskErr.Code)
 }

@@ -25,15 +25,17 @@ import {
   useState,
 } from 'react'
 
-import { getCookie, setCookie, removeCookie } from '@/lib/cookies'
+import {
+  readThemePreference,
+  THEME_STORAGE_KEYS,
+  writeThemePreference,
+} from '@/lib/theme-storage'
 
 type Theme = 'dark' | 'light' | 'system'
 type ResolvedTheme = Exclude<Theme, 'system'>
 
-// 巴西站:prism 是 dark-only 设计语言,首访默认深色(用户切换后 cookie 记住)。
+// 巴西站:prism 是 dark-only 设计语言,首访默认深色。
 const DEFAULT_THEME = 'dark'
-const THEME_COOKIE_NAME = 'vite-ui-theme'
-const THEME_COOKIE_MAX_AGE = 60 * 60 * 24 * 365 // 1 year
 const THEMES = new Set<Theme>(['dark', 'light', 'system'])
 
 type ThemeProviderProps = {
@@ -65,22 +67,17 @@ function resolveTheme(_theme: Theme): ResolvedTheme {
   return 'dark'
 }
 
-function getStoredTheme(storageKey: string, fallback: Theme): Theme {
-  const storedTheme = getCookie(storageKey) as Theme | undefined
-  return storedTheme && THEMES.has(storedTheme) ? storedTheme : fallback
-}
-
 export function ThemeProvider({
   children,
   defaultTheme = DEFAULT_THEME,
-  storageKey = THEME_COOKIE_NAME,
+  storageKey = THEME_STORAGE_KEYS.mode,
   ...props
 }: ThemeProviderProps) {
   const [theme, _setTheme] = useState<Theme>(() =>
-    getStoredTheme(storageKey, defaultTheme)
+    readThemePreference(storageKey, THEMES, defaultTheme)
   )
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
-    resolveTheme(getStoredTheme(storageKey, defaultTheme))
+    resolveTheme(theme)
   )
 
   useEffect(() => {
@@ -88,7 +85,7 @@ export function ThemeProvider({
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
 
     const applyTheme = () => {
-      // 必须走 resolveTheme(站点锁 dark 的单一事实源)—— 此前内联重算导致存量 light cookie 绕过锁。
+      // 必须走 resolveTheme(站点锁 dark 的单一事实源)—— 此前内联重算导致存量 light 偏好绕过锁。
       const nextResolvedTheme = resolveTheme(theme)
       root.classList.remove('light', 'dark')
       root.classList.add(nextResolvedTheme)
@@ -104,14 +101,14 @@ export function ThemeProvider({
 
   const setTheme = useCallback(
     (theme: Theme) => {
-      setCookie(storageKey, theme, THEME_COOKIE_MAX_AGE)
+      writeThemePreference(storageKey, theme)
       _setTheme(theme)
     },
     [storageKey]
   )
 
   const resetTheme = useCallback(() => {
-    removeCookie(storageKey)
+    writeThemePreference(storageKey, null)
     _setTheme(defaultTheme)
   }, [defaultTheme, storageKey])
 

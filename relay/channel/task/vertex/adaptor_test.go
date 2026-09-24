@@ -29,7 +29,7 @@ func TestMetadataDurationRejectedByVertexBillingAndUpstreamRequest(t *testing.T)
 	}
 	adaptor := &TaskAdaptor{}
 
-	_, err := adaptor.EstimateBilling(ctx, info)
+	_, err := adaptor.EstimateBillingValidated(ctx, info)
 	require.ErrorContains(t, err, "durationSeconds must be between")
 
 	_, err = adaptor.BuildRequestBody(ctx, info)

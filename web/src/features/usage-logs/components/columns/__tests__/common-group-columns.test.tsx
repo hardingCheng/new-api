@@ -17,9 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import { after, test } from 'node:test'
 
 import { Window } from 'happy-dom'
+import { afterAll as after, test } from 'vitest'
 
 import type { UsageLog } from '../../../data/schema'
 
@@ -57,6 +57,8 @@ Object.defineProperty(document, 'compatMode', {
 
 const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
+const { QueryClient, QueryClientProvider } =
+  await import('@tanstack/react-query')
 const { createInstance } = await import('i18next')
 const { I18nextProvider, initReactI18next } = await import('react-i18next')
 const { flexRender, getCoreRowModel, useReactTable } =
@@ -101,7 +103,7 @@ function CommonColumnsHarness(props: {
   data?: UsageLog[]
   targetIds?: string[]
 }) {
-  const columns = useCommonLogsColumns(props.isAdmin)
+  const columns = useCommonLogsColumns(props.isAdmin, false)
   const table = useReactTable({
     columns,
     data: props.data ?? [log],
@@ -143,13 +145,21 @@ async function renderColumns(
   await act(async () => {
     root.render(
       <I18nextProvider i18n={i18n}>
-        <UsageLogsProvider>
-          <CommonColumnsHarness
-            isAdmin={isAdmin}
-            data={options.data}
-            targetIds={options.targetIds}
-          />
-        </UsageLogsProvider>
+        <QueryClientProvider
+          client={
+            new QueryClient({
+              defaultOptions: { queries: { enabled: false } },
+            })
+          }
+        >
+          <UsageLogsProvider>
+            <CommonColumnsHarness
+              isAdmin={isAdmin}
+              data={options.data}
+              targetIds={options.targetIds}
+            />
+          </UsageLogsProvider>
+        </QueryClientProvider>
       </I18nextProvider>
     )
   })

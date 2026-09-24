@@ -118,8 +118,8 @@ func setUserChannelRoutingLogInfo(c *gin.Context, decision userChannelRoutingDec
 	c.Set(ginKeyUserChannelRoutingLogInfo, info)
 }
 
-func AppendUserChannelRoutingAdminInfo(c *gin.Context, adminInfo map[string]interface{}) {
-	if c == nil || adminInfo == nil {
+func AppendUserChannelRoutingAdminInfo(c *gin.Context, other *model.LogOther) {
+	if c == nil || other == nil {
 		return
 	}
 	value, exists := c.Get(ginKeyUserChannelRoutingLogInfo)
@@ -137,7 +137,7 @@ func AppendUserChannelRoutingAdminInfo(c *gin.Context, adminInfo map[string]inte
 	if requestedModel := common.GetContextKeyString(c, constant.ContextKeyOriginalModel); requestedModel != "" {
 		logInfo["requested_model"] = requestedModel
 	}
-	adminInfo["user_channel_routing"] = logInfo
+	other.SetAdmin("user_channel_routing", logInfo)
 }
 
 func userChannelRoutingCandidateFilter(decision userChannelRoutingDecision) func(*model.Channel) bool {

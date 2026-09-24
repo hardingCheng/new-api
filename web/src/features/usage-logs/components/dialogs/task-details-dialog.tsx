@@ -25,7 +25,9 @@ import {
   Info,
   ReceiptText,
   Route,
+  ShieldCheck,
   Video,
+  Wrench,
 } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -46,8 +48,10 @@ import {
   taskActionMapper,
   taskStatusMapper,
 } from '../../lib/mappers'
+import { resolveTaskDetailAccess } from '../../lib/task-details'
 import { resolveTaskVideoPreviewUrl } from '../../lib/task-video-preview'
 import type { TaskLog } from '../../types'
+import { PluginAuthorLink } from '../plugin-author-link'
 import { TaskVideoPreview } from './video-preview-dialog'
 
 function DetailRow(props: {
@@ -134,6 +138,7 @@ function stringifyData(value: unknown): string {
 interface TaskDetailsDialogProps {
   log: TaskLog
   isAdmin: boolean
+  isRoot: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
 }
@@ -142,6 +147,9 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const { log, isAdmin } = props
+  const access = resolveTaskDetailAccess(log, isAdmin, props.isRoot)
+  const plugin = access.plugin
+  const runtime = access.runtime
 
   const duration = formatDuration(log.submit_time, log.finish_time, 'seconds')
   const videoUrl = resolveTaskVideoPreviewUrl(log)
@@ -337,8 +345,80 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
                   mono
                 />
               ) : null}
+              {log.admin_info?.request_id ? (
+                <DetailRow
+                  label={t('Request ID')}
+                  value={log.admin_info.request_id}
+                  mono
+                />
+              ) : null}
+              {log.admin_info?.request_path ? (
+                <DetailRow
+                  label={t('Request Path')}
+                  value={log.admin_info.request_path}
+                  mono
+                />
+              ) : null}
             </DetailSection>
+
+            {plugin ? (
+              <DetailSection
+                icon={<ShieldCheck />}
+                iconTone='info'
+                label={t('Task Plugin')}
+              >
+                <DetailRow
+                  label={t('Task Plugin')}
+                  value={plugin.name || plugin.key}
+                />
+                <DetailRow label={t('Plugin key')} value={plugin.key} mono />
+                <DetailRow
+                  label={t('Version')}
+                  value={plugin.version || '-'}
+                  mono
+                />
+                {plugin.author ? (
+                  <DetailRow
+                    label={t('Plugin author')}
+                    value={<PluginAuthorLink author={plugin.author} showUrl />}
+                  />
+                ) : null}
+              </DetailSection>
+            ) : null}
           </>
+        ) : null}
+
+        {props.isRoot && log.root_info ? (
+          <DetailSection
+            icon={<Wrench />}
+            iconTone='warning'
+            label={t('Root Diagnostics')}
+          >
+            {runtime ? (
+              <>
+                <DetailRow
+                  label={t('API Version')}
+                  value={String(runtime.api_version)}
+                  mono
+                />
+                <DetailRow
+                  label={t('Plugin Generation')}
+                  value={String(runtime.generation)}
+                  mono
+                />
+              </>
+            ) : null}
+            {access.upstreamTaskId ? (
+              <DetailRow
+                label={t('Upstream Task ID')}
+                value={access.upstreamTaskId}
+                mono
+              />
+            ) : null}
+            {access.nodeName ? (
+              <DetailRow label={t('Node Name')} value={access.nodeName} mono />
+            ) : null}
+          </DetailSection>
         ) : null}
 
         {log.fail_reason ? (

@@ -27,6 +27,7 @@ import (
 // without making ffprobe a hard runtime dependency.
 func GetAudioDuration(ctx context.Context, f io.ReadSeeker, ext string) (duration float64, err error) {
 	SysLog(fmt.Sprintf("GetAudioDuration: ext=%s", ext))
+	ext = strings.ToLower(ext)
 	// 根据文件扩展名选择解析器
 	switch ext {
 	case ".mp3":

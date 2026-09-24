@@ -40,7 +40,7 @@ func TestCandidateFilterRunsBeforePrioritySelection(t *testing.T) {
 				InitChannelCache()
 			}
 
-			selected, exhausted, err := GetRandomSatisfiedChannelWithFilters("sd2", "video", 0, "", func(channel *Channel) bool {
+			selected, exhausted, err := GetRandomSatisfiedChannelWithFilters("sd2", "video", 0, nil, func(channel *Channel) bool {
 				return channel.Id == allowed.Id
 			}, nil)
 			require.NoError(t, err)
@@ -74,18 +74,18 @@ func TestCandidateFilterDoesNotMoveDisabledPriorityBelowEnabledPriority(t *testi
 			candidateFilter := func(channel *Channel) bool {
 				return channel.Id == disabled.Id || channel.Id == enabled.Id
 			}
-			selected, exhausted, err := GetRandomSatisfiedChannelWithFilters("sd2", "video", 0, "", candidateFilter, nil)
+			selected, exhausted, err := GetRandomSatisfiedChannelWithFilters("sd2", "video", 0, nil, candidateFilter, nil)
 			require.NoError(t, err)
 			assert.False(t, exhausted)
 			assert.Nil(t, selected)
 
-			selected, exhausted, err = GetRandomSatisfiedChannelWithFilters("sd2", "video", 1, "", candidateFilter, nil)
+			selected, exhausted, err = GetRandomSatisfiedChannelWithFilters("sd2", "video", 1, nil, candidateFilter, nil)
 			require.NoError(t, err)
 			assert.False(t, exhausted)
 			require.NotNil(t, selected)
 			assert.Equal(t, enabled.Id, selected.Id)
 
-			selected, exhausted, err = GetRandomSatisfiedChannelWithFilters("sd2", "video", 2, "", candidateFilter, nil)
+			selected, exhausted, err = GetRandomSatisfiedChannelWithFilters("sd2", "video", 2, nil, candidateFilter, nil)
 			require.NoError(t, err)
 			assert.True(t, exhausted)
 			assert.Nil(t, selected)
@@ -110,12 +110,12 @@ func TestLegacyMemorySelectionKeepsEmptyPriorityError(t *testing.T) {
 		channelsIDM[channel.Id].Status = common.ChannelStatusAutoDisabled
 	}
 
-	selected, err := GetRandomSatisfiedChannel("sd2", "video", 0, "")
+	selected, err := GetRandomSatisfiedChannel("sd2", "video", 0, nil)
 	assert.Nil(t, selected)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no channel found")
 
-	selected, exhausted, err := GetRandomSatisfiedChannelWithFilters("sd2", "video", 0, "", func(channel *Channel) bool {
+	selected, exhausted, err := GetRandomSatisfiedChannelWithFilters("sd2", "video", 0, nil, func(channel *Channel) bool {
 		return channel.Id == disabledChannels[0].Id || channel.Id == disabledChannels[1].Id
 	}, nil)
 	require.NoError(t, err)

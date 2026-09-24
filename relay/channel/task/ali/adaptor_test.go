@@ -229,7 +229,7 @@ func TestAliMetadataBillingParametersRejectBillingAndUpstreamRequest(t *testing.
 			adaptor := &TaskAdaptor{}
 			ctx := newAliTaskContext(req)
 
-			_, err := adaptor.EstimateBilling(ctx, testRelayInfo())
+			_, err := adaptor.EstimateBillingValidated(ctx, testRelayInfo())
 			require.ErrorContains(t, err, test.errorText)
 
 			_, err = adaptor.BuildRequestBody(ctx, testRelayInfo())
@@ -252,7 +252,7 @@ func TestAliMetadataBillingParametersMatchUpstreamRequest(t *testing.T) {
 	adaptor := &TaskAdaptor{}
 	ctx := newAliTaskContext(req)
 
-	ratios, err := adaptor.EstimateBilling(ctx, testRelayInfo())
+	ratios, err := adaptor.EstimateBillingValidated(ctx, testRelayInfo())
 	require.NoError(t, err)
 	assert.Equal(t, 10.0, ratios["seconds"])
 	assert.Equal(t, 1.0, ratios["resolution-1080P"])

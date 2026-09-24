@@ -72,9 +72,9 @@ func TestGenerateTextOtherInfoRecordsEffortRatio(t *testing.T) {
 
 	t.Run("no surcharge → no field", func(t *testing.T) {
 		other := GenerateTextOtherInfo(ctx, newInfo(base, "max"), 1, 1, 1, 0, 0, -1, -1)
-		_, ok := other["effort_ratio"]
+		_, ok := other.Snapshot()["effort_ratio"]
 		require.False(t, ok)
-		require.Equal(t, "max", other["reasoning_effort"])
+		require.Equal(t, "max", other.Snapshot()["reasoning_effort"])
 	})
 
 	surcharged := base
@@ -82,13 +82,13 @@ func TestGenerateTextOtherInfoRecordsEffortRatio(t *testing.T) {
 
 	t.Run("surcharge is logged next to the effort", func(t *testing.T) {
 		other := GenerateTextOtherInfo(ctx, newInfo(surcharged, "max"), 1, 1, 1, 0, 0, -1, -1)
-		require.Equal(t, 2.0, other["effort_ratio"])
-		require.Equal(t, "max", other["reasoning_effort"])
+		require.Equal(t, 2.0, other.Snapshot()["effort_ratio"])
+		require.Equal(t, "max", other.Snapshot()["reasoning_effort"])
 	})
 
 	t.Run("pass-through blanked effort is backfilled from the request", func(t *testing.T) {
 		other := GenerateTextOtherInfo(ctx, newInfo(surcharged, ""), 1, 1, 1, 0, 0, -1, -1)
-		require.Equal(t, 2.0, other["effort_ratio"])
-		require.Equal(t, "max", other["reasoning_effort"])
+		require.Equal(t, 2.0, other.Snapshot()["effort_ratio"])
+		require.Equal(t, "max", other.Snapshot()["reasoning_effort"])
 	})
 }
