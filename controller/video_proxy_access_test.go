@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -112,4 +113,24 @@ func TestWriteVideoDataURLDisablesSharedCaching(t *testing.T) {
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.Equal(t, "private, no-store", recorder.Header().Get("Cache-Control"))
 	assert.Equal(t, "video/mp4", recorder.Header().Get("Content-Type"))
+}
+
+// 自研 Go 适配器的 Sora 型任务没有直连结果地址，取片要用渠道密钥拉上游 /v1/videos/{上游 ID}/content。
+func TestLegacyVideoContentRequestUsesUpstreamContentForSoraChannels(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	common.MemoryCacheEnabled = false
+	baseURL := "https://upstream.example/"
+	channel := &model.Channel{Name: "sora", Type: constant.ChannelTypeSora, Key: "sk-upstream", BaseURL: &baseURL, Status: common.ChannelStatusEnabled}
+	require.NoError(t, db.Create(channel).Error)
+	task := &model.Task{TaskID: "task_public", ChannelId: channel.Id, PrivateData: model.TaskPrivateData{UpstreamTaskID: "vid_upstream"}}
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/task_public/content", nil)
+	descriptor, err := legacyVideoContentRequest(ctx, task)
+
+	require.NoError(t, err)
+	require.NotNil(t, descriptor)
+	assert.Equal(t, "https://upstream.example/v1/videos/vid_upstream/content", descriptor.URL)
+	assert.Equal(t, "Bearer sk-upstream", descriptor.Headers["Authorization"])
+	assert.False(t, descriptor.Credentialless)
 }

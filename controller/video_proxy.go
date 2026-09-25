@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
@@ -108,6 +109,15 @@ func VideoProxy(c *gin.Context) {
 			}
 		} else {
 			logger.LogWarn(c.Request.Context(), fmt.Sprintf("Failed to project plugin video for task %s", taskID))
+		}
+	}
+	if descriptor == nil && !taskHasPluginExecution(task) {
+		var resolveErr error
+		descriptor, resolveErr = legacyVideoContentRequest(c, task)
+		if resolveErr != nil {
+			logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to resolve video content for task %s: %s", taskID, resolveErr.Error()))
+			videoProxyError(c, http.StatusBadGateway, "server_error", "Failed to fetch video content")
+			return
 		}
 	}
 	if descriptor == nil {
@@ -634,4 +644,48 @@ func getTaskForVideoProxy(c *gin.Context, taskID string) (*model.Task, bool, err
 		}
 	}
 	return model.GetByTaskId(userID, taskID)
+}
+
+// legacyVideoContentRequest 为自研 Go 适配器（非插件）任务构造取片请求：
+// Gemini/Vertex 需按平台解析视频地址，OpenAI/Sora 型上游用渠道密钥拉取 /v1/videos/{id}/content。
+// 其余平台返回 nil，交给结果地址兜底。
+func legacyVideoContentRequest(c *gin.Context, task *model.Task) (*relaychannel.TaskContentRequest, error) {
+	channel, err := model.CacheGetChannel(task.ChannelId)
+	if err != nil {
+		return nil, err
+	}
+	method := c.Request.Method
+	switch channel.Type {
+	case constant.ChannelTypeGemini:
+		apiKey := task.PrivateData.Key
+		if apiKey == "" {
+			return nil, fmt.Errorf("api key not stored for gemini task")
+		}
+		videoURL, err := getGeminiVideoURL(channel, task, apiKey)
+		if err != nil {
+			return nil, err
+		}
+		return &relaychannel.TaskContentRequest{URL: videoURL, Method: method, Headers: map[string]string{"x-goog-api-key": apiKey}}, nil
+	case constant.ChannelTypeVertexAi:
+		videoURL, err := getVertexVideoURL(channel, task)
+		if err != nil {
+			return nil, err
+		}
+		return &relaychannel.TaskContentRequest{URL: videoURL, Method: method, Credentialless: !strings.HasPrefix(videoURL, "data:")}, nil
+	case constant.ChannelTypeOpenAI, constant.ChannelTypeSora:
+		baseURL := channel.GetBaseURL()
+		if baseURL == "" {
+			baseURL = "https://api.openai.com"
+		}
+		upstreamID := task.GetUpstreamTaskID()
+		if upstreamID == "" {
+			return nil, fmt.Errorf("upstream task id is missing")
+		}
+		return &relaychannel.TaskContentRequest{
+			URL:     fmt.Sprintf("%s/v1/videos/%s/content", strings.TrimRight(baseURL, "/"), upstreamID),
+			Method:  method,
+			Headers: map[string]string{"Authorization": "Bearer " + channel.Key},
+		}, nil
+	}
+	return nil, nil
 }
