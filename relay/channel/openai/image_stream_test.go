@@ -547,7 +547,8 @@ func TestOpenaiImageStreamHandlerWrapsNonStandardDataShapes(t *testing.T) {
 
 // TestOpenaiImageHandlersReturnJSONError covers JSON error responses for both
 // entry points: the non-streaming handler and the stream handler's non-SSE
-// fallback. Neither must leak the error body to the client.
+// fallback. Neither must leak the error body to the client, and an error body
+// delivered with an upstream 2xx must surface as 502, not as a success.
 func TestOpenaiImageHandlersReturnJSONError(t *testing.T) {
 	oldMode := gin.Mode()
 	gin.SetMode(gin.TestMode)
@@ -561,7 +562,7 @@ func TestOpenaiImageHandlersReturnJSONError(t *testing.T) {
 		usage, err := OpenaiImageHandler(c, info, resp)
 		require.Nil(t, usage)
 		require.NotNil(t, err)
-		require.Equal(t, http.StatusOK, err.StatusCode)
+		require.Equal(t, http.StatusBadGateway, err.StatusCode)
 		oaiError := err.ToOpenAIError()
 		require.Equal(t, "content moderation failed", oaiError.Message)
 		require.Equal(t, "upstream_error", oaiError.Type)
@@ -575,7 +576,7 @@ func TestOpenaiImageHandlersReturnJSONError(t *testing.T) {
 		usage, err := OpenaiImageStreamHandler(c, info, resp)
 		require.Nil(t, usage)
 		require.NotNil(t, err)
-		require.Equal(t, http.StatusOK, err.StatusCode)
+		require.Equal(t, http.StatusBadGateway, err.StatusCode)
 		require.Equal(t, "content moderation failed", err.ToOpenAIError().Message)
 		require.Empty(t, recorder.Body.String())
 	})
