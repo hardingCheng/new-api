@@ -526,6 +526,10 @@ func isReferenceVideoCandidate(itemType string, role string, rawURL string) bool
 // overflow quota calculation into a negative charge.
 const MaxTaskDurationSeconds = 3600
 
+// TaskPropertyReferenceVideoSecondsKey 是只写入任务属性、不参与按秒计价的参考视频秒数
+// （gin 上下文键）；按 token 结算的渠道在上游不回传 token 时用它估算。
+const TaskPropertyReferenceVideoSecondsKey = "task_property_reference_video_seconds"
+
 func ValidateTaskDurationBounds(req TaskSubmitReq) *dto.TaskError {
 	if req.Duration < 0 || req.Duration > MaxTaskDurationSeconds {
 		return createTaskError(fmt.Errorf("seconds must be between 1 and %d", MaxTaskDurationSeconds), "invalid_seconds", http.StatusBadRequest, true)

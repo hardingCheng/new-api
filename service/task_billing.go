@@ -138,7 +138,12 @@ func EnsureTaskSubmissionRecord(c *gin.Context, info *relaycommon.RelayInfo, pla
 	task.PrivateData.NodeName = common.NodeName
 	task.PrivateData.BillingContext = taskBillingContextFromRelayInfo(info)
 	if c != nil {
-		if referenceSeconds := c.GetInt("reference_video_seconds"); referenceSeconds > 0 {
+		referenceSeconds := c.GetInt("reference_video_seconds")
+		if referenceSeconds <= 0 {
+			// 只记录、不参与按秒计价的参考视频秒数（按 token 结算时估算用）
+			referenceSeconds = c.GetInt(relaycommon.TaskPropertyReferenceVideoSecondsKey)
+		}
+		if referenceSeconds > 0 {
 			task.Properties.HasReferenceVideo = true
 			task.Properties.ReferenceVideoSeconds = referenceSeconds
 		}
@@ -230,7 +235,11 @@ func CompleteTaskSubmissionRecordWith(c *gin.Context, info *relaycommon.RelayInf
 		task.BillingStatus = model.TaskBillingStatusSettlementPending
 	}
 	if c != nil {
-		if referenceSeconds := c.GetInt("reference_video_seconds"); referenceSeconds > 0 {
+		referenceSeconds := c.GetInt("reference_video_seconds")
+		if referenceSeconds <= 0 {
+			referenceSeconds = c.GetInt(relaycommon.TaskPropertyReferenceVideoSecondsKey)
+		}
+		if referenceSeconds > 0 {
 			task.Properties.HasReferenceVideo = true
 			task.Properties.ReferenceVideoSeconds = referenceSeconds
 		}

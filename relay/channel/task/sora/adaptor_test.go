@@ -358,13 +358,13 @@ func TestSeedance25TokenPricedBillingRatios(t *testing.T) {
 		{
 			name:     "reference video in images list gets the 720p video-input discount",
 			model:    "seedance-2.5-720p",
-			body:     `{"model":"seedance-2.5-720p","prompt":"test","seconds":"5","images":[{"url":"https://example.com/a.png","type":"image"},{"url":"https://example.com/v.mp4","type":"video"}]}`,
+			body:     `{"model":"seedance-2.5-720p","prompt":"test","seconds":"5","images":[{"url":"https://example.com/a.png","type":"image"},{"url":"http://127.0.0.1:1/v.mp4","type":"video"}]}`,
 			expected: map[string]float64{"video_input": 42.0 / 70.0},
 		},
 		{
 			name:     "reference video in content gets the 1080p video-input discount",
 			model:    "seedance-2.5-1080p",
-			body:     `{"model":"seedance-2.5-1080p","prompt":"test","seconds":"5","content":[{"type":"video_url","video_url":{"url":"https://example.com/v.mp4"}}]}`,
+			body:     `{"model":"seedance-2.5-1080p","prompt":"test","seconds":"5","content":[{"type":"video_url","video_url":{"url":"http://127.0.0.1:1/v.mp4"}}]}`,
 			expected: map[string]float64{"video_input": 46.0 / 77.0},
 		},
 		{
@@ -425,6 +425,14 @@ func TestSeedance25BuildRequestBodySendsArkContent(t *testing.T) {
 			},
 		},
 		{
+			name: "person image is marked for review",
+			body: `{"model":"seedance-2.5-720p","prompt":"test","seconds":"5","images":[{"url":"https://example.com/p.png","type":"person"}]}`,
+			expected: []any{
+				map[string]any{"type": "text", "text": "test"},
+				map[string]any{"type": "image_url", "image_url": map[string]any{"url": "https://example.com/p.png"}, "role": "reference_image", "subject_type": "person"},
+			},
+		},
+		{
 			name: "client content passes through unchanged",
 			body: `{"model":"seedance-2.5-720p","prompt":"keep","seconds":"5","content":[{"type":"text","text":"keep"}]}`,
 			expected: []any{
@@ -461,10 +469,11 @@ func TestSeedance25BuildRequestBodySendsArkContent(t *testing.T) {
 
 func TestSeedance25ParseTaskResultSettlementTokens(t *testing.T) {
 	tests := []struct {
-		name     string
-		model    string
-		body     string
-		expected int
+		name             string
+		model            string
+		body             string
+		referenceSeconds int
+		expected         int
 	}{
 		{
 			name:     "upstream total tokens are used",
@@ -472,11 +481,31 @@ func TestSeedance25ParseTaskResultSettlementTokens(t *testing.T) {
 			body:     `{"id":"video_1","status":"completed","seconds":"5","size":"1280x720","usage":{"completion_tokens":108000,"total_tokens":194400}}`,
 			expected: 194400,
 		},
+		// 以下估算值与火山实测账单一致：720p 5 秒 108,900；720p 5 秒 + 10 秒参考 324,900；480p 10 秒 96,475。
 		{
-			name:     "missing usage falls back to the official formula",
+			name:     "missing usage estimates 720p text to video like upstream",
 			model:    "seedance-2.5-720p",
-			body:     `{"id":"video_1","status":"completed","seconds":"5","size":"1280x720"}`,
-			expected: 108000,
+			body:     `{"id":"video_1","status":"completed","seconds":"5","size":null}`,
+			expected: 108900,
+		},
+		{
+			name:             "estimate includes reference video seconds",
+			model:            "seedance-2.5-720p",
+			body:             `{"id":"video_1","status":"completed","seconds":"5"}`,
+			referenceSeconds: 10,
+			expected:         324900,
+		},
+		{
+			name:     "estimate uses the 480p pixel count",
+			model:    "seedance-2.5-480p",
+			body:     `{"id":"video_1","status":"completed","seconds":"10"}`,
+			expected: 96475,
+		},
+		{
+			name:     "missing seconds leaves the pre-consumed charge",
+			model:    "seedance-2.5-720p",
+			body:     `{"id":"video_1","status":"completed"}`,
+			expected: 0,
 		},
 		{
 			name:     "oversized upstream tokens saturate at int32",
@@ -502,6 +531,7 @@ func TestSeedance25ParseTaskResultSettlementTokens(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			task := &model.Task{}
 			task.Properties.OriginModelName = test.model
+			task.Properties.ReferenceVideoSeconds = test.referenceSeconds
 			result, err := (&TaskAdaptor{}).ParseTaskResult(task, nil, []byte(test.body))
 			require.NoError(t, err)
 			assert.Equal(t, test.expected, result.TotalTokens)

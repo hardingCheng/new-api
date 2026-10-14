@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -119,11 +120,16 @@ func seedance25Content(bodyMap map[string]any) []any {
 		if role == "" {
 			role = "reference_" + kind
 		}
-		content = append(content, map[string]any{
+		item := map[string]any{
 			"type":        kind + "_url",
 			kind + "_url": map[string]any{"url": url},
 			"role":        role,
-		})
+		}
+		// 真人图交给中转先过白再生成
+		if mediaType == "person" {
+			item["subject_type"] = "person"
+		}
+		content = append(content, item)
 	}
 	appendValue := func(raw any) {
 		switch v := raw.(type) {
@@ -149,19 +155,35 @@ func seedance25Content(bodyMap map[string]any) []any {
 	return content
 }
 
-// seedance25HasReferenceVideo 判断请求是否带参考视频：火山格式 content[] 的 video_url，
-// 或 images 列表里 type 为 video 的条目。
-func seedance25HasReferenceVideo(req relaycommon.TaskSubmitReq, body []byte) bool {
-	if len(relaycommon.ExtractReferenceVideoURLs(req)) > 0 {
-		return true
+// seedance25ReferenceVideoURLs 取出请求里的参考视频：火山格式 content[] 的 video_url，
+// 以及 images 列表里 type 为 video 的条目。
+func seedance25ReferenceVideoURLs(req relaycommon.TaskSubmitReq, body []byte) []string {
+	urls := relaycommon.ExtractReferenceVideoURLs(req)
+	for _, item := range gjson.GetBytes(body, `images.#(type=="video")#.url`).Array() {
+		if url := strings.TrimSpace(item.String()); url != "" && !slices.Contains(urls, url) {
+			urls = append(urls, url)
+		}
 	}
-	return gjson.GetBytes(body, `images.#(type=="video").url`).String() != ""
+	return urls
 }
 
-// seedance25SettlementTokens 返回 Seedance 2.5 任务用于结算的 token 数：
-// 优先上游 total_tokens（含参考视频输入），缺失时按官方公式
-// 输出秒数 × 宽 × 高 × 24 / 1024 估算；数值均饱和到 int32 范围内。
-func seedance25SettlementTokens(resTask responseTask) int {
+// seedance25OutputPixels 是各分辨率档输出画面的像素数（各画幅比例像素数基本一致，按 16:9 计）。
+func seedance25OutputPixels(modelName string) float64 {
+	name := strings.ToLower(modelName)
+	switch {
+	case strings.Contains(name, "1080p"):
+		return 1920 * 1080
+	case strings.Contains(name, "480p"):
+		return 854 * 480
+	default:
+		return 1280 * 720
+	}
+}
+
+// seedance25SettlementTokens 返回 Seedance 2.5 任务用于结算的 token 数：优先上游
+// total_tokens；上游不回传时（如 LibLib 线路）按官方计费公式估算：
+// (24 × (输出秒数 + 参考视频秒数) + 1) × 输出像素 / 1024。结果饱和到 int32 范围内。
+func seedance25SettlementTokens(resTask responseTask, modelName string, referenceSeconds int) int {
 	if resTask.Usage != nil {
 		tokens := resTask.Usage.TotalTokens
 		if tokens <= 0 {
@@ -175,16 +197,9 @@ func seedance25SettlementTokens(resTask responseTask) int {
 	if err != nil || seconds <= 0 || seconds > relaycommon.MaxTaskDurationSeconds {
 		return 0
 	}
-	w, h, ok := strings.Cut(strings.ToLower(strings.TrimSpace(resTask.Size)), "x")
-	if !ok {
-		return 0
-	}
-	width, errW := strconv.Atoi(strings.TrimSpace(w))
-	height, errH := strconv.Atoi(strings.TrimSpace(h))
-	if errW != nil || errH != nil || width <= 0 || height <= 0 || width > 8192 || height > 8192 {
-		return 0
-	}
-	return int(min(seconds*float64(width)*float64(height)*24/1024, math.MaxInt32))
+	referenceSeconds = min(max(referenceSeconds, 0), relaycommon.MaxTaskDurationSeconds)
+	frames := 24*(seconds+float64(referenceSeconds)) + 1
+	return int(min(frames*seedance25OutputPixels(modelName)/1024, math.MaxInt32))
 }
 
 // ============================
@@ -251,8 +266,13 @@ func (a *TaskAdaptor) EstimateBillingValidated(c *gin.Context, info *relaycommon
 		if storage, err := common.GetBodyStorage(c); err == nil {
 			body, _ = storage.Bytes()
 		}
-		if !seedance25HasReferenceVideo(req, body) {
+		videoURLs := seedance25ReferenceVideoURLs(req, body)
+		if len(videoURLs) == 0 {
 			return nil, nil
+		}
+		// 参考视频秒数只用于上游不回传 token 时的估算，读不到时按 0 计、不拦请求。
+		if referenceSeconds, err := service.SumReferenceVideoDurationSeconds(c, videoURLs); err == nil && referenceSeconds > 0 {
+			c.Set(relaycommon.TaskPropertyReferenceVideoSecondsKey, referenceSeconds)
 		}
 		is1080p := strings.Contains(strings.ToLower(info.OriginModelName+" "+info.UpstreamModelName+" "+req.Model), "1080p")
 		return map[string]float64{"video_input": seedance25VideoInputRatio(is1080p)}, nil
@@ -554,7 +574,8 @@ func (a *TaskAdaptor) ParseTaskResult(task *model.Task, _ *http.Response, respBo
 		return taskResult, nil
 	}
 	// 只有按倍率定价的任务会用 token 重算；按秒定价的快照会忽略它。
-	taskResult.TotalTokens = seedance25SettlementTokens(resTask)
+	modelName := task.Properties.OriginModelName + " " + task.Properties.UpstreamModelName
+	taskResult.TotalTokens = seedance25SettlementTokens(resTask, modelName, task.Properties.ReferenceVideoSeconds)
 	return taskResult, nil
 }
 
