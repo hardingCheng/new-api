@@ -1088,6 +1088,15 @@ func stringListFromRawJSON(raw json.RawMessage) ([]string, error) {
 	if err := common.Unmarshal(raw, &multiple); err == nil {
 		return normalizeStringList(multiple), nil
 	}
+	// 也接受 [{url, type}] 形式（视频中转的统一素材列表），只取 url。
+	var objects []TaskMediaURL
+	if err := common.Unmarshal(raw, &objects); err == nil {
+		urls := make([]string, 0, len(objects))
+		for _, item := range objects {
+			urls = append(urls, item.URL)
+		}
+		return normalizeStringList(urls), nil
+	}
 	return nil, fmt.Errorf("must be a string or string array")
 }
 

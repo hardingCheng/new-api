@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -82,6 +83,87 @@ type responseTask struct {
 		Message string `json:"message"`
 		Code    string `json:"code"`
 	} `json:"error,omitempty"`
+	// 上游原样带回的火山方舟用量（Seedance 2.x 按 token 计费）。
+	Usage *struct {
+		CompletionTokens int64 `json:"completion_tokens"`
+		TotalTokens      int64 `json:"total_tokens"`
+	} `json:"usage,omitempty"`
+}
+
+// seedance25VideoInputRatio 是 Seedance 2.5 含参考视频输入时相对基准单价的倍率
+// （官方 480p/720p 70→42 元/百万 token，1080p 77→46 元/百万 token）。
+func seedance25VideoInputRatio(is1080p bool) float64 {
+	if is1080p {
+		return 46.0 / 77.0
+	}
+	return 42.0 / 70.0
+}
+
+// seedance25MediaItems 把 images（字符串或 {url,type} 对象）、image、input_reference
+// 归并成 [{url,type}] 列表；字符串一律视为图片，对象原样保留。
+func seedance25MediaItems(bodyMap map[string]any) []any {
+	items := make([]any, 0)
+	appendValue := func(raw any) {
+		switch v := raw.(type) {
+		case string:
+			if url := strings.TrimSpace(v); url != "" {
+				items = append(items, map[string]any{"url": url, "type": "image"})
+			}
+		case map[string]any:
+			if url, _ := v["url"].(string); strings.TrimSpace(url) != "" {
+				items = append(items, v)
+			}
+		}
+	}
+	for _, key := range []string{"images", "image", "input_reference"} {
+		switch v := bodyMap[key].(type) {
+		case []any:
+			for _, raw := range v {
+				appendValue(raw)
+			}
+		default:
+			appendValue(v)
+		}
+	}
+	return items
+}
+
+// seedance25HasReferenceVideo 判断请求是否带参考视频：火山格式 content[] 的 video_url，
+// 或 images 列表里 type 为 video 的条目。
+func seedance25HasReferenceVideo(req relaycommon.TaskSubmitReq, body []byte) bool {
+	if len(relaycommon.ExtractReferenceVideoURLs(req)) > 0 {
+		return true
+	}
+	return gjson.GetBytes(body, `images.#(type=="video").url`).String() != ""
+}
+
+// seedance25SettlementTokens 返回 Seedance 2.5 任务用于结算的 token 数：
+// 优先上游 total_tokens（含参考视频输入），缺失时按官方公式
+// 输出秒数 × 宽 × 高 × 24 / 1024 估算；数值均饱和到 int32 范围内。
+func seedance25SettlementTokens(resTask responseTask) int {
+	if resTask.Usage != nil {
+		tokens := resTask.Usage.TotalTokens
+		if tokens <= 0 {
+			tokens = resTask.Usage.CompletionTokens
+		}
+		if tokens > 0 {
+			return int(min(tokens, math.MaxInt32))
+		}
+	}
+	seconds, err := strconv.ParseFloat(strings.TrimSpace(string(resTask.Seconds)), 64)
+	if err != nil || seconds <= 0 || seconds > relaycommon.MaxTaskDurationSeconds {
+		return 0
+	}
+	w, h, ok := strings.Cut(strings.ToLower(strings.TrimSpace(resTask.Size)), "x")
+	if !ok {
+		return 0
+	}
+	width, errW := strconv.Atoi(strings.TrimSpace(w))
+	height, errH := strconv.Atoi(strings.TrimSpace(h))
+	if errW != nil || errH != nil || width <= 0 || height <= 0 || width > 8192 || height > 8192 {
+		return 0
+	}
+	return int(min(seconds*float64(width)*float64(height)*24/1024, math.MaxInt32))
 }
 
 // ============================
@@ -139,6 +221,20 @@ func (a *TaskAdaptor) EstimateBillingValidated(c *gin.Context, info *relaycommon
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil, err
+	}
+
+	// Seedance 2.5 按倍率（token）定价时，完成后按上游 total_tokens 重算，
+	// 重算会连乘全部 OtherRatios，所以这里不能放 seconds，只放参考视频折扣。
+	if relaycommon.IsSeedance25RelayModel(info, req.Model) && !info.PriceData.UsePrice {
+		var body []byte
+		if storage, err := common.GetBodyStorage(c); err == nil {
+			body, _ = storage.Bytes()
+		}
+		if !seedance25HasReferenceVideo(req, body) {
+			return nil, nil
+		}
+		is1080p := strings.Contains(strings.ToLower(info.OriginModelName+" "+info.UpstreamModelName+" "+req.Model), "1080p")
+		return map[string]float64{"video_input": seedance25VideoInputRatio(is1080p)}, nil
 	}
 
 	seconds := relaycommon.EffectiveTaskDuration(req)
@@ -226,7 +322,15 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 			// seedance 系上游只认 image 字段（字符串或数组），images / input_reference 会被静默忽略：
 			// 归并成 image，避免客户按 images 传参后参考图被丢弃、却照常按秒计费。
 			// 仅限 seedance —— 同一适配器还服务其他视频渠道，它们各有自己的参考图字段协议。
-			if req, err := relaycommon.GetTaskRequest(c); err == nil && relaycommon.IsSeedanceRelayModel(info, req.Model) {
+			// Seedance 2.5 的上游是自有视频中转，它认 images:[{url,type}] 和火山格式 content[]，
+			// image 只收单张字符串：把参考图整理成 images 列表，保留客户写好的 type。
+			if req, err := relaycommon.GetTaskRequest(c); err == nil && relaycommon.IsSeedance25RelayModel(info, req.Model) {
+				if items := seedance25MediaItems(bodyMap); len(items) > 0 {
+					bodyMap["images"] = items
+					delete(bodyMap, "image")
+					delete(bodyMap, "input_reference")
+				}
+			} else if err == nil && relaycommon.IsSeedanceRelayModel(info, req.Model) {
 				if value := req.ImageUpstreamValue(); value != nil {
 					bodyMap["image"] = value
 					delete(bodyMap, "images")
@@ -412,8 +516,22 @@ func (a *TaskAdaptor) GetChannelName() string {
 	return ChannelName
 }
 
-func (a *TaskAdaptor) ParseTaskResult(_ *model.Task, _ *http.Response, respBody []byte) (*relaycommon.TaskInfo, error) {
-	return a.parseTaskResult(respBody)
+func (a *TaskAdaptor) ParseTaskResult(task *model.Task, _ *http.Response, respBody []byte) (*relaycommon.TaskInfo, error) {
+	taskResult, err := a.parseTaskResult(respBody)
+	if err != nil || taskResult.Status != model.TaskStatusSuccess || task == nil {
+		return taskResult, err
+	}
+	if !relaycommon.IsSeedance25RelayModel(nil, task.Properties.OriginModelName) &&
+		!relaycommon.IsSeedance25RelayModel(nil, task.Properties.UpstreamModelName) {
+		return taskResult, nil
+	}
+	resTask := responseTask{}
+	if err := common.Unmarshal(respBody, &resTask); err != nil {
+		return taskResult, nil
+	}
+	// 只有按倍率定价的任务会用 token 重算；按秒定价的快照会忽略它。
+	taskResult.TotalTokens = seedance25SettlementTokens(resTask)
+	return taskResult, nil
 }
 
 func (a *TaskAdaptor) parseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {

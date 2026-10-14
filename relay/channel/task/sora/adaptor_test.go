@@ -3,6 +3,7 @@ package sora
 import (
 	"bytes"
 	"io"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
@@ -335,6 +337,142 @@ func TestBuildRequestBodyMergesReferenceImages(t *testing.T) {
 			assert.Equal(t, test.expectedImage, payload["image"])
 			assert.NotContains(t, payload, "images")
 			assert.NotContains(t, payload, "input_reference")
+		})
+	}
+}
+
+func TestSeedance25TokenPricedBillingRatios(t *testing.T) {
+	tests := []struct {
+		name     string
+		model    string
+		body     string
+		usePrice bool
+		expected map[string]float64
+	}{
+		{
+			name:     "text to video has no ratios so token settlement is not multiplied by seconds",
+			model:    "seedance-2.5-720p",
+			body:     `{"model":"seedance-2.5-720p","prompt":"test","seconds":"10"}`,
+			expected: nil,
+		},
+		{
+			name:     "reference video in images list gets the 720p video-input discount",
+			model:    "seedance-2.5-720p",
+			body:     `{"model":"seedance-2.5-720p","prompt":"test","seconds":"5","images":[{"url":"https://example.com/a.png","type":"image"},{"url":"https://example.com/v.mp4","type":"video"}]}`,
+			expected: map[string]float64{"video_input": 42.0 / 70.0},
+		},
+		{
+			name:     "reference video in content gets the 1080p video-input discount",
+			model:    "seedance-2.5-1080p",
+			body:     `{"model":"seedance-2.5-1080p","prompt":"test","seconds":"5","content":[{"type":"video_url","video_url":{"url":"https://example.com/v.mp4"}}]}`,
+			expected: map[string]float64{"video_input": 46.0 / 77.0},
+		},
+		{
+			name:     "per-second priced model keeps seconds billing",
+			model:    "seedance-2.5-720p",
+			body:     `{"model":"seedance-2.5-720p","prompt":"test","seconds":"6"}`,
+			usePrice: true,
+			expected: map[string]float64{"seconds": 6, "size": 1},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := newTaskRequestContext(t, []byte(test.body), "application/json")
+			info := &relaycommon.RelayInfo{
+				OriginModelName: test.model,
+				ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "ark/" + test.model},
+				TaskRelayInfo:   &relaycommon.TaskRelayInfo{},
+			}
+			info.PriceData.UsePrice = test.usePrice
+			adaptor := &TaskAdaptor{}
+
+			require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
+			ratios, err := adaptor.EstimateBillingValidated(ctx, info)
+			require.NoError(t, err)
+			if test.expected == nil {
+				assert.Empty(t, ratios)
+				assert.Zero(t, ctx.GetInt("generated_video_seconds"))
+				return
+			}
+			assert.InDeltaMapValues(t, test.expected, ratios, 1e-9)
+		})
+	}
+}
+
+func TestSeedance25BuildRequestBodySendsTypedMediaList(t *testing.T) {
+	body := `{"model":"seedance-2.5-720p","prompt":"test","seconds":"5","image":"https://example.com/first.png","images":["https://example.com/a.png",{"url":"https://example.com/v.mp4","type":"video"}]}`
+	ctx := newTaskRequestContext(t, []byte(body), "application/json")
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "seedance-2.5-720p",
+		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "ark/seedance-2.5-720p"},
+		TaskRelayInfo:   &relaycommon.TaskRelayInfo{},
+	}
+	adaptor := &TaskAdaptor{}
+
+	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
+	requestBody, err := adaptor.BuildRequestBody(ctx, info)
+	require.NoError(t, err)
+	raw, err := io.ReadAll(requestBody)
+	require.NoError(t, err)
+
+	var payload map[string]any
+	require.NoError(t, common.Unmarshal(raw, &payload))
+	assert.Equal(t, "ark/seedance-2.5-720p", payload["model"])
+	assert.NotContains(t, payload, "image")
+	assert.Equal(t, []any{
+		map[string]any{"url": "https://example.com/a.png", "type": "image"},
+		map[string]any{"url": "https://example.com/v.mp4", "type": "video"},
+		map[string]any{"url": "https://example.com/first.png", "type": "image"},
+	}, payload["images"])
+}
+
+func TestSeedance25ParseTaskResultSettlementTokens(t *testing.T) {
+	tests := []struct {
+		name     string
+		model    string
+		body     string
+		expected int
+	}{
+		{
+			name:     "upstream total tokens are used",
+			model:    "seedance-2.5-720p",
+			body:     `{"id":"video_1","status":"completed","seconds":"5","size":"1280x720","usage":{"completion_tokens":108000,"total_tokens":194400}}`,
+			expected: 194400,
+		},
+		{
+			name:     "missing usage falls back to the official formula",
+			model:    "seedance-2.5-720p",
+			body:     `{"id":"video_1","status":"completed","seconds":"5","size":"1280x720"}`,
+			expected: 108000,
+		},
+		{
+			name:     "oversized upstream tokens saturate at int32",
+			model:    "seedance-2.5-1080p",
+			body:     `{"id":"video_1","status":"completed","usage":{"total_tokens":99999999999}}`,
+			expected: math.MaxInt32,
+		},
+		{
+			name:     "other seedance models are not token settled",
+			model:    "seedance-2.0-mini-480p",
+			body:     `{"id":"video_1","status":"completed","seconds":"5","size":"864x496","usage":{"total_tokens":50638}}`,
+			expected: 0,
+		},
+		{
+			name:     "unfinished task carries no tokens",
+			model:    "seedance-2.5-720p",
+			body:     `{"id":"video_1","status":"processing","usage":{"total_tokens":194400}}`,
+			expected: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			task := &model.Task{}
+			task.Properties.OriginModelName = test.model
+			result, err := (&TaskAdaptor{}).ParseTaskResult(task, nil, []byte(test.body))
+			require.NoError(t, err)
+			assert.Equal(t, test.expected, result.TotalTokens)
 		})
 	}
 }
