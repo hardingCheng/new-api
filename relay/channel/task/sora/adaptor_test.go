@@ -538,3 +538,50 @@ func TestSeedance25ParseTaskResultSettlementTokens(t *testing.T) {
 		})
 	}
 }
+
+func TestSeedance25SubmitFailureIsRetryable(t *testing.T) {
+	tests := []struct {
+		name       string
+		model      string
+		body       string
+		expectCode int
+	}{
+		{
+			name:       "seedance 2.5 failed at submission becomes 502",
+			model:      "seedance-2.5-480p",
+			body:       `{"id":"video_1","status":"failed","error":{"message":"请求提交失败，请稍后重试","code":"generation_failed"}}`,
+			expectCode: http.StatusBadGateway,
+		},
+		{
+			name:  "seedance 2.5 accepted task is returned",
+			model: "seedance-2.5-480p",
+			body:  `{"id":"video_1","status":"processing"}`,
+		},
+		{
+			name:  "other models keep the submitted task",
+			model: "seedance-2.0-mini-480p",
+			body:  `{"id":"video_1","status":"failed","error":{"message":"x"}}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := newTaskRequestContext(t, []byte(`{}`), "application/json")
+			info := &relaycommon.RelayInfo{
+				OriginModelName: test.model,
+				ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: test.model},
+				TaskRelayInfo:   &relaycommon.TaskRelayInfo{PublicTaskID: "task_public"},
+			}
+			resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader([]byte(test.body)))}
+
+			_, taskErr := (&TaskAdaptor{}).ParseResponse(ctx, resp, info)
+			if test.expectCode == 0 {
+				assert.Nil(t, taskErr)
+				return
+			}
+			require.NotNil(t, taskErr)
+			assert.Equal(t, test.expectCode, taskErr.StatusCode)
+			assert.Equal(t, "upstream_submit_failed", taskErr.Code)
+		})
+	}
+}

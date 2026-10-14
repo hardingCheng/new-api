@@ -507,6 +507,16 @@ func (a *TaskAdaptor) doResponse(c *gin.Context, resp *http.Response, info *rela
 		taskErr = service.TaskErrorWrapper(fmt.Errorf("task_id is empty"), "invalid_response", http.StatusInternalServerError)
 		return
 	}
+	// 视频中转在提交阶段就失败（如某条上游登录失效）时仍返回 HTTP 200 + status=failed：
+	// 按 502 处理，让 hub 换同模型的其他渠道重试，而不是把必然失败的任务交给客户。
+	if relaycommon.IsSeedance25RelayModel(info, info.OriginModelName) && (dResp.Status == "failed" || dResp.Status == "cancelled") {
+		reason := "upstream task failed at submission"
+		if dResp.Error != nil && strings.TrimSpace(dResp.Error.Message) != "" {
+			reason = dResp.Error.Message
+		}
+		taskErr = service.TaskErrorWrapper(errors.New(reason), "upstream_submit_failed", http.StatusBadGateway)
+		return
+	}
 
 	// 使用公开 task_xxxx ID 返回给客户端
 	dResp.ID = flexString(info.PublicTaskID)
