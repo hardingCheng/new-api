@@ -400,31 +400,63 @@ func TestSeedance25TokenPricedBillingRatios(t *testing.T) {
 	}
 }
 
-func TestSeedance25BuildRequestBodySendsTypedMediaList(t *testing.T) {
-	body := `{"model":"seedance-2.5-720p","prompt":"test","seconds":"5","image":"https://example.com/first.png","images":["https://example.com/a.png",{"url":"https://example.com/v.mp4","type":"video"}]}`
-	ctx := newTaskRequestContext(t, []byte(body), "application/json")
-	info := &relaycommon.RelayInfo{
-		OriginModelName: "seedance-2.5-720p",
-		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "ark/seedance-2.5-720p"},
-		TaskRelayInfo:   &relaycommon.TaskRelayInfo{},
+func TestSeedance25BuildRequestBodySendsArkContent(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		expected []any
+	}{
+		{
+			name: "text to video becomes a text content item",
+			body: `{"model":"seedance-2.5-720p","prompt":"海边的小狗","seconds":"5"}`,
+			expected: []any{
+				map[string]any{"type": "text", "text": "海边的小狗"},
+			},
+		},
+		{
+			name: "prompt and typed media become ark content with reference roles",
+			body: `{"model":"seedance-2.5-720p","prompt":"test","seconds":"5","image":"https://example.com/first.png","images":["https://example.com/a.png",{"url":"https://example.com/v.mp4","type":"video"},{"url":"https://example.com/f.png","type":"image","role":"first_frame"}]}`,
+			expected: []any{
+				map[string]any{"type": "text", "text": "test"},
+				map[string]any{"type": "image_url", "image_url": map[string]any{"url": "https://example.com/a.png"}, "role": "reference_image"},
+				map[string]any{"type": "video_url", "video_url": map[string]any{"url": "https://example.com/v.mp4"}, "role": "reference_video"},
+				map[string]any{"type": "image_url", "image_url": map[string]any{"url": "https://example.com/f.png"}, "role": "first_frame"},
+				map[string]any{"type": "image_url", "image_url": map[string]any{"url": "https://example.com/first.png"}, "role": "reference_image"},
+			},
+		},
+		{
+			name: "client content passes through unchanged",
+			body: `{"model":"seedance-2.5-720p","prompt":"keep","seconds":"5","content":[{"type":"text","text":"keep"}]}`,
+			expected: []any{
+				map[string]any{"type": "text", "text": "keep"},
+			},
+		},
 	}
-	adaptor := &TaskAdaptor{}
 
-	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
-	requestBody, err := adaptor.BuildRequestBody(ctx, info)
-	require.NoError(t, err)
-	raw, err := io.ReadAll(requestBody)
-	require.NoError(t, err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := newTaskRequestContext(t, []byte(test.body), "application/json")
+			info := &relaycommon.RelayInfo{
+				OriginModelName: "seedance-2.5-720p",
+				ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "ark/seedance-2.5-720p"},
+				TaskRelayInfo:   &relaycommon.TaskRelayInfo{},
+			}
+			adaptor := &TaskAdaptor{}
 
-	var payload map[string]any
-	require.NoError(t, common.Unmarshal(raw, &payload))
-	assert.Equal(t, "ark/seedance-2.5-720p", payload["model"])
-	assert.NotContains(t, payload, "image")
-	assert.Equal(t, []any{
-		map[string]any{"url": "https://example.com/a.png", "type": "image"},
-		map[string]any{"url": "https://example.com/v.mp4", "type": "video"},
-		map[string]any{"url": "https://example.com/first.png", "type": "image"},
-	}, payload["images"])
+			require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
+			requestBody, err := adaptor.BuildRequestBody(ctx, info)
+			require.NoError(t, err)
+			raw, err := io.ReadAll(requestBody)
+			require.NoError(t, err)
+
+			var payload map[string]any
+			require.NoError(t, common.Unmarshal(raw, &payload))
+			assert.Equal(t, "ark/seedance-2.5-720p", payload["model"])
+			assert.NotContains(t, payload, "image")
+			assert.NotContains(t, payload, "images")
+			assert.Equal(t, test.expected, payload["content"])
+		})
+	}
 }
 
 func TestSeedance25ParseTaskResultSettlementTokens(t *testing.T) {

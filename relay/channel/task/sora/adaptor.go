@@ -99,20 +99,41 @@ func seedance25VideoInputRatio(is1080p bool) float64 {
 	return 42.0 / 70.0
 }
 
-// seedance25MediaItems 把 images（字符串或 {url,type} 对象）、image、input_reference
-// 归并成 [{url,type}] 列表；字符串一律视为图片，对象原样保留。
-func seedance25MediaItems(bodyMap map[string]any) []any {
-	items := make([]any, 0)
+// seedance25Content 把 prompt 和参考素材组装成火山方舟格式的 content[]：视频中转的 Ark 线路
+// 只读 content[]（顶层 prompt 不参与）。素材来自 images（字符串或 {url,type,role} 对象）、
+// image、input_reference；字符串一律视为参考图，未指定 role 时按素材类型给 reference_*。
+func seedance25Content(bodyMap map[string]any) []any {
+	content := make([]any, 0)
+	if prompt, _ := bodyMap["prompt"].(string); strings.TrimSpace(prompt) != "" {
+		content = append(content, map[string]any{"type": "text", "text": prompt})
+	}
+	appendMedia := func(url, mediaType, role string) {
+		url = strings.TrimSpace(url)
+		if url == "" {
+			return
+		}
+		kind := "image"
+		if mediaType == "video" || mediaType == "audio" {
+			kind = mediaType
+		}
+		if role == "" {
+			role = "reference_" + kind
+		}
+		content = append(content, map[string]any{
+			"type":        kind + "_url",
+			kind + "_url": map[string]any{"url": url},
+			"role":        role,
+		})
+	}
 	appendValue := func(raw any) {
 		switch v := raw.(type) {
 		case string:
-			if url := strings.TrimSpace(v); url != "" {
-				items = append(items, map[string]any{"url": url, "type": "image"})
-			}
+			appendMedia(v, "image", "")
 		case map[string]any:
-			if url, _ := v["url"].(string); strings.TrimSpace(url) != "" {
-				items = append(items, v)
-			}
+			url, _ := v["url"].(string)
+			mediaType, _ := v["type"].(string)
+			role, _ := v["role"].(string)
+			appendMedia(url, mediaType, role)
 		}
 	}
 	for _, key := range []string{"images", "image", "input_reference"} {
@@ -125,7 +146,7 @@ func seedance25MediaItems(bodyMap map[string]any) []any {
 			appendValue(v)
 		}
 	}
-	return items
+	return content
 }
 
 // seedance25HasReferenceVideo 判断请求是否带参考视频：火山格式 content[] 的 video_url，
@@ -322,14 +343,17 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 			// seedance 系上游只认 image 字段（字符串或数组），images / input_reference 会被静默忽略：
 			// 归并成 image，避免客户按 images 传参后参考图被丢弃、却照常按秒计费。
 			// 仅限 seedance —— 同一适配器还服务其他视频渠道，它们各有自己的参考图字段协议。
-			// Seedance 2.5 的上游是自有视频中转，它认 images:[{url,type}] 和火山格式 content[]，
-			// image 只收单张字符串：把参考图整理成 images 列表，保留客户写好的 type。
+			// Seedance 2.5 的上游是自有视频中转的 Ark 线路，只读火山格式 content[]：
+			// 客户已传 content 时原样透传，否则由 prompt 和参考素材组装。
 			if req, err := relaycommon.GetTaskRequest(c); err == nil && relaycommon.IsSeedance25RelayModel(info, req.Model) {
-				if items := seedance25MediaItems(bodyMap); len(items) > 0 {
-					bodyMap["images"] = items
-					delete(bodyMap, "image")
-					delete(bodyMap, "input_reference")
+				if items, _ := bodyMap["content"].([]any); len(items) == 0 {
+					if content := seedance25Content(bodyMap); len(content) > 0 {
+						bodyMap["content"] = content
+					}
 				}
+				delete(bodyMap, "images")
+				delete(bodyMap, "image")
+				delete(bodyMap, "input_reference")
 			} else if err == nil && relaycommon.IsSeedanceRelayModel(info, req.Model) {
 				if value := req.ImageUpstreamValue(); value != nil {
 					bodyMap["image"] = value
