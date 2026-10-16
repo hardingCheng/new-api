@@ -50,7 +50,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	adaptor.Init(info)
 
 	// chatdump：根据上游模型名判定是否抓取
-	dumpSession := chatdump.NewSession(request.Model)
+	dumpSession := chatdump.NewSessionForUser(request.Model, info.UserId)
 	if dumpSession.Enabled() {
 		dumpSession.SetMeta(map[string]any{
 			"upstream_model": request.Model,

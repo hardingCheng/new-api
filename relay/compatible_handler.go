@@ -83,7 +83,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	}
 
 	// chatdump：覆盖 OpenAI 兼容入口
-	dumpSession := chatdump.NewSession(request.Model)
+	dumpSession := chatdump.NewSessionForUser(request.Model, info.UserId)
 	if dumpSession.Enabled() {
 		dumpSession.SetMeta(map[string]any{
 			"upstream_model": request.Model,

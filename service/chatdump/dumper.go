@@ -21,6 +21,12 @@ import (
 //	CHAT_DUMP_MODEL_KEYS=opus    模型关键字（逗号分隔，子串匹配）；设为 * 则全量抓取所有模型
 //	CHAT_DUMP_EXCLUDE_USER_IDS=16,23 跳过指定用户 ID，不记录其请求/响应
 //	CHAT_DUMP_MIN_FREE_MB=2048   磁盘剩余低于此值(MB)时暂停写入，防止写满磁盘导致宕机；0 关闭保护
+//
+// 单独观察指定用户（与上面的主采集完全分开）：
+//
+//	CHAT_DUMP_WATCH_USER_IDS=16       观察用户 ID，所有模型都抓，不受 ENABLED/MODEL_KEYS/EXCLUDE 影响
+//	CHAT_DUMP_WATCH_DIR=<主目录>-watch 观察记录落盘目录，不能放在主目录里面（查看页和导出只读主目录）
+//	CHAT_DUMP_WATCH_KEEP_DAYS=7       观察记录保留天数，过期的日期目录自动删除；0 不删
 var (
 	dumpDir            string
 	dumpEnabled        bool
@@ -31,6 +37,11 @@ var (
 	once               sync.Once
 	writeMu            sync.Mutex
 	lastDiskWarn       time.Time
+
+	watchUserIDs  = map[int]struct{}{}
+	watchDir      string
+	watchKeepDays int
+	lastPruneDay  string // 调用方持 writeMu
 )
 
 func initConfig() {
@@ -47,12 +58,7 @@ func initConfig() {
 				dumpModelKeys = append(dumpModelKeys, k)
 			}
 		}
-		for _, rawID := range strings.Split(common.GetEnvOrDefaultString("CHAT_DUMP_EXCLUDE_USER_IDS", ""), ",") {
-			userID, err := strconv.Atoi(strings.TrimSpace(rawID))
-			if err == nil && userID > 0 {
-				dumpExcludeUserIDs[userID] = struct{}{}
-			}
-		}
+		parseUserIDs(common.GetEnvOrDefaultString("CHAT_DUMP_EXCLUDE_USER_IDS", ""), dumpExcludeUserIDs)
 		// 磁盘保护：剩余低于阈值则暂停写入，防止写满磁盘宕机（默认 2GB，0 关闭）
 		dumpMinFreeBytes = uint64(common.GetEnvOrDefault("CHAT_DUMP_MIN_FREE_MB", 2048)) * 1024 * 1024
 		if dumpEnabled {
@@ -67,7 +73,39 @@ func initConfig() {
 				common.SysLog(fmt.Sprintf("chatdump: 已启用，目录=%s %s 排除用户数=%d 磁盘保护阈值=%dMB", dumpDir, scope, len(dumpExcludeUserIDs), dumpMinFreeBytes/1024/1024))
 			}
 		}
+		initWatchConfig()
 	})
+}
+
+func initWatchConfig() {
+	parseUserIDs(common.GetEnvOrDefaultString("CHAT_DUMP_WATCH_USER_IDS", ""), watchUserIDs)
+	if len(watchUserIDs) == 0 {
+		return
+	}
+	watchDir = filepath.Clean(common.GetEnvOrDefaultString("CHAT_DUMP_WATCH_DIR", filepath.Clean(dumpDir)+"-watch"))
+	watchKeepDays = common.GetEnvOrDefault("CHAT_DUMP_WATCH_KEEP_DAYS", 7)
+	absWatch, _ := filepath.Abs(watchDir)
+	absMain, _ := filepath.Abs(dumpDir)
+	if rel, err := filepath.Rel(absMain, absWatch); err == nil && !strings.HasPrefix(rel, "..") {
+		common.SysLog(fmt.Sprintf("chatdump: 观察目录 %s 位于主目录 %s 内，会混进主采集，已关闭观察", watchDir, dumpDir))
+		watchUserIDs = map[int]struct{}{}
+		return
+	}
+	if err := os.MkdirAll(watchDir, 0o755); err != nil {
+		common.SysLog(fmt.Sprintf("chatdump: 创建观察目录 %s 失败: %s，已关闭观察", watchDir, err.Error()))
+		watchUserIDs = map[int]struct{}{}
+		return
+	}
+	common.SysLog(fmt.Sprintf("chatdump: 观察已启用，目录=%s 用户数=%d 保留天数=%d", watchDir, len(watchUserIDs), watchKeepDays))
+}
+
+func parseUserIDs(raw string, into map[int]struct{}) {
+	for rawID := range strings.SplitSeq(raw, ",") {
+		userID, err := strconv.Atoi(strings.TrimSpace(rawID))
+		if err == nil && userID > 0 {
+			into[userID] = struct{}{}
+		}
+	}
 }
 
 // clientHeaderWhitelist 用于识别 harness/SDK 的请求头(全部非密钥);其余(尤其 Authorization/x-api-key)一律不记。
@@ -160,6 +198,7 @@ type Session struct {
 	startTime time.Time
 	rec       Record
 	enabled   bool
+	watch     bool // 观察用户：写观察目录，不进主采集
 
 	textBuilder     strings.Builder
 	thinkingBuilder strings.Builder
@@ -179,6 +218,20 @@ func NewSession(model string) *Session {
 		s.rec.OriginModel = model
 	}
 	return s
+}
+
+// NewSessionForUser 先按观察名单判定，命中则抓该用户所有模型并写观察目录；否则同 NewSession。
+func NewSessionForUser(model string, userID int) *Session {
+	initConfig()
+	if _, watched := watchUserIDs[userID]; watched && model != "" {
+		s := &Session{startTime: time.Now(), enabled: true, watch: true}
+		s.rec.DumpID = common.GetUUID()
+		s.rec.Timestamp = s.startTime.Format("2006-01-02T15:04:05.000Z07:00")
+		s.rec.UpstreamModel = model
+		s.rec.OriginModel = model
+		return s
+	}
+	return NewSession(model)
 }
 
 func (s *Session) Enabled() bool {
@@ -203,7 +256,7 @@ func (s *Session) SetMeta(meta map[string]any) {
 	}
 	if v, ok := meta["user_id"].(int); ok {
 		s.rec.UserID = v
-		if _, excluded := dumpExcludeUserIDs[v]; excluded {
+		if _, excluded := dumpExcludeUserIDs[v]; excluded && !s.watch {
 			// SetMeta 在请求正文写入前调用；尽早关闭并清空，确保该用户没有内容落盘。
 			s.enabled = false
 			s.rec = Record{}
@@ -357,17 +410,21 @@ func (s *Session) Flush() {
 	rec := s.rec
 	s.mu.Unlock()
 
-	go writeRecord(&rec)
+	root := dumpDir
+	if s.watch {
+		root = watchDir
+	}
+	go writeRecord(&rec, root)
 }
 
 // hasEnoughDiskSpace 检查 dumpDir 所在分区剩余空间是否达到阈值。
 // 全量抓取下这是防止写满磁盘导致全站宕机的硬保护；调用方已持 writeMu。
-func hasEnoughDiskSpace() bool {
+func hasEnoughDiskSpace(root string) bool {
 	if dumpMinFreeBytes == 0 {
 		return true
 	}
 	var st syscall.Statfs_t
-	if err := syscall.Statfs(dumpDir, &st); err != nil {
+	if err := syscall.Statfs(root, &st); err != nil {
 		return true // 检查失败不阻断正常写入
 	}
 	avail := st.Bavail * uint64(st.Bsize)
@@ -382,7 +439,7 @@ func hasEnoughDiskSpace() bool {
 	return true
 }
 
-func writeRecord(rec *Record) {
+func writeRecord(rec *Record, root string) {
 	defer func() {
 		if r := recover(); r != nil {
 			common.SysLog(fmt.Sprintf("chatdump: 写盘 panic: %v", r))
@@ -390,14 +447,18 @@ func writeRecord(rec *Record) {
 	}()
 
 	day := time.Now().Format("2006-01-02")
-	dir := filepath.Join(dumpDir, day)
+	dir := filepath.Join(root, day)
 
 	writeMu.Lock()
 	defer writeMu.Unlock()
 
 	// 磁盘保护：剩余不足时丢弃本条，绝不写满磁盘
-	if !hasEnoughDiskSpace() {
+	if !hasEnoughDiskSpace(root) {
 		return
+	}
+	if root == watchDir && lastPruneDay != day {
+		lastPruneDay = day
+		pruneWatchDir(time.Now())
 	}
 
 	// 脱敏：删邮箱/IP(PII)；保留 user_agent + client_headers 用于识别 harness；模型数据全保留
@@ -423,6 +484,31 @@ func writeRecord(rec *Record) {
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		common.SysLog(fmt.Sprintf("chatdump: 写入 %s 失败: %s", path, err.Error()))
 		return
+	}
+}
+
+// pruneWatchDir 删除观察目录里超过保留天数的日期目录。调用方持 writeMu。
+func pruneWatchDir(now time.Time) {
+	if watchKeepDays <= 0 {
+		return
+	}
+	cutoff := now.AddDate(0, 0, -watchKeepDays).Format("2006-01-02")
+	entries, err := os.ReadDir(watchDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := time.Parse("2006-01-02", e.Name()); err != nil {
+			continue
+		}
+		if e.Name() < cutoff {
+			if err := os.RemoveAll(filepath.Join(watchDir, e.Name())); err != nil {
+				common.SysLog(fmt.Sprintf("chatdump: 清理观察目录 %s 失败: %s", e.Name(), err.Error()))
+			}
+		}
 	}
 }
 
