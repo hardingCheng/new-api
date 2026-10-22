@@ -77,6 +77,18 @@ var (
 	channelBreakerBackoffMultiplier  atomic.Value // []int：连续熔断的冷却倍率阶梯
 	channelBreakerBackoffMaxCooldown atomic.Int64
 	channelBreakerBackoffDecaySecs   atomic.Int64
+
+	// ---- 2026-10-22 新增：上游 400 跨渠道重试，默认关 ----
+	// 400 默认不重试（请求写错了换渠道也不会对）。但有两类 400 是渠道自己的问题：
+	// 上游瞬间回一个没有任何错误内容的 400（实测同一令牌紧接着重发全部成功），
+	// 以及渠道能力差异（如某条渠道不接受 system 消息）。打开后这两类换渠道重试一次。
+	// 只在这些分组生效，空表示不限分组。
+	upstream400RetryFlag     atomic.Bool
+	upstream400RetryKeywords atomic.Value
+	upstream400RetryGroups   atomic.Value
+	// 上游按会话封禁请求（如网络安全策略屏蔽）的错误文案关键词，空表示不识别。
+	// 同一上游的各条渠道共用一套封禁判定，命中后重试要换到别家上游。
+	upstreamSessionBlockKeywords atomic.Value
 )
 
 func init() {
@@ -101,6 +113,10 @@ func init() {
 	SetBreakerAllOpenFallback(false)
 	SetChatToResponsesNonStreamOnly(false)
 	SetUpstreamClientErrKeywords(DefaultUpstreamClientErrKeywords)
+	SetUpstream400Retry(false)
+	SetUpstream400RetryKeywords("")
+	SetUpstream400RetryGroups("")
+	SetUpstreamSessionBlockKeywords("")
 	SetChannelBreakerBackoffMultipliers("1,2,5,15,60")
 	SetChannelBreakerBackoffMaxCooldownSeconds(3600)
 	SetChannelBreakerBackoffDecaySeconds(600)
@@ -551,6 +567,67 @@ func GetUpstreamClientErrKeywords() []string {
 }
 
 func SetUpstreamClientErrKeywords(value string) {
+	upstreamClientErrKeywords.Store(parseLowerKeywords(value))
+}
+
+// IsUpstream400RetryEnabled 上游 400 是否允许按规则跨渠道重试。
+func IsUpstream400RetryEnabled() bool {
+	return upstream400RetryFlag.Load()
+}
+
+func SetUpstream400Retry(enabled bool) {
+	upstream400RetryFlag.Store(enabled)
+}
+
+// GetUpstream400RetryKeywords 返回可重试的上游 400 错误文案关键词（已小写去空）。
+// 空错误体的 400 不需要关键词，开关打开即重试。
+func GetUpstream400RetryKeywords() []string {
+	keywords, ok := upstream400RetryKeywords.Load().([]string)
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), keywords...)
+}
+
+func SetUpstream400RetryKeywords(value string) {
+	upstream400RetryKeywords.Store(parseLowerKeywords(value))
+}
+
+// GetUpstream400RetryGroups 返回上游 400 重试生效的分组，空表示不限分组。
+func GetUpstream400RetryGroups() []string {
+	groups, ok := upstream400RetryGroups.Load().([]string)
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), groups...)
+}
+
+func SetUpstream400RetryGroups(value string) {
+	parts := ParseChannelBreakerList(value)
+	groups := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			groups = append(groups, part)
+		}
+	}
+	upstream400RetryGroups.Store(groups)
+}
+
+// GetUpstreamSessionBlockKeywords 返回上游会话封禁的错误文案关键词（已小写去空）。
+func GetUpstreamSessionBlockKeywords() []string {
+	keywords, ok := upstreamSessionBlockKeywords.Load().([]string)
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), keywords...)
+}
+
+func SetUpstreamSessionBlockKeywords(value string) {
+	upstreamSessionBlockKeywords.Store(parseLowerKeywords(value))
+}
+
+// parseLowerKeywords 把逗号/换行分隔的关键词列表转成小写、去空的切片。
+func parseLowerKeywords(value string) []string {
 	parts := ParseChannelBreakerList(value)
 	normalized := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -559,7 +636,7 @@ func SetUpstreamClientErrKeywords(value string) {
 			normalized = append(normalized, part)
 		}
 	}
-	upstreamClientErrKeywords.Store(normalized)
+	return normalized
 }
 
 // IsChatToResponsesNonStreamOnly chat→Responses 转换是否只对非流式生效。

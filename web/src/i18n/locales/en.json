@@ -6296,6 +6296,7 @@
     "Upstream authentication": "Upstream authentication",
     "Upstream connection": "Upstream connection",
     "Upstream did not return reset credit details.": "Upstream did not return reset credit details.",
+    "Upstream error matches the retry rules": "Upstream error matches the retry rules",
     "Upstream JSON response": "Upstream JSON response",
     "Upstream Model": "Upstream Model",
     "Upstream Model Detection Settings": "Upstream Model Detection Settings",

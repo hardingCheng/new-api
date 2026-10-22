@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -180,6 +181,58 @@ func TestDecideRelayRetryReasons(t *testing.T) {
 			decision := DecideRelayRetry(c, tc.err, tc.retries)
 			assert.Equal(t, tc.want, decision)
 			assert.Equal(t, tc.want.Action == "retry", ShouldRetryRelayError(c, tc.err, tc.retries))
+		})
+	}
+}
+
+func TestDecideRelayRetryUpstream400(t *testing.T) {
+	upstream400 := func(body string) *types.NewAPIError {
+		resp := &http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(strings.NewReader(body))}
+		return RelayErrorHandler(t.Context(), resp, false)
+	}
+	retry := PolicyDecision{Action: "retry", Reason: "upstream_error_retry_matched", Source: "global"}
+	stop := PolicyDecision{Action: "stop", Reason: "status_not_retryable", Source: "global"}
+	for _, tc := range []struct {
+		name     string
+		enabled  bool
+		keywords string
+		groups   string
+		group    string
+		retried  bool
+		err      *types.NewAPIError
+		retries  int
+		want     PolicyDecision
+	}{
+		{name: "disabled keeps 400 final", err: upstream400(`{}`), retries: 1, want: stop},
+		{name: "empty upstream body retries", enabled: true, err: upstream400(`{}`), retries: 1, want: retry},
+		{name: "keyword match retries", enabled: true, keywords: "system messages are not allowed", err: upstream400(`{"error":{"message":"System messages are not allowed","type":"invalid_request_error"}}`), retries: 1, want: retry},
+		{name: "unmatched client error stays final", enabled: true, keywords: "system messages are not allowed", err: upstream400(`{"error":{"message":"prompt is too long","type":"invalid_request_error"}}`), retries: 1, want: stop},
+		{name: "local rejection never retries", enabled: true, err: types.NewErrorWithStatusCode(errors.New(""), types.ErrorCodeInvalidRequest, http.StatusBadRequest), retries: 1, want: stop},
+		{name: "attempt budget still applies", enabled: true, err: upstream400(`{}`), retries: 0, want: PolicyDecision{Action: "stop", Reason: "attempt_budget_exhausted", Source: "global"}},
+		{name: "configured group retries", enabled: true, groups: "gpt稳定分组", group: "gpt稳定分组", err: upstream400(`{}`), retries: 1, want: retry},
+		{name: "other group stays final", enabled: true, groups: "gpt稳定分组", group: "default", err: upstream400(`{}`), retries: 1, want: stop},
+		{name: "only one upstream 400 retry per request", enabled: true, retried: true, err: upstream400(`{}`), retries: 2, want: stop},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			common.SetUpstream400Retry(tc.enabled)
+			common.SetUpstream400RetryKeywords(tc.keywords)
+			common.SetUpstream400RetryGroups(tc.groups)
+			t.Cleanup(func() {
+				common.SetUpstream400Retry(false)
+				common.SetUpstream400RetryKeywords("")
+				common.SetUpstream400RetryGroups("")
+			})
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			state := RequestPolicy(c)
+			state.BeginAttempt(&model.Channel{Id: 75}, tc.group)
+			if tc.retried {
+				first := DecideRelayRetry(c, upstream400(`{}`), tc.retries)
+				require.Equal(t, retry, first)
+				RecordPolicyFailure(c, 75, upstream400(`{}`), first)
+				state.BeginAttempt(&model.Channel{Id: 76}, tc.group)
+			}
+			require.Equal(t, http.StatusBadRequest, tc.err.StatusCode)
+			assert.Equal(t, tc.want, DecideRelayRetry(c, tc.err, tc.retries))
 		})
 	}
 }

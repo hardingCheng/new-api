@@ -6296,6 +6296,7 @@
     "Upstream authentication": "Xác thực với nhà cung cấp",
     "Upstream connection": "Kết nối thượng nguồn",
     "Upstream did not return reset credit details.": "Upstream không trả về chi tiết lượt đặt lại.",
+    "Upstream error matches the retry rules": "Lỗi thượng nguồn khớp quy tắc thử lại",
     "Upstream JSON response": "Phản hồi JSON thượng nguồn",
     "Upstream Model": "Mô hình gửi đến nhà cung cấp",
     "Upstream Model Detection Settings": "Cài đặt phát hiện mô hình nguồn",

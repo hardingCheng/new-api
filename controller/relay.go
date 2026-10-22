@@ -251,6 +251,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		relayInfo.LastError = newAPIError
 		// 这一条本次已经失败，重试选路时同层排除它，避免加权随机又抽回来
 		retryParam.ExcludeChannelIds[channel.Id] = true
+		service.ExcludeUpstreamAfterSessionBlock(c, channel.Id, newAPIError, retryParam)
 
 		decision := service.DecideRelayRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry())
 		service.RecordPolicyFailure(c, channel.Id, newAPIError, decision)
@@ -461,6 +462,12 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		if errors.As(err, &capacityErr) {
 			return nil, newChannelCapacityError(c, capacityErr)
 		}
+	}
+	if channel == nil && len(retryParam.ExcludeUpstreamHosts) > 0 && info.LastError != nil {
+		// 封禁请求的上游被整家排除后没有别家可选：把上游原文还给客户，而不是「无可用渠道」
+		return nil, info.LastError
+	}
+	if err != nil {
 		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 	if channel == nil {

@@ -59,6 +59,9 @@ type RetryParam struct {
 	// 移出候选。与 capacity 排除集不同，它必须跨重试保持：一条渠道这次已经证明不行，
 	// 本请求就不该再抽回它。调用方（controller）在排除后无候选时负责放开排除集兜底。
 	ExcludeChannelIds map[int]bool
+	// ExcludeUpstreamHosts 是本次请求中按会话封禁了请求的上游（按渠道地址的主机名区分）。
+	// 同一上游的渠道换过去也会被拦，所以整家排除；无候选时也不放开，宁可把封禁原文还给客户。
+	ExcludeUpstreamHosts map[string]bool
 }
 
 // ChannelCapacityExhaustedError 表示本次选择的全部候选渠道都因容量达限被排除。
@@ -305,6 +308,10 @@ outer:
 			channel, exhausted, err := model.GetRandomSatisfiedChannelWithFilters(group, param.ModelName, offset, GetChannelConstraints(param.Ctx).Filters, userChannelRoutingCandidateFilter(decision), func(channel *model.Channel) bool {
 				if param.ExcludeChannelIds[channel.Id] {
 					logger.LogDebug(param.Ctx, "channel #%d already failed in this request, excluded from reselection", channel.Id)
+					return false
+				}
+				if len(param.ExcludeUpstreamHosts) > 0 && param.ExcludeUpstreamHosts[ChannelUpstreamHost(channel)] {
+					logger.LogDebug(param.Ctx, "channel #%d shares a session-blocking upstream, excluded from reselection", channel.Id)
 					return false
 				}
 				if capacityExcluded[channel.Id] {

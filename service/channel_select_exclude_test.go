@@ -1,9 +1,12 @@
 package service
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -86,4 +89,48 @@ func TestSelectionWithEmptyExclusionsIsUnchanged(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, channel)
 	assert.Equal(t, 421, channel.Id)
+}
+
+// 上游按会话封禁请求时，同一上游的其他渠道也会拦下同一个会话：重试必须整家换掉，
+// 放开「已失败渠道」排除集兜底时也不能回到这家；文案不匹配的错误不受影响。
+func TestSessionBlockExcludesWholeUpstream(t *testing.T) {
+	db := setupChannelSelectAutoGroupsTest(t)
+	const modelName = "session-block-model"
+	for id, baseURL := range map[int]string{431: "https://vip.block.test", 432: "https://VIP.block.test/v1", 433: "https://other.test"} {
+		createCapacityTestChannel(t, db, id, "default", modelName, 0, nil)
+		require.NoError(t, db.Model(&model.Channel{}).Where("id = ?", id).Update("base_url", baseURL).Error)
+	}
+	model.InitChannelCache()
+	common.SetUpstreamSessionBlockKeywords("cyber-security policy")
+	t.Cleanup(func() { common.SetUpstreamSessionBlockKeywords("") })
+
+	blockErr := types.NewOpenAIError(errors.New("该会话已被网络安全策略屏蔽，请开启新会话 / This session is blocked by cyber-security policy, please start a new session"), types.ErrorCodeBadResponseStatusCode, 403)
+	otherErr := types.NewOpenAIError(errors.New("upstream overloaded"), types.ErrorCodeBadResponseStatusCode, 503)
+	newParam := func() *RetryParam {
+		retry := 1
+		return &RetryParam{
+			Ctx: newCapacitySelectContext(t), TokenGroup: "default", ModelName: modelName,
+			RequestPath: "/v1/chat/completions", Retry: &retry,
+			ExcludeChannelIds: map[int]bool{431: true},
+		}
+	}
+
+	param := newParam()
+	assert.False(t, ExcludeUpstreamAfterSessionBlock(param.Ctx, 431, otherErr, param))
+	assert.Empty(t, param.ExcludeUpstreamHosts)
+
+	require.True(t, ExcludeUpstreamAfterSessionBlock(param.Ctx, 431, blockErr, param))
+	for range 20 {
+		channel, _, err := CacheGetRandomSatisfiedChannel(param)
+		require.NoError(t, err)
+		require.NotNil(t, channel)
+		require.Equal(t, 433, channel.Id, "同一上游的 432 也会封禁这个会话，不应被选中")
+	}
+	param.ExcludeChannelIds = map[int]bool{431: true, 433: true}
+	channel, _, _ := CacheGetRandomSatisfiedChannel(param)
+	assert.Nil(t, channel, "别家都失败后只剩封禁上游时不应选出渠道")
+	param.ExcludeChannelIds = nil
+	channel, _, _ = CacheGetRandomSatisfiedChannel(param)
+	require.NotNil(t, channel, "放开已失败渠道后仍应排除封禁上游")
+	assert.Equal(t, 433, channel.Id)
 }

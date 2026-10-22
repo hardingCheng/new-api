@@ -81,6 +81,10 @@ func InitOptionMap() {
 	common.OptionMap["BreakerAllOpenFallbackEnabled"] = strconv.FormatBool(common.IsBreakerAllOpenFallbackEnabled())
 	common.OptionMap["ChatToResponsesNonStreamOnly"] = strconv.FormatBool(common.IsChatToResponsesNonStreamOnly())
 	common.OptionMap["UpstreamClientErrNormalizeKeywords"] = strings.Join(common.GetUpstreamClientErrKeywords(), ",")
+	common.OptionMap["Upstream400RetryEnabled"] = strconv.FormatBool(common.IsUpstream400RetryEnabled())
+	common.OptionMap["Upstream400RetryKeywords"] = strings.Join(common.GetUpstream400RetryKeywords(), ",")
+	common.OptionMap["Upstream400RetryGroups"] = strings.Join(common.GetUpstream400RetryGroups(), ",")
+	common.OptionMap["UpstreamSessionBlockKeywords"] = strings.Join(common.GetUpstreamSessionBlockKeywords(), ",")
 	common.OptionMap["ChannelBreakerBackoffMultipliers"] = common.ChannelBreakerBackoffMultipliersToString()
 	common.OptionMap["ChannelBreakerBackoffMaxCooldownSeconds"] = strconv.Itoa(common.GetChannelBreakerBackoffMaxCooldownSeconds())
 	common.OptionMap["ChannelBreakerBackoffDecaySeconds"] = strconv.Itoa(common.GetChannelBreakerBackoffDecaySeconds())
@@ -439,6 +443,8 @@ func updateOptionMap(key string, value string) (err error) {
 			common.SetChannelBreakerBackoffEnabled(boolValue)
 		case "UpstreamClientErrNormalizeEnabled":
 			common.SetUpstreamClientErrNormalize(boolValue)
+		case "Upstream400RetryEnabled":
+			common.SetUpstream400Retry(boolValue)
 		case "BreakerAllOpenFallbackEnabled":
 			common.SetBreakerAllOpenFallback(boolValue)
 		case "ChatToResponsesNonStreamOnly":
@@ -514,6 +520,12 @@ func updateOptionMap(key string, value string) (err error) {
 		jsplugin.DefaultRegistry.SetDisabledFactoryKeys(setting.ParseTaskPluginDisabledFactoryKeys(value))
 	}
 	switch key {
+	case "Upstream400RetryKeywords":
+		common.SetUpstream400RetryKeywords(value)
+	case "Upstream400RetryGroups":
+		common.SetUpstream400RetryGroups(value)
+	case "UpstreamSessionBlockKeywords":
+		common.SetUpstreamSessionBlockKeywords(value)
 	case "EmailDomainWhitelist":
 		common.EmailDomainWhitelist = strings.Split(value, ",")
 	case "SMTPServer":
