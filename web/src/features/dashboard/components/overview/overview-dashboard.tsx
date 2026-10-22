@@ -75,7 +75,7 @@ const SETUP_GUIDE_VISIBILITY_STORAGE_KEY =
 
 const SETUP_GUIDE_CODE_PATTERN = [
   'const request = await client.responses.create({',
-  "  model: 'gpt-4.1-mini',",
+  "  model: 'gpt-5.6-terra',",
   "  input: 'Start routing traffic',",
   '})',
   '',

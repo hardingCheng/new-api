@@ -80,7 +80,7 @@ func TestMaskUpstreamBillingError(t *testing.T) {
 
 	t.Run("own get_channel_failed error is untouched", func(t *testing.T) {
 		original := relaytypes.NewError(
-			errors.New("分组 glm 下模型 glm-5.2 的可用渠道不存在（retry）"),
+			errors.New("分组 glm 下模型 glm-5.2 的可用渠道不存在"),
 			relaytypes.ErrorCodeGetChannelFailed,
 			relaytypes.ErrOptionWithSkipRetry(),
 		)

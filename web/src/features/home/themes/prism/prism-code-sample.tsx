@@ -28,7 +28,7 @@ client = OpenAI(
 )
 
 response = client.responses.create(
-  model="gpt-4.1-mini",
+  model="gpt-5.6-terra",
   input="Hello"
 )
 
@@ -41,14 +41,14 @@ client = anthropic.Anthropic(
 )
 
 message = client.messages.create(
-  model="claude-sonnet",
+  model="claude-sonnet-5",
   max_tokens=1024,
   messages=[{"role": "user", "content": "Hello"}]
 )`,
   Gemini: `import requests
 
 response = requests.post(
-  "https://api.example.com/v1beta/models/gemini:generateContent",
+  "https://api.example.com/v1beta/models/gemini-3-flash-preview:generateContent",
   headers={"x-goog-api-key": "sk-your-key"},
   json={
     "contents": [{
