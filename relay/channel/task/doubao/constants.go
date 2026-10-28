@@ -38,12 +38,40 @@ var videoPriceTable = map[string]map[videoPriceKey]float64{
 		{hasVideo: false}: 37.0,
 		{hasVideo: true}:  22.0,
 	},
+	// 本站对客模型名（按分辨率档位加后缀，如 seedance-2.0-mini-720p），查表时先去掉档位后缀
+	"seedance-2.0-mini": {
+		{hasVideo: false}: 23.0,
+		{hasVideo: true}:  14.0,
+	},
+	"seedance-2.0-fast": {
+		{hasVideo: false}: 37.0,
+		{hasVideo: true}:  22.0,
+	},
+}
+
+var resolutionSuffixes = []string{"480p", "720p", "1080p", "4k"}
+
+// resolutionFromModelName 取模型名末尾的分辨率档位（没有就返回空）。
+func resolutionFromModelName(modelName string) string {
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	for _, res := range resolutionSuffixes {
+		if strings.HasSuffix(name, "-"+res) {
+			return res
+		}
+	}
+	return ""
 }
 
 // GetVideoInputRatio 返回指定模型在给定输出分辨率/是否含视频输入下，相对基准价的计费倍率。
 // 第二个返回值表示该模型是否配置了价格表；倍率为 1.0 时调用方可忽略该 OtherRatio。
 func GetVideoInputRatio(modelName, resolution string, hasVideo bool) (float64, bool) {
 	prices, ok := videoPriceTable[modelName]
+	if !ok {
+		// 对客模型名带档位后缀时按去掉后缀的基名查表
+		if res := resolutionFromModelName(modelName); res != "" {
+			prices, ok = videoPriceTable[strings.TrimSuffix(strings.ToLower(strings.TrimSpace(modelName)), "-"+res)]
+		}
+	}
 	base := prices[videoPriceKey{}] // 零值键 = {480p/720p, 不含视频} 基准价
 	if !ok || base <= 0 {
 		return 0, false

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -147,7 +149,10 @@ func (a *TaskAdaptor) EstimateBillingValidated(c *gin.Context, info *relaycommon
 		return nil, err
 	}
 	ratios := make(map[string]float64)
-	if relaycommon.IsSeedanceRelayModel(info, req.Model) {
+	// 按倍率（token）定价的模型完成后按上游 total_tokens 重算，重算会连乘全部 OtherRatios，
+	// 所以这里不能放 seconds（否则按秒预扣、按 token 结算时又乘一次秒数），只放参考视频折扣。
+	perTokenPricing := info != nil && !info.PriceData.UsePrice
+	if relaycommon.IsSeedanceRelayModel(info, req.Model) && !perTokenPricing {
 		generatedSeconds := relaycommon.EffectiveTaskDuration(req)
 		if generatedSeconds <= 0 {
 			generatedSeconds = 4
@@ -164,8 +169,13 @@ func (a *TaskAdaptor) EstimateBillingValidated(c *gin.Context, info *relaycommon
 			ratios["seconds"] = float64(billableSeconds)
 		}
 	}
-	hasVideo := hasVideoInMetadata(req.Metadata)
+	hasVideo := hasVideoInMetadata(req.Metadata) || slices.ContainsFunc(req.Content, func(item relaycommon.TaskContentItem) bool {
+		return item.VideoURL != nil && strings.TrimSpace(item.VideoURL.URL) != ""
+	})
 	resolution, _ := req.Metadata["resolution"].(string)
+	if resolution == "" {
+		resolution = resolutionFromModelName(info.OriginModelName)
+	}
 	ratio, ok := GetVideoInputRatio(info.OriginModelName, resolution, hasVideo)
 	if ok && ratio != 1.0 {
 		ratios["video_input"] = ratio
@@ -336,6 +346,10 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 	metadata := req.Metadata
 	if err := taskcommon.UnmarshalMetadata(metadata, &r); err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
+	}
+	// 分辨率优先取 metadata，没有就按模型名档位后缀（seedance-2.0-mini-720p → 720p）
+	if r.Resolution == "" {
+		r.Resolution = resolutionFromModelName(req.Model)
 	}
 	if len(req.Content) > 0 {
 		contentBytes, err := common.Marshal(req.Content)
