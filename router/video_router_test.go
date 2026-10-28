@@ -3,6 +3,7 @@ package router
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -68,6 +69,10 @@ func TestGetOpenAIVideoRouteRendersJimengTask(t *testing.T) {
 		Group:  "default",
 	}).Error)
 
+	previousSecret := common.CryptoSecret
+	common.CryptoSecret = "router-video-test-secret"
+	t.Cleanup(func() { common.CryptoSecret = previousSecret })
+
 	task := &model.Task{
 		CreatedAt: 1710000000,
 		UpdatedAt: 1710000060,
@@ -76,6 +81,7 @@ func TestGetOpenAIVideoRouteRendersJimengTask(t *testing.T) {
 		UserId:    91,
 		Group:     "default",
 		ChannelId: 17,
+		Action:    constant.TaskActionImageToVideo,
 		Status:    model.TaskStatusSuccess,
 		Progress:  "100%",
 		PrivateData: model.TaskPrivateData{
@@ -96,6 +102,8 @@ func TestGetOpenAIVideoRouteRendersJimengTask(t *testing.T) {
 	engine := gin.New()
 	SetVideoRouter(engine)
 	SetTaskPluginProtocolRouter(engine)
+	SetArkVideoRouter(engine)
+	SetTaskRouter(engine)
 	request := httptest.NewRequest(http.MethodGet, "/v1/videos/task_jimeng_public", nil)
 	request.Header.Set("Authorization", "Bearer sk-jimengfetch")
 	recorder := httptest.NewRecorder()
@@ -148,4 +156,55 @@ func TestGetOpenAIVideoRouteRendersJimengTask(t *testing.T) {
 			}
 		})
 	}
+
+	// 火山方舟格式入口：同一个任务按方舟形状返回，成片地址是本站免令牌下载链接
+	t.Run("ark native fetch", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodGet, "/api/v3/contents/generations/tasks/task_jimeng_public", nil)
+		request.Header.Set("Authorization", "Bearer sk-jimengfetch")
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, request)
+
+		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+		var arkResponse struct {
+			ID      string `json:"id"`
+			Status  string `json:"status"`
+			Content struct {
+				VideoURL string `json:"video_url"`
+			} `json:"content"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &arkResponse))
+		assert.Equal(t, "task_jimeng_public", arkResponse.ID)
+		assert.Equal(t, "succeeded", arkResponse.Status)
+		assert.True(t, strings.HasPrefix(arkResponse.Content.VideoURL, "https://example.com/v1/tasks/task_jimeng_public/artifacts/video/content?access="), arkResponse.Content.VideoURL)
+		assert.NotContains(t, recorder.Body.String(), "jimeng-private-1")
+
+		// 下载链接不带令牌也能取回成片
+		download := httptest.NewRequest(http.MethodGet, strings.TrimPrefix(arkResponse.Content.VideoURL, "https://example.com"), nil)
+		downloadRecorder := httptest.NewRecorder()
+		engine.ServeHTTP(downloadRecorder, download)
+		require.Equal(t, http.StatusOK, downloadRecorder.Code, downloadRecorder.Body.String())
+		assert.Equal(t, "data", downloadRecorder.Body.String())
+	})
+
+	t.Run("ark native submit rejects body without prompt text", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks",
+			strings.NewReader(`{"model":"seedance-2.0-mini-480p","content":[{"type":"image_url","image_url":{"url":"https://img.example/1.png"}}]}`))
+		request.Header.Set("Authorization", "Bearer sk-jimengfetch")
+		request.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, request)
+
+		require.Equal(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
+		assert.Contains(t, recorder.Body.String(), `"code":"InvalidParameter"`)
+	})
+
+	t.Run("ark native cancel is reported as unsupported", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodDelete, "/api/v3/contents/generations/tasks/task_jimeng_public", nil)
+		request.Header.Set("Authorization", "Bearer sk-jimengfetch")
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, request)
+
+		require.Equal(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
+		assert.Contains(t, recorder.Body.String(), `"code":"NotSupported"`)
+	})
 }

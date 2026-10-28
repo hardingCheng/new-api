@@ -20,9 +20,12 @@ const (
 	ContextKeyOriginTasks            ContextKey = "origin_tasks"
 	ContextKeyChannelConstraints     ContextKey = "channel_constraints"
 	ContextKeyTokenModelLimitEnabled ContextKey = "token_model_limit_enabled"
-	ContextKeyTokenModelLimit        ContextKey = "token_model_limit"
-	ContextKeyTokenCrossGroupRetry   ContextKey = "token_cross_group_retry"
-	ContextKeyTokenAutoGroups        ContextKey = "token_auto_groups"
+	// ContextKeyArkVideoAPI 标记请求来自火山方舟格式的视频任务入口（/api/v3/contents/generations/tasks），
+	// 提交与查询的响应、错误体都按方舟形状输出。
+	ContextKeyArkVideoAPI          ContextKey = "ark_video_api"
+	ContextKeyTokenModelLimit      ContextKey = "token_model_limit"
+	ContextKeyTokenCrossGroupRetry ContextKey = "token_cross_group_retry"
+	ContextKeyTokenAutoGroups      ContextKey = "token_auto_groups"
 
 	/* channel related keys */
 	ContextKeyChannelId                ContextKey = "channel_id"

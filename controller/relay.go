@@ -994,6 +994,12 @@ func presentTaskSubmission(c *gin.Context, outcome *taskSubmissionOutcome) {
 	if ratiosJSON, err := common.Marshal(otherRatios); err == nil {
 		c.Header("X-New-Api-Other-Ratios", string(ratiosJSON))
 	}
+	// 火山方舟格式入口：提交只回任务 ID，与方舟创建任务的响应一致。
+	if common.GetContextKeyBool(c, constant.ContextKeyArkVideoAPI) {
+		diagnostics.present(outcome.Task, "ark_video_create")
+		c.JSON(http.StatusOK, gin.H{"id": outcome.Task.TaskID})
+		return
+	}
 	if pinnedValue, exists := c.Get(pluginruntime.ContextKeyPinnedRoute); exists {
 		if pinned, ok := pinnedValue.(pluginruntime.PinnedRoute); ok && pinned.Plugin != nil && pinned.Route.Render != "" {
 			view, err := service.BuildTaskPluginView(outcome.Task)
@@ -1061,7 +1067,29 @@ func respondTaskError(c *gin.Context, taskErr *taskdto.TaskError) {
 	if taskErr.StatusCode == http.StatusTooManyRequests {
 		taskErr.Message = "当前分组上游负载已饱和，请稍后再试"
 	}
+	if common.GetContextKeyBool(c, constant.ContextKeyArkVideoAPI) {
+		c.JSON(taskErr.StatusCode, middleware.ArkErrorBody(taskErr.StatusCode, arkTaskErrorCode(taskErr), taskErr.Message))
+		return
+	}
 	c.JSON(taskErr.StatusCode, taskErr)
+}
+
+// arkTaskErrorCode 把内部任务错误翻成方舟风格的错误码，方舟 SDK 与下游平台按它分类处理。
+func arkTaskErrorCode(taskErr *taskdto.TaskError) string {
+	switch {
+	case taskErr.Code == "task_not_exist":
+		return "ResourceNotFound"
+	case taskErr.StatusCode == http.StatusTooManyRequests:
+		return "RateLimitExceeded"
+	case taskErr.StatusCode == http.StatusUnauthorized || taskErr.StatusCode == http.StatusForbidden:
+		return "AuthenticationError"
+	case taskErr.StatusCode == http.StatusPaymentRequired || strings.Contains(strings.ToLower(taskErr.Message), "quota"):
+		return "QuotaExceeded"
+	case taskErr.StatusCode >= 500:
+		return "InternalServiceError"
+	default:
+		return "InvalidParameter"
+	}
 }
 
 // taskSubmissionAPIError adapts a task error for the shared relay error paths.

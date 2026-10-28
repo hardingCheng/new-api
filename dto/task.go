@@ -144,3 +144,33 @@ type TaskRootInfo struct {
 type FetchReq struct {
 	IDs []string `json:"ids"`
 }
+
+// ArkVideoTaskDto 是火山方舟格式视频任务查询（GET /api/v3/contents/generations/tasks/{id}）
+// 的对外结构，字段名与方舟保持一致，让方舟 SDK 和按方舟协议接入的下游平台不改代码即可解析。
+type ArkVideoTaskDto struct {
+	ID              string               `json:"id"`
+	Model           string               `json:"model"`
+	Status          string               `json:"status"`
+	Content         *ArkVideoTaskContent `json:"content,omitempty"`
+	Usage           *ArkVideoTaskUsage   `json:"usage,omitempty"`
+	Error           *ArkVideoTaskError   `json:"error,omitempty"`
+	CreatedAt       int64                `json:"created_at"`
+	UpdatedAt       int64                `json:"updated_at"`
+	Duration        int                  `json:"duration,omitempty"`
+	Resolution      string               `json:"resolution,omitempty"`
+	FramesPerSecond int                  `json:"framespersecond,omitempty"`
+}
+
+type ArkVideoTaskContent struct {
+	VideoURL string `json:"video_url"`
+}
+
+type ArkVideoTaskUsage struct {
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+type ArkVideoTaskError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}

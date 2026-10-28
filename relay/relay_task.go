@@ -590,6 +590,15 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 
 	isOpenAIVideoAPI := strings.HasPrefix(c.Request.RequestURI, "/v1/videos/")
 
+	// 火山方舟格式入口：按方舟形状返回，成片地址给本站的免令牌下载链接。
+	if common.GetContextKeyBool(c, constant.ContextKeyArkVideoAPI) {
+		respBody, err = common.Marshal(TaskModel2ArkVideoDto(c, originTask))
+		if err != nil {
+			taskResp = service.TaskErrorWrapper(err, "marshal_response_failed", http.StatusInternalServerError)
+		}
+		return
+	}
+
 	// Gemini/Vertex 支持实时查询：用户 fetch 时直接从上游拉取最新状态
 	if realtimeResp := tryRealtimeFetch(c.Request.Context(), originTask, isOpenAIVideoAPI); len(realtimeResp) > 0 {
 		respBody = realtimeResp

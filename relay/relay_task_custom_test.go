@@ -2,12 +2,15 @@ package relay
 
 import (
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -216,4 +219,73 @@ func TestReferenceVideoTotalQuota(t *testing.T) {
 	if total(ratio_setting.VideoRefModeNone, 0) != int(basePerSec*(genSec+refSec)*size) {
 		t.Fatal("无规则路径与旧计费逻辑不一致")
 	}
+}
+
+func TestTaskModel2ArkVideoDtoShapesStatusContentAndError(t *testing.T) {
+	previousSecret := common.CryptoSecret
+	previousPublicAddress := system_setting.TaskPublicAddress
+	previousServerAddress := system_setting.ServerAddress
+	common.CryptoSecret = "ark-dto-test-secret"
+	system_setting.TaskPublicAddress = ""
+	system_setting.ServerAddress = ""
+	t.Cleanup(func() {
+		common.CryptoSecret = previousSecret
+		system_setting.TaskPublicAddress = previousPublicAddress
+		system_setting.ServerAddress = previousServerAddress
+	})
+
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest("GET", "/api/v3/contents/generations/tasks/task_ark_ok", nil)
+	context.Request.Host = "z.example.test"
+
+	succeeded := &model.Task{
+		TaskID:      "task_ark_ok",
+		Status:      model.TaskStatusSuccess,
+		Action:      constant.TaskActionImageToVideo,
+		CreatedAt:   1710000000,
+		UpdatedAt:   1710000090,
+		Properties:  model.Properties{OriginModelName: "seedance-2.5-720p", VideoSeconds: 5},
+		PrivateData: model.TaskPrivateData{ResultURL: "https://upstream.example/private/video.mp4"},
+		Data:        []byte(`{"status":"succeeded","content":{"video_url":"https://upstream.example/private/video.mp4"},"usage":{"completion_tokens":108900,"total_tokens":108900}}`),
+	}
+	out := TaskModel2ArkVideoDto(context, succeeded)
+	assert.Equal(t, "task_ark_ok", out.ID)
+	assert.Equal(t, "seedance-2.5-720p", out.Model)
+	assert.Equal(t, "succeeded", out.Status)
+	assert.Equal(t, "720p", out.Resolution)
+	assert.Equal(t, 5, out.Duration)
+	assert.Equal(t, 24, out.FramesPerSecond)
+	require.NotNil(t, out.Content)
+	assert.True(t, strings.HasPrefix(out.Content.VideoURL, "https://z.example.test/v1/tasks/task_ark_ok/artifacts/video/content?access="), out.Content.VideoURL)
+	assert.NotContains(t, out.Content.VideoURL, "upstream.example")
+	require.NotNil(t, out.Usage)
+	assert.Equal(t, 108900, out.Usage.TotalTokens)
+	assert.Nil(t, out.Error)
+
+	failed := &model.Task{
+		TaskID:     "task_ark_failed",
+		Status:     model.TaskStatusFailure,
+		Action:     constant.TaskActionImageToVideo,
+		FailReason: "The request failed because the input image 'content[1]' may contain real person",
+		Properties: model.Properties{OriginModelName: "seedance-2.0-mini-480p"},
+	}
+	out = TaskModel2ArkVideoDto(context, failed)
+	assert.Equal(t, "failed", out.Status)
+	assert.Nil(t, out.Content)
+	require.NotNil(t, out.Error)
+	assert.Equal(t, "SensitiveContentDetected", out.Error.Code)
+	assert.Equal(t, failed.FailReason, out.Error.Message)
+
+	queued := &model.Task{TaskID: "task_ark_queued", Status: model.TaskStatusSubmitted, Action: constant.TaskActionImageToVideo}
+	out = TaskModel2ArkVideoDto(context, queued)
+	assert.Equal(t, "queued", out.Status)
+	assert.Nil(t, out.Content)
+	assert.Nil(t, out.Error)
+
+	running := &model.Task{TaskID: "task_ark_running", Status: model.TaskStatusInProgress, Action: constant.TaskActionImageToVideo}
+	assert.Equal(t, "running", TaskModel2ArkVideoDto(context, running).Status)
+
+	// 成功但没有可下载结果（或任务类型不在下载入口放行范围）时不给出打不开的链接
+	noResult := &model.Task{TaskID: "task_ark_noresult", Status: model.TaskStatusSuccess, Action: constant.TaskActionImageToVideo}
+	assert.Nil(t, TaskModel2ArkVideoDto(context, noResult).Content)
 }
