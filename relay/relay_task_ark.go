@@ -128,8 +128,11 @@ func arkVideoUsage(task *model.Task) *dto.ArkVideoTaskUsage {
 	total := intFromAny(usage["total_tokens"])
 	completion := intFromAny(usage["completion_tokens"])
 	if total <= 0 && completion <= 0 {
-		if bc := task.PrivateData.BillingContext; bc != nil && bc.SettlementActualTokens > 0 {
-			return &dto.ArkVideoTaskUsage{CompletionTokens: bc.SettlementActualTokens, TotalTokens: bc.SettlementActualTokens}
+		// 结算落地前在 SettlementActualTokens，落地后清零、留在 SettledTokens
+		if bc := task.PrivateData.BillingContext; bc != nil {
+			if tokens := max(bc.SettledTokens, bc.SettlementActualTokens); tokens > 0 {
+				return &dto.ArkVideoTaskUsage{CompletionTokens: tokens, TotalTokens: tokens}
+			}
 		}
 		return nil
 	}

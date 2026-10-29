@@ -197,6 +197,7 @@ type TaskBillingContext struct {
 	SettlementActualTokens      int                                      `json:"settlement_actual_tokens,omitempty"`
 	SettlementReason            string                                   `json:"settlement_reason,omitempty"`
 	SettlementQuotaClamp        *common.QuotaClamp                       `json:"settlement_quota_clamp,omitempty"`
+	SettledTokens               int                                      `json:"settled_tokens,omitempty"` // 结算落地后保留的 token 数，供查询响应回显用量（上游不回 usage 的线路）
 	SubmissionRequestID         string                                   `json:"submission_request_id,omitempty"`
 	SubmissionPreConsumedQuota  int                                      `json:"submission_pre_consumed_quota,omitempty"`
 	SubmissionActualQuota       int                                      `json:"submission_actual_quota,omitempty"`

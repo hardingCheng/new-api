@@ -735,6 +735,9 @@ func ApplyPendingTaskSettlement(ctx context.Context, task *model.Task) error {
 			return errors.New("task quota settlement is still pending")
 		}
 	}
+	if bc.SettlementActualTokens > 0 {
+		bc.SettledTokens = bc.SettlementActualTokens
+	}
 	bc.SettlementHasActualQuota = false
 	bc.SettlementActualQuota = 0
 	bc.SettlementActualTokens = 0

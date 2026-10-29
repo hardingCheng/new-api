@@ -1625,6 +1625,7 @@ func TestPendingSuccessfulTaskSettlementRetriesAfterBillingRecovers(t *testing.T
 	task.BillingStatus = model.TaskBillingStatusSettlementPending
 	task.PrivateData.BillingContext.SettlementHasActualQuota = true
 	task.PrivateData.BillingContext.SettlementActualQuota = 3000
+	task.PrivateData.BillingContext.SettlementActualTokens = 48437
 	task.PrivateData.BillingContext.SettlementReason = "retry regression"
 	require.NoError(t, model.DB.Create(task).Error)
 
@@ -1634,6 +1635,9 @@ func TestPendingSuccessfulTaskSettlementRetriesAfterBillingRecovers(t *testing.T
 	var pending model.Task
 	require.NoError(t, model.DB.First(&pending, task.ID).Error)
 	assert.Equal(t, model.TaskBillingStatusSettled, pending.BillingStatus)
+	// 落地后结算用的 token 数要留下来给查询响应回显用量，临时标记本身清零
+	assert.Equal(t, 48437, pending.PrivateData.BillingContext.SettledTokens)
+	assert.Zero(t, pending.PrivateData.BillingContext.SettlementActualTokens)
 
 	seedUser(t, 89, 10000)
 	require.NoError(t, model.DB.Model(&model.BillingAdjustment{}).

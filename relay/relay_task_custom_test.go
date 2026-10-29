@@ -290,17 +290,20 @@ func TestTaskModel2ArkVideoDtoShapesStatusContentAndError(t *testing.T) {
 	assert.Nil(t, TaskModel2ArkVideoDto(context, noResult).Content)
 	assert.Nil(t, TaskModel2ArkVideoDto(context, noResult).Usage)
 
-	// 上游不回 token（按公式估算结算的线路）时，用量取结算记录里的 token 数
-	estimated := &model.Task{
-		TaskID:      "task_ark_estimated",
-		Status:      model.TaskStatusSuccess,
-		Action:      constant.TaskActionTextToVideo,
-		Properties:  model.Properties{OriginModelName: "seedance-2.5-480p", VideoSeconds: 5},
-		PrivateData: model.TaskPrivateData{ResultURL: "/v1/videos/task_ark_estimated/content", BillingContext: &model.TaskBillingContext{SettlementActualTokens: 48437}},
-		Data:        []byte(`{"status":"completed","video_url":"https://upstream.example/private/video.mp4"}`),
+	// 上游不回 token（按公式估算结算的线路）时，用量取结算记录里的 token 数：
+	// 结算落地前在 SettlementActualTokens，落地后只剩 SettledTokens
+	for _, bc := range []*model.TaskBillingContext{{SettlementActualTokens: 48437}, {SettledTokens: 48437}} {
+		estimated := &model.Task{
+			TaskID:      "task_ark_estimated",
+			Status:      model.TaskStatusSuccess,
+			Action:      constant.TaskActionTextToVideo,
+			Properties:  model.Properties{OriginModelName: "seedance-2.5-480p", VideoSeconds: 5},
+			PrivateData: model.TaskPrivateData{ResultURL: "http://localhost:3000/v1/videos/task_ark_estimated/content", BillingContext: bc},
+			Data:        []byte(`{"status":"completed","video_url":"https://upstream.example/private/video.mp4"}`),
+		}
+		out = TaskModel2ArkVideoDto(context, estimated)
+		require.NotNil(t, out.Usage)
+		assert.Equal(t, 48437, out.Usage.TotalTokens)
+		assert.Equal(t, 48437, out.Usage.CompletionTokens)
 	}
-	out = TaskModel2ArkVideoDto(context, estimated)
-	require.NotNil(t, out.Usage)
-	assert.Equal(t, 48437, out.Usage.TotalTokens)
-	assert.Equal(t, 48437, out.Usage.CompletionTokens)
 }
