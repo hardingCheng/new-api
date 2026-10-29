@@ -288,4 +288,19 @@ func TestTaskModel2ArkVideoDtoShapesStatusContentAndError(t *testing.T) {
 	// 成功但没有可下载结果（或任务类型不在下载入口放行范围）时不给出打不开的链接
 	noResult := &model.Task{TaskID: "task_ark_noresult", Status: model.TaskStatusSuccess, Action: constant.TaskActionImageToVideo}
 	assert.Nil(t, TaskModel2ArkVideoDto(context, noResult).Content)
+	assert.Nil(t, TaskModel2ArkVideoDto(context, noResult).Usage)
+
+	// 上游不回 token（按公式估算结算的线路）时，用量取结算记录里的 token 数
+	estimated := &model.Task{
+		TaskID:      "task_ark_estimated",
+		Status:      model.TaskStatusSuccess,
+		Action:      constant.TaskActionTextToVideo,
+		Properties:  model.Properties{OriginModelName: "seedance-2.5-480p", VideoSeconds: 5},
+		PrivateData: model.TaskPrivateData{ResultURL: "/v1/videos/task_ark_estimated/content", BillingContext: &model.TaskBillingContext{SettlementActualTokens: 48437}},
+		Data:        []byte(`{"status":"completed","video_url":"https://upstream.example/private/video.mp4"}`),
+	}
+	out = TaskModel2ArkVideoDto(context, estimated)
+	require.NotNil(t, out.Usage)
+	assert.Equal(t, 48437, out.Usage.TotalTokens)
+	assert.Equal(t, 48437, out.Usage.CompletionTokens)
 }

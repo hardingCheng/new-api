@@ -1,7 +1,6 @@
 package relay
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"slices"
@@ -59,7 +58,7 @@ func TaskModel2ArkVideoDto(c *gin.Context, task *model.Task) *dto.ArkVideoTaskDt
 		if videoURL := arkVideoContentURL(c, task); videoURL != "" {
 			out.Content = &dto.ArkVideoTaskContent{VideoURL: videoURL}
 		}
-		out.Usage = arkVideoUsage(task.Data)
+		out.Usage = arkVideoUsage(task)
 	case model.TaskStatusFailure:
 		message := strings.TrimSpace(task.FailReason)
 		if message == "" {
@@ -116,22 +115,22 @@ func arkVideoContentURL(c *gin.Context, task *model.Task) string {
 		service.TaskArtifactAccessQueryParameter, url.QueryEscape(access))
 }
 
-// arkVideoUsage 从上游回写的数据里取 token 用量（按 token 计费的线路才有），没有就不输出。
-func arkVideoUsage(data json.RawMessage) *dto.ArkVideoTaskUsage {
-	if len(data) == 0 {
-		return nil
-	}
+// arkVideoUsage 优先取上游回写的 token 用量；上游不回（如按官方公式估算结算的线路）时，
+// 用结算记录里的 token 数，保证响应里的用量和实际扣费口径一致。都没有就不输出。
+func arkVideoUsage(task *model.Task) *dto.ArkVideoTaskUsage {
 	var payload map[string]any
-	if err := common.Unmarshal(data, &payload); err != nil {
-		return nil
+	if len(task.Data) > 0 {
+		if err := common.Unmarshal(task.Data, &payload); err != nil {
+			payload = nil
+		}
 	}
-	usage, ok := payload["usage"].(map[string]any)
-	if !ok {
-		return nil
-	}
+	usage, _ := payload["usage"].(map[string]any)
 	total := intFromAny(usage["total_tokens"])
 	completion := intFromAny(usage["completion_tokens"])
 	if total <= 0 && completion <= 0 {
+		if bc := task.PrivateData.BillingContext; bc != nil && bc.SettlementActualTokens > 0 {
+			return &dto.ArkVideoTaskUsage{CompletionTokens: bc.SettlementActualTokens, TotalTokens: bc.SettlementActualTokens}
+		}
 		return nil
 	}
 	if total <= 0 {

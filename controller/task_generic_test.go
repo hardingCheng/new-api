@@ -350,6 +350,42 @@ func TestLegacyVideoArtifactContentUsesGetResultURL(t *testing.T) {
 	assert.Equal(t, "bytes 0-3/4", recorder.Header().Get("Content-Range"))
 }
 
+func TestLegacyVideoArtifactContentFallsBackToUpstreamContentForSoraChannels(t *testing.T) {
+	task := setupGenericTaskTest(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/videos/vid_upstream/content", r.URL.Path)
+		assert.Equal(t, "Bearer sk-upstream", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "video/mp4")
+		_, _ = w.Write([]byte("data"))
+	}))
+	defer upstream.Close()
+	allowPrivateTaskMediaTest(t)
+	previousMemoryCache := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = false
+	t.Cleanup(func() { common.MemoryCacheEnabled = previousMemoryCache })
+
+	baseURL := upstream.URL
+	require.NoError(t, model.DB.Create(&model.Channel{
+		Id: 2, Name: "sora", Type: constant.ChannelTypeSora, Key: "sk-upstream", BaseURL: &baseURL, Status: common.ChannelStatusEnabled,
+	}).Error)
+	task.ChannelId = 2
+	task.Action = constant.TaskActionTextToVideo
+	// Sora 型适配器不回直链，轮询存的是 ServerAddress 为空时拼出的本站相对路径
+	task.PrivateData = model.TaskPrivateData{ResultURL: "/v1/videos/" + task.TaskID + "/content", UpstreamTaskID: "vid_upstream"}
+	require.NoError(t, model.DB.Save(task).Error)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Set(middleware.TaskArtifactAccessContextKey, true)
+	c.Params = gin.Params{{Key: "key", Value: task.TaskID}, {Key: "artifact_key", Value: "video"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/tasks/"+task.TaskID+"/artifacts/video/content", nil)
+
+	TaskArtifactContent(c)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "data", recorder.Body.String())
+}
+
 func TestDisabledArtifactStorePreservesPluginUpstreamContent(t *testing.T) {
 	task := setupGenericTaskTest(t)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

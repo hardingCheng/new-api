@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -339,10 +340,18 @@ func TaskArtifactContent(c *gin.Context) {
 			writeTaskArtifactError(c, http.StatusNotFound, "artifact_not_found", "Task or artifact not found")
 			return
 		}
-		descriptor := &relaychannel.TaskContentRequest{
-			URL:            task.GetResultURL(),
-			Method:         c.Request.Method,
-			Credentialless: true,
+		// 适配器回了上游直链就直接取；Sora 型等只留本站代理地址的任务（ServerAddress 为空时
+		// 还是个相对路径），改走与 /v1/videos/{id}/content 相同的回源请求，否则会被当成非法地址拒掉。
+		resultURL := strings.TrimSpace(task.GetResultURL())
+		descriptor := &relaychannel.TaskContentRequest{URL: resultURL, Method: c.Request.Method, Credentialless: true}
+		if parsed, parseErr := url.Parse(resultURL); parseErr != nil || parsed.Scheme == "" || parsed.Host == "" ||
+			isTaskMediaFallbackLoop(resultURL, task.TaskID) {
+			upstream, resolveErr := legacyVideoContentRequest(c, task)
+			if resolveErr != nil || upstream == nil {
+				writeTaskArtifactError(c, http.StatusNotFound, "artifact_not_found", "Task or artifact not found")
+				return
+			}
+			descriptor = upstream
 		}
 		if err := proxyTaskMedia(c, task, descriptor); err != nil {
 			writeTaskMediaProxyError(c, err)
