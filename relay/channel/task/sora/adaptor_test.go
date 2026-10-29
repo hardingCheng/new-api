@@ -368,6 +368,24 @@ func TestSeedance25TokenPricedBillingRatios(t *testing.T) {
 			expected: map[string]float64{"video_input": 46.0 / 77.0},
 		},
 		{
+			name:     "2.0 standard text to video is token settled without seconds",
+			model:    "seedance-2.0-480p",
+			body:     `{"model":"seedance-2.0-480p","prompt":"test","seconds":"10"}`,
+			expected: nil,
+		},
+		{
+			name:     "2.0 standard reference video gets its own 720p video-input discount",
+			model:    "seedance-2.0-720p",
+			body:     `{"model":"seedance-2.0-720p","prompt":"test","seconds":"5","images":[{"url":"http://127.0.0.1:1/v.mp4","type":"video"}]}`,
+			expected: map[string]float64{"video_input": 28.0 / 46.0},
+		},
+		{
+			name:     "2.0 standard 1080p reference video gets its own discount",
+			model:    "seedance-2.0-1080p",
+			body:     `{"model":"seedance-2.0-1080p","prompt":"test","seconds":"5","content":[{"type":"video_url","video_url":{"url":"http://127.0.0.1:1/v.mp4"}}]}`,
+			expected: map[string]float64{"video_input": 31.0 / 51.0},
+		},
+		{
 			name:     "per-second priced model keeps seconds billing",
 			model:    "seedance-2.5-720p",
 			body:     `{"model":"seedance-2.5-720p","prompt":"test","seconds":"6"}`,
@@ -514,6 +532,12 @@ func TestSeedance25ParseTaskResultSettlementTokens(t *testing.T) {
 			expected: math.MaxInt32,
 		},
 		{
+			name:     "2.0 standard estimates tokens with the same formula",
+			model:    "seedance-2.0-480p",
+			body:     `{"id":"video_1","status":"completed","seconds":"5"}`,
+			expected: 48437,
+		},
+		{
 			name:     "other seedance models are not token settled",
 			model:    "seedance-2.0-mini-480p",
 			body:     `{"id":"video_1","status":"completed","seconds":"5","size":"864x496","usage":{"total_tokens":50638}}`,
@@ -556,6 +580,12 @@ func TestSeedance25SubmitFailureIsRetryable(t *testing.T) {
 			name:  "seedance 2.5 accepted task is returned",
 			model: "seedance-2.5-480p",
 			body:  `{"id":"video_1","status":"processing"}`,
+		},
+		{
+			name:       "seedance 2.0 standard failed at submission becomes 502",
+			model:      "seedance-2.0-720p",
+			body:       `{"id":"video_1","status":"failed","error":{"message":"x"}}`,
+			expectCode: http.StatusBadGateway,
 		},
 		{
 			name:  "other models keep the submitted task",

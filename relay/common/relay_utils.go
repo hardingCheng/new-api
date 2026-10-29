@@ -162,18 +162,39 @@ func IsSeedanceRelayModel(info *RelayInfo, modelName string) bool {
 	return info.ChannelMeta != nil && IsSeedanceVideoModel(info.UpstreamModelName)
 }
 
-func IsSeedance25RelayModel(info *RelayInfo, modelName string) bool {
-	modelNames := []string{modelName}
+// relayModelNames 收集一次请求涉及的全部模型名（客户名、路由名、上游名），供按名字判型号的函数共用。
+func relayModelNames(info *RelayInfo, modelName string) []string {
+	names := []string{modelName}
 	if info != nil {
-		modelNames = append(modelNames, info.OriginModelName, info.EffectiveRoutingModelName())
+		names = append(names, info.OriginModelName, info.EffectiveRoutingModelName())
 		if info.ChannelMeta != nil {
-			modelNames = append(modelNames, info.UpstreamModelName)
+			names = append(names, info.UpstreamModelName)
 		}
 	}
-	for _, name := range modelNames {
+	return names
+}
+
+func IsSeedance25RelayModel(info *RelayInfo, modelName string) bool {
+	for _, name := range relayModelNames(info, modelName) {
 		name = strings.ToLower(strings.TrimSpace(name))
 		if name == "seedance-2.5" || strings.HasPrefix(name, "seedance-2.5-") ||
 			name == "doubao-seedance-2-5" || strings.HasPrefix(name, "doubao-seedance-2-5-") {
+			return true
+		}
+	}
+	return false
+}
+
+// IsSeedanceTokenSettledRelayModel 判断是否按 token 结算的 Seedance 线路型号：2.5 全系和 2.0 标准版
+// （seedance-2.0 及其 480p/720p/1080p 档）。mini/fast/eco 走各自的按秒或官方线路，不在内；
+// 4K 档的像素表还没有，接入前不放行。
+func IsSeedanceTokenSettledRelayModel(info *RelayInfo, modelName string) bool {
+	if IsSeedance25RelayModel(info, modelName) {
+		return true
+	}
+	for _, name := range relayModelNames(info, modelName) {
+		rest, ok := strings.CutPrefix(strings.ToLower(strings.TrimSpace(name)), "seedance-2.0")
+		if ok && (rest == "" || rest == "-480p" || rest == "-720p" || rest == "-1080p") {
 			return true
 		}
 	}

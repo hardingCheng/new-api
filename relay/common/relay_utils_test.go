@@ -340,3 +340,30 @@ func TestSeedance25AutoDurationFeatureFlag(t *testing.T) {
 	require.NotNil(t, taskErr)
 	require.Equal(t, "invalid_seconds", taskErr.Code)
 }
+
+func TestSeedanceTokenSettledRelayModel(t *testing.T) {
+	tests := []struct {
+		name          string
+		requestModel  string
+		upstreamModel string
+		want          bool
+	}{
+		{name: "2.5 is token settled", requestModel: "seedance-2.5-720p", want: true},
+		{name: "2.0 standard resolution tiers are token settled", requestModel: "seedance-2.0-1080p", want: true},
+		{name: "bare 2.0 standard is token settled", requestModel: "seedance-2.0", want: true},
+		{name: "2.0 standard reached through the upstream name", requestModel: "521ai-2.0-720p", upstreamModel: "seedance-2.0-720p", want: true},
+		{name: "mini stays on the per-second line", requestModel: "seedance-2.0-mini-480p", want: false},
+		{name: "fast stays on its own line", requestModel: "seedance-2.0-fast-720p", want: false},
+		{name: "eco stays per second", requestModel: "seedance-2.0-mini-480p-eco", want: false},
+		{name: "4k is not enabled", requestModel: "seedance-2.0-4k", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var info *RelayInfo
+			if test.upstreamModel != "" {
+				info = &RelayInfo{OriginModelName: test.requestModel, ChannelMeta: &ChannelMeta{UpstreamModelName: test.upstreamModel}}
+			}
+			assert.Equal(t, test.want, IsSeedanceTokenSettledRelayModel(info, test.requestModel))
+		})
+	}
+}

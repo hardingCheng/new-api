@@ -93,11 +93,19 @@ type responseTask struct {
 
 // seedance25VideoInputRatio 是 Seedance 2.5 含参考视频输入时相对基准单价的倍率
 // （官方 480p/720p 70→42 元/百万 token，1080p 77→46 元/百万 token）。
-func seedance25VideoInputRatio(is1080p bool) float64 {
-	if is1080p {
+// seedanceVideoInputRatio 带参考视频时的单价折扣 = 官方「输入包含视频」价 / 「输入不含视频」价：
+// 2.5 为 42/70（1080p 46/77），2.0 标准版为 28/46（1080p 31/51）。
+func seedanceVideoInputRatio(is25, is1080p bool) float64 {
+	switch {
+	case is25 && is1080p:
 		return 46.0 / 77.0
+	case is25:
+		return 42.0 / 70.0
+	case is1080p:
+		return 31.0 / 51.0
+	default:
+		return 28.0 / 46.0
 	}
-	return 42.0 / 70.0
 }
 
 // seedance25Content 把 prompt 和参考素材组装成火山方舟格式的 content[]：视频中转的 Ark 线路
@@ -180,8 +188,8 @@ func seedance25OutputPixels(modelName string) float64 {
 	}
 }
 
-// seedance25SettlementTokens 返回 Seedance 2.5 任务用于结算的 token 数：优先上游
-// total_tokens；上游不回传时（如 LibLib 线路）按官方计费公式估算：
+// seedance25SettlementTokens 返回按 token 结算的 Seedance（2.5 / 2.0 标准版）任务的结算 token 数：
+// 优先上游 total_tokens；上游不回传时（如 LibLib 线路）按官方计费公式估算：
 // (24 × (输出秒数 + 参考视频秒数) + 1) × 输出像素 / 1024。结果饱和到 int32 范围内。
 func seedance25SettlementTokens(resTask responseTask, modelName string, referenceSeconds int) int {
 	if resTask.Usage != nil {
@@ -259,9 +267,9 @@ func (a *TaskAdaptor) EstimateBillingValidated(c *gin.Context, info *relaycommon
 		return nil, err
 	}
 
-	// Seedance 2.5 按倍率（token）定价时，完成后按上游 total_tokens 重算，
+	// Seedance 2.5 / 2.0 标准版按倍率（token）定价时，完成后按上游 total_tokens 重算，
 	// 重算会连乘全部 OtherRatios，所以这里不能放 seconds，只放参考视频折扣。
-	if relaycommon.IsSeedance25RelayModel(info, req.Model) && !info.PriceData.UsePrice {
+	if relaycommon.IsSeedanceTokenSettledRelayModel(info, req.Model) && !info.PriceData.UsePrice {
 		var body []byte
 		if storage, err := common.GetBodyStorage(c); err == nil {
 			body, _ = storage.Bytes()
@@ -275,7 +283,7 @@ func (a *TaskAdaptor) EstimateBillingValidated(c *gin.Context, info *relaycommon
 			c.Set(relaycommon.TaskPropertyReferenceVideoSecondsKey, referenceSeconds)
 		}
 		is1080p := strings.Contains(strings.ToLower(info.OriginModelName+" "+info.UpstreamModelName+" "+req.Model), "1080p")
-		return map[string]float64{"video_input": seedance25VideoInputRatio(is1080p)}, nil
+		return map[string]float64{"video_input": seedanceVideoInputRatio(relaycommon.IsSeedance25RelayModel(info, req.Model), is1080p)}, nil
 	}
 
 	seconds := relaycommon.EffectiveTaskDuration(req)
@@ -363,9 +371,9 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 			// seedance 系上游只认 image 字段（字符串或数组），images / input_reference 会被静默忽略：
 			// 归并成 image，避免客户按 images 传参后参考图被丢弃、却照常按秒计费。
 			// 仅限 seedance —— 同一适配器还服务其他视频渠道，它们各有自己的参考图字段协议。
-			// Seedance 2.5 的上游是自有视频中转的 Ark 线路，只读火山格式 content[]：
+			// Seedance 2.5 / 2.0 标准版的上游是自有视频中转，只读火山格式 content[]：
 			// 客户已传 content 时原样透传，否则由 prompt 和参考素材组装。
-			if req, err := relaycommon.GetTaskRequest(c); err == nil && relaycommon.IsSeedance25RelayModel(info, req.Model) {
+			if req, err := relaycommon.GetTaskRequest(c); err == nil && relaycommon.IsSeedanceTokenSettledRelayModel(info, req.Model) {
 				if items, _ := bodyMap["content"].([]any); len(items) == 0 {
 					if content := seedance25Content(bodyMap); len(content) > 0 {
 						bodyMap["content"] = content
@@ -509,7 +517,7 @@ func (a *TaskAdaptor) doResponse(c *gin.Context, resp *http.Response, info *rela
 	}
 	// 视频中转在提交阶段就失败（如某条上游登录失效）时仍返回 HTTP 200 + status=failed：
 	// 按 502 处理，让 hub 换同模型的其他渠道重试，而不是把必然失败的任务交给客户。
-	if relaycommon.IsSeedance25RelayModel(info, info.OriginModelName) && (dResp.Status == "failed" || dResp.Status == "cancelled") {
+	if relaycommon.IsSeedanceTokenSettledRelayModel(info, info.OriginModelName) && (dResp.Status == "failed" || dResp.Status == "cancelled") {
 		reason := "upstream task failed at submission"
 		if dResp.Error != nil && strings.TrimSpace(dResp.Error.Message) != "" {
 			reason = dResp.Error.Message
@@ -575,8 +583,8 @@ func (a *TaskAdaptor) ParseTaskResult(task *model.Task, _ *http.Response, respBo
 	if err != nil || taskResult.Status != model.TaskStatusSuccess || task == nil {
 		return taskResult, err
 	}
-	if !relaycommon.IsSeedance25RelayModel(nil, task.Properties.OriginModelName) &&
-		!relaycommon.IsSeedance25RelayModel(nil, task.Properties.UpstreamModelName) {
+	if !relaycommon.IsSeedanceTokenSettledRelayModel(nil, task.Properties.OriginModelName) &&
+		!relaycommon.IsSeedanceTokenSettledRelayModel(nil, task.Properties.UpstreamModelName) {
 		return taskResult, nil
 	}
 	resTask := responseTask{}
