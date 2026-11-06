@@ -166,16 +166,19 @@ export function OverviewDashboard() {
 
       <div className='grid gap-4 xl:grid-cols-2'>
         <PanelCard title={t('Call Trend')} subtitle={t('Requests (last 7 days)')}>
-          <div className='flex h-40 items-end gap-2'>
+          <div className='flex items-stretch gap-2'>
             {days.map((d) => (
               <div key={d.date} className='group flex min-w-0 flex-1 flex-col items-center gap-1.5'>
                 <div className='text-muted-foreground font-mono text-[10px] opacity-0 transition-opacity group-hover:opacity-100'>
                   {formatQuota(d.quota)}
                 </div>
-                <div
-                  className='bg-primary/85 w-full rounded-sm transition-colors group-hover:bg-primary'
-                  style={{ height: `${Math.max((d.quota / maxDayQuota) * 100, 2)}%` }}
-                />
+                <div className='flex h-32 w-full items-end'>
+                  <div
+                    data-testid='call-trend-bar'
+                    className='bg-primary/85 w-full rounded-sm transition-colors group-hover:bg-primary'
+                    style={{ height: `${Math.max((d.quota / maxDayQuota) * 100, 2)}%` }}
+                  />
+                </div>
                 <div className='text-muted-foreground font-mono text-[10px]'>{d.date.slice(5)}</div>
               </div>
             ))}
