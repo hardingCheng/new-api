@@ -25,7 +25,14 @@ func (r *GeminiChatRequest) UnmarshalJSON(data []byte) error {
 	type Alias GeminiChatRequest
 	var aux struct {
 		Alias
-		SystemInstructionSnake *GeminiChatContent `json:"system_instruction,omitempty"`
+		// 官方 API 允许 contents / safetySettings 传单个对象,外层同名字段覆盖 Alias 里的切片字段
+		Contents               json.RawMessage             `json:"contents,omitempty"`
+		SafetySettings         json.RawMessage             `json:"safetySettings,omitempty"`
+		SafetySettingsSnake    json.RawMessage             `json:"safety_settings,omitempty"`
+		GenerationConfigSnake  *GeminiChatGenerationConfig `json:"generation_config,omitempty"`
+		ToolConfigSnake        *ToolConfig                 `json:"tool_config,omitempty"`
+		SystemInstructionSnake *GeminiChatContent          `json:"system_instruction,omitempty"`
+		CachedContentSnake     string                      `json:"cached_content,omitempty"`
 	}
 
 	if err := kitutil.Unmarshal(data, &aux); err != nil {
@@ -34,11 +41,56 @@ func (r *GeminiChatRequest) UnmarshalJSON(data []byte) error {
 
 	*r = GeminiChatRequest(aux.Alias)
 
+	contents, err := unmarshalOneOrMany[GeminiChatContent](aux.Contents)
+	if err != nil {
+		return err
+	}
+	r.Contents = contents
+
+	safety := aux.SafetySettings
+	if len(aux.SafetySettingsSnake) > 0 {
+		safety = aux.SafetySettingsSnake
+	}
+	safetySettings, err := unmarshalOneOrMany[GeminiChatSafetySettings](safety)
+	if err != nil {
+		return err
+	}
+	r.SafetySettings = safetySettings
+
+	if aux.GenerationConfigSnake != nil {
+		r.GenerationConfig = *aux.GenerationConfigSnake
+	}
+	if aux.ToolConfigSnake != nil {
+		r.ToolConfig = aux.ToolConfigSnake
+	}
 	if aux.SystemInstructionSnake != nil {
 		r.SystemInstructions = aux.SystemInstructionSnake
 	}
+	if aux.CachedContentSnake != "" {
+		r.CachedContent = aux.CachedContentSnake
+	}
 
 	return nil
+}
+
+// unmarshalOneOrMany 解析 Gemini 官方允许「单个对象或对象数组」两种写法的字段。
+func unmarshalOneOrMany[T any](raw json.RawMessage) ([]T, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return nil, nil
+	}
+	if strings.HasPrefix(trimmed, "[") {
+		var items []T
+		if err := kitutil.Unmarshal(raw, &items); err != nil {
+			return nil, err
+		}
+		return items, nil
+	}
+	var item T
+	if err := kitutil.Unmarshal(raw, &item); err != nil {
+		return nil, err
+	}
+	return []T{item}, nil
 }
 
 type ToolConfig struct {
@@ -281,6 +333,27 @@ type GeminiFileData struct {
 	FileUri  string `json:"fileUri,omitempty"`
 }
 
+// UnmarshalJSON accepts both snake_case (mime_type/file_uri) and camelCase.
+func (f *GeminiFileData) UnmarshalJSON(data []byte) error {
+	type Alias GeminiFileData
+	var aux struct {
+		Alias
+		MimeTypeSnake string `json:"mime_type,omitempty"`
+		FileUriSnake  string `json:"file_uri,omitempty"`
+	}
+	if err := kitutil.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	*f = GeminiFileData(aux.Alias)
+	if aux.MimeTypeSnake != "" {
+		f.MimeType = aux.MimeTypeSnake
+	}
+	if aux.FileUriSnake != "" {
+		f.FileUri = aux.FileUriSnake
+	}
+	return nil
+}
+
 type GeminiPart struct {
 	Text             string                  `json:"text,omitempty"`
 	Thought          bool                    `json:"thought,omitempty"`
@@ -302,23 +375,51 @@ func (p *GeminiPart) UnmarshalJSON(data []byte) error {
 	type Alias GeminiPart
 	var aux struct {
 		Alias
-		InlineDataSnake *GeminiInlineData `json:"inline_data,omitempty"` // snake_case variant
+		InlineDataSnake          *GeminiInlineData              `json:"inline_data,omitempty"`
+		FileDataSnake            *GeminiFileData                `json:"file_data,omitempty"`
+		FunctionCallSnake        *FunctionCall                  `json:"function_call,omitempty"`
+		FunctionResponseSnake    *GeminiFunctionResponse        `json:"function_response,omitempty"`
+		ThoughtSignatureSnake    json.RawMessage                `json:"thought_signature,omitempty"`
+		MediaResolutionSnake     json.RawMessage                `json:"media_resolution,omitempty"`
+		VideoMetadataSnake       json.RawMessage                `json:"video_metadata,omitempty"`
+		ExecutableCodeSnake      *GeminiPartExecutableCode      `json:"executable_code,omitempty"`
+		CodeExecutionResultSnake *GeminiPartCodeExecutionResult `json:"code_execution_result,omitempty"`
 	}
 
 	if err := kitutil.Unmarshal(data, &aux); err != nil {
 		return err
 	}
 
-	// Assign fields from alias
 	*p = GeminiPart(aux.Alias)
 
-	// Prioritize snake_case for InlineData if present
+	// snake_case 优先(官方两种写法都收;之前只认 inline_data,file_data 等会被静默丢掉)
 	if aux.InlineDataSnake != nil {
 		p.InlineData = aux.InlineDataSnake
-	} else if aux.InlineData != nil { // Fallback to camelCase from Alias
-		p.InlineData = aux.InlineData
 	}
-	// Other fields like Text, FunctionCall etc. are already populated via aux.Alias
+	if aux.FileDataSnake != nil {
+		p.FileData = aux.FileDataSnake
+	}
+	if aux.FunctionCallSnake != nil {
+		p.FunctionCall = aux.FunctionCallSnake
+	}
+	if aux.FunctionResponseSnake != nil {
+		p.FunctionResponse = aux.FunctionResponseSnake
+	}
+	if len(aux.ThoughtSignatureSnake) > 0 {
+		p.ThoughtSignature = aux.ThoughtSignatureSnake
+	}
+	if len(aux.MediaResolutionSnake) > 0 {
+		p.MediaResolution = aux.MediaResolutionSnake
+	}
+	if len(aux.VideoMetadataSnake) > 0 {
+		p.VideoMetadata = aux.VideoMetadataSnake
+	}
+	if aux.ExecutableCodeSnake != nil {
+		p.ExecutableCode = aux.ExecutableCodeSnake
+	}
+	if aux.CodeExecutionResultSnake != nil {
+		p.CodeExecutionResult = aux.CodeExecutionResultSnake
+	}
 
 	return nil
 }
@@ -328,9 +429,28 @@ type GeminiChatContent struct {
 	Parts []GeminiPart `json:"parts"`
 }
 
+// UnmarshalJSON accepts parts as a single object or an array, as the official API does.
+func (c *GeminiChatContent) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		Role  string          `json:"role,omitempty"`
+		Parts json.RawMessage `json:"parts"`
+	}
+	if err := kitutil.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	parts, err := unmarshalOneOrMany[GeminiPart](aux.Parts)
+	if err != nil {
+		return err
+	}
+	c.Role = aux.Role
+	c.Parts = parts
+	return nil
+}
+
 type GeminiChatSafetySettings struct {
 	Category  string `json:"category"`
 	Threshold string `json:"threshold"`
+	Method    string `json:"method,omitempty"`
 }
 
 type GeminiChatTool struct {

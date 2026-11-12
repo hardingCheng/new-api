@@ -639,3 +639,50 @@ func TestGeminiStreamHandlerEmptyUsageMetadataBuildsEstimatedBillingUsage(t *tes
 	require.Equal(t, usage.CompletionTokens, usage.BillingUsage.GeminiUsageMetadata.CandidatesTokenCount)
 	require.True(t, common.GetContextKeyBool(c, constant.ContextKeyLocalCountTokens))
 }
+
+// 官方 :streamGenerateContent 不带 alt=sse 返回 JSON 数组;带 alt=sse 返回 SSE。计费用量两种格式一致。
+func TestGeminiTextGenerationStreamHandlerOutputFormatFollowsAltParam(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldStreamingTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 300
+	t.Cleanup(func() { constant.StreamingTimeout = oldStreamingTimeout })
+
+	chunk1 := `{"candidates":[{"content":{"role":"model","parts":[{"text":"Hel"}]}}]}`
+	chunk2 := `{"candidates":[{"content":{"role":"model","parts":[{"text":"lo"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5}}`
+	upstream := "data: " + chunk1 + "\n\n" + "data: " + chunk2 + "\n\n"
+
+	for _, tc := range []struct {
+		name        string
+		url         string
+		contentType string
+		check       func(t *testing.T, body string)
+	}{
+		{"without alt returns json array", "/v1beta/models/gemini-3.8-flash:streamGenerateContent", "application/json", func(t *testing.T, body string) {
+			var arr []map[string]any
+			require.NoError(t, common.UnmarshalJsonStr(body, &arr), body)
+			require.Len(t, arr, 2)
+		}},
+		{"alt=sse keeps event stream", "/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse", "text/event-stream", func(t *testing.T, body string) {
+			require.True(t, strings.HasPrefix(body, "data: "), body)
+			require.Equal(t, 2, strings.Count(body, "data: "))
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, tc.url, nil)
+			info := &relaycommon.RelayInfo{
+				OriginModelName: "gemini-3.8-flash", IsStream: true, DisablePing: true,
+				ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gemini-3.8-flash"},
+			}
+			resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(upstream))}
+
+			usage, apiErr := GeminiTextGenerationStreamHandler(c, info, resp)
+			require.Nil(t, apiErr)
+			require.NotNil(t, usage)
+			require.Equal(t, 5, usage.TotalTokens)
+			require.Contains(t, rec.Header().Get("Content-Type"), tc.contentType)
+			tc.check(t, rec.Body.String())
+		})
+	}
+}
