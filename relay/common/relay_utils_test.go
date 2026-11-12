@@ -355,7 +355,7 @@ func TestSeedanceTokenSettledRelayModel(t *testing.T) {
 		{name: "mini stays on the per-second line", requestModel: "seedance-2.0-mini-480p", want: false},
 		{name: "fast stays on its own line", requestModel: "seedance-2.0-fast-720p", want: false},
 		{name: "eco stays per second", requestModel: "seedance-2.0-mini-480p-eco", want: false},
-		{name: "4k is not enabled", requestModel: "seedance-2.0-4k", want: false},
+		{name: "2.0 standard 4k is token settled", requestModel: "seedance-2.0-4k", want: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

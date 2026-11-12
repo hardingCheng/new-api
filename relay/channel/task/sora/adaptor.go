@@ -94,13 +94,17 @@ type responseTask struct {
 // seedance25VideoInputRatio 是 Seedance 2.5 含参考视频输入时相对基准单价的倍率
 // （官方 480p/720p 70→42 元/百万 token，1080p 77→46 元/百万 token）。
 // seedanceVideoInputRatio 带参考视频时的单价折扣 = 官方「输入包含视频」价 / 「输入不含视频」价：
-// 2.5 为 42/70（1080p 46/77），2.0 标准版为 28/46（1080p 31/51）。
-func seedanceVideoInputRatio(is25, is1080p bool) float64 {
+// 2.5 为 42/70（1080p 46/77），2.0 标准版为 28/46（1080p 31/51，4k 16/26）。2.5 没有 4k 档。
+func seedanceVideoInputRatio(is25 bool, modelNames string) float64 {
+	name := strings.ToLower(modelNames)
+	is1080p := strings.Contains(name, "1080p")
 	switch {
 	case is25 && is1080p:
 		return 46.0 / 77.0
 	case is25:
 		return 42.0 / 70.0
+	case strings.Contains(name, "4k"):
+		return 16.0 / 26.0
 	case is1080p:
 		return 31.0 / 51.0
 	default:
@@ -179,6 +183,8 @@ func seedance25ReferenceVideoURLs(req relaycommon.TaskSubmitReq, body []byte) []
 func seedance25OutputPixels(modelName string) float64 {
 	name := strings.ToLower(modelName)
 	switch {
+	case strings.Contains(name, "4k"):
+		return 3840 * 2160
 	case strings.Contains(name, "1080p"):
 		return 1920 * 1080
 	case strings.Contains(name, "480p"):
@@ -282,8 +288,8 @@ func (a *TaskAdaptor) EstimateBillingValidated(c *gin.Context, info *relaycommon
 		if referenceSeconds, err := service.SumReferenceVideoDurationSeconds(c, videoURLs); err == nil && referenceSeconds > 0 {
 			c.Set(relaycommon.TaskPropertyReferenceVideoSecondsKey, referenceSeconds)
 		}
-		is1080p := strings.Contains(strings.ToLower(info.OriginModelName+" "+info.UpstreamModelName+" "+req.Model), "1080p")
-		return map[string]float64{"video_input": seedanceVideoInputRatio(relaycommon.IsSeedance25RelayModel(info, req.Model), is1080p)}, nil
+		names := info.OriginModelName + " " + info.UpstreamModelName + " " + req.Model
+		return map[string]float64{"video_input": seedanceVideoInputRatio(relaycommon.IsSeedance25RelayModel(info, req.Model), names)}, nil
 	}
 
 	seconds := relaycommon.EffectiveTaskDuration(req)

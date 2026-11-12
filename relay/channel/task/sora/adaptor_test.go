@@ -386,6 +386,18 @@ func TestSeedance25TokenPricedBillingRatios(t *testing.T) {
 			expected: map[string]float64{"video_input": 31.0 / 51.0},
 		},
 		{
+			name:     "2.0 standard 4k reference video gets its own discount",
+			model:    "seedance-2.0-4k",
+			body:     `{"model":"seedance-2.0-4k","prompt":"test","seconds":"5","images":[{"url":"http://127.0.0.1:1/v.mp4","type":"video"}]}`,
+			expected: map[string]float64{"video_input": 16.0 / 26.0},
+		},
+		{
+			name:     "2.0 standard 4k text to video is token settled without seconds",
+			model:    "seedance-2.0-4k",
+			body:     `{"model":"seedance-2.0-4k","prompt":"test","seconds":"5"}`,
+			expected: nil,
+		},
+		{
 			name:     "per-second priced model keeps seconds billing",
 			model:    "seedance-2.5-720p",
 			body:     `{"model":"seedance-2.5-720p","prompt":"test","seconds":"6"}`,
@@ -536,6 +548,12 @@ func TestSeedance25ParseTaskResultSettlementTokens(t *testing.T) {
 			model:    "seedance-2.0-480p",
 			body:     `{"id":"video_1","status":"completed","seconds":"5"}`,
 			expected: 48437,
+		},
+		{
+			name:     "2.0 standard 4k estimates tokens with the 3840x2160 pixel count",
+			model:    "seedance-2.0-4k",
+			body:     `{"id":"video_1","status":"completed","seconds":"5"}`,
+			expected: 980100,
 		},
 		{
 			name:     "other seedance models are not token settled",

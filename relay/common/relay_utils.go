@@ -186,15 +186,14 @@ func IsSeedance25RelayModel(info *RelayInfo, modelName string) bool {
 }
 
 // IsSeedanceTokenSettledRelayModel 判断是否按 token 结算的 Seedance 线路型号：2.5 全系和 2.0 标准版
-// （seedance-2.0 及其 480p/720p/1080p 档）。mini/fast/eco 走各自的按秒或官方线路，不在内；
-// 4K 档的像素表还没有，接入前不放行。
+// （seedance-2.0 及其 480p/720p/1080p/4k 档）。mini/fast/eco 走各自的按秒或官方线路，不在内。
 func IsSeedanceTokenSettledRelayModel(info *RelayInfo, modelName string) bool {
 	if IsSeedance25RelayModel(info, modelName) {
 		return true
 	}
 	for _, name := range relayModelNames(info, modelName) {
 		rest, ok := strings.CutPrefix(strings.ToLower(strings.TrimSpace(name)), "seedance-2.0")
-		if ok && (rest == "" || rest == "-480p" || rest == "-720p" || rest == "-1080p") {
+		if ok && (rest == "" || rest == "-480p" || rest == "-720p" || rest == "-1080p" || rest == "-4k") {
 			return true
 		}
 	}
